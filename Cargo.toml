@@ -31,3 +31,7 @@ dp-cert = { path = "crates/dp-cert" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
+
+# Hashing solver binaries is on the proving path; keep it fast in dev builds.
+[profile.dev.package.sha2]
+opt-level = 3
