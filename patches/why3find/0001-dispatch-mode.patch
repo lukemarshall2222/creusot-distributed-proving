@@ -5,8 +5,9 @@ Purpose: `why3find prove --dispatch` keeps goal generation, the proof
   call and every access to the prover cache to the parent process over stdin
   and stdout. It also answers the parent's requests to print a goal with a
   prover's driver after a list of transformations (with the number of tasks),
-  to print a goal's task, to list the provers with their commands, and to
-  report a prover's calibration. Without the option, behaviour is unchanged.
+  to print a goal's task, to list the provers with their commands and input
+  file extensions, to read a prover's answer from a recorded output with the
+  prover's driver, and to report a prover's calibration. Without the option, behaviour is unchanged.
   The message grammar is documented in src/dispatch.mli.
 Requirements: R1.2, R1.3, R2.3, R7.2, R7.5, R7.9, R7.12
 Upstream: not yet submitted
@@ -15,11 +16,11 @@ Base: https://github.com/creusot-rs/why3find commit 89dd8721fb9de7fea5d00e58ebda
  lib/proofs.ml    |   8 +-
  lib/proofs.mli   |   3 +
  src/command.ml   |   2 +
- src/dispatch.ml  | 269 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
- src/dispatch.mli |  87 ++++++++++++++++++
- src/hammer.ml    |  44 +++++++--
+ src/dispatch.ml  | 305 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ src/dispatch.mli |  93 +++++++++++++++++
+ src/hammer.ml    |  44 ++++++--
  src/prove.ml     |   6 +-
- 7 files changed, 408 insertions(+), 11 deletions(-)
+ 7 files changed, 450 insertions(+), 11 deletions(-)
 
 diff --git a/lib/proofs.ml b/lib/proofs.ml
 index 316ba09..187f63b 100644
@@ -81,10 +82,10 @@ index 8b0e16a..508d671 100644
              "--summary",  Arg.Unit (set results `Summary), "make a summary of results";
 diff --git a/src/dispatch.ml b/src/dispatch.ml
 new file mode 100644
-index 0000000..ae0fafe
+index 0000000..bbb85db
 --- /dev/null
 +++ b/src/dispatch.ml
-@@ -0,0 +1,269 @@
+@@ -0,0 +1,305 @@
 +(**************************************************************************)
 +(*                                                                        *)
 +(*  SPDX-License-Identifier LGPL-2.1                                      *)
@@ -260,9 +261,45 @@ index 0000000..ae0fafe
 +    send (L [A "task" ; A qid ; A (task_print task)])
 +  | L [A "provers" ; A qid] ->
 +    let prover (p : Prover.prover) =
++      let file = Why3.Driver.get_filename p.driver
++          ~input_file:"f" ~theory_name:"t" ~goal_name:"g" in
 +      L [ A (Prover.fullname p) ; A p.digest ; A (snd p.config.driver) ;
-+          A (Why3.Whyconf.get_complete_command p.config ~with_steps:false) ] in
++          A (Why3.Whyconf.get_complete_command p.config ~with_steps:false) ;
++          A (Filename.extension file) ] in
 +    send (L (A "provers" :: A qid :: List.map prover provers))
++  | L [A "read-answer" ; A qid ; A prover ; A status ; A output] ->
++    request qid @@ fun () ->
++    (* The answer is read by Why3 with the driver of the prover: a command
++       that replays the recorded output and exit status stands for the run. *)
++    let prover = find_prover provers prover in
++    let status = try int_of_string status with Failure _ -> raise Not_found in
++    let out = Filename.temp_file "why3find" ".out" in
++    let script = Filename.temp_file "why3find" ".sh" in
++    Utils.writefile ~file:out output ;
++    Utils.writefile ~file:script
++      (Printf.sprintf "cat %s\nexit %d\n" (Filename.quote out) status) ;
++    let config = Why3.Whyconf.get_main project.whyconf in
++    let limits = Why3.Call_provers.{
++        limit_time = 60.0 ; limit_mem = Runner.memlimit config ; limit_steps = -1 } in
++    let call = Why3.Driver.prove_buffer_prepared ~command:("/bin/sh " ^ script)
++        ~config ~limits prover.driver (Buffer.create 0) in
++    let answer () =
++      match Why3.Call_provers.query_call call with
++      | ProverFinished pr ->
++        Some (match pr.pr_answer with
++            | Valid -> "valid" | Invalid -> "invalid" | Timeout -> "timeout"
++            | OutOfMemory -> "outofmemory"
++            | StepLimitExceeded -> "steplimitexceeded"
++            | Unknown _ -> "unknown" | Failure _ -> "failure"
++            | HighFailure _ -> "highfailure")
++      | InternalFailure _ -> Some "highfailure"
++      | NoUpdates | ProverStarted | ProverInterrupted -> None
++      | exception _ -> Some "highfailure" in
++    Fibers.background
++      ~callback:(fun answer ->
++          Utils.rmpath out ; Utils.rmpath script ;
++          send (L [A "answer-read" ; A qid ; A answer]))
++      (Fibers.async answer)
 +  | L [A "calibration" ; A qid ; A prover] ->
 +    request qid @@ fun () ->
 +    let prover = find_prover provers prover in
@@ -356,10 +393,10 @@ index 0000000..ae0fafe
 +(* -------------------------------------------------------------------------- *)
 diff --git a/src/dispatch.mli b/src/dispatch.mli
 new file mode 100644
-index 0000000..4f9b51d
+index 0000000..17e7313
 --- /dev/null
 +++ b/src/dispatch.mli
-@@ -0,0 +1,87 @@
+@@ -0,0 +1,93 @@
 +(**************************************************************************)
 +(*                                                                        *)
 +(*  SPDX-License-Identifier LGPL-2.1                                      *)
@@ -413,7 +450,13 @@ index 0000000..4f9b51d
 +      prints for it;
 +    - [(task-print <qid> <gid>)], answered by [(task <qid> <task>)];
 +    - [(provers <qid>)], answered by
-+      [(provers <qid> (<prover> <digest> <driver> <command>)...)];
++      [(provers <qid> (<prover> <digest> <driver> <command> <extension>)...)],
++      where [<extension>] is the extension of the prover's input file;
++    - [(read-answer <qid> <prover> <exit status> <output>)], answered by
++      [(answer-read <qid> <answer>)]: the answer that the driver of the prover
++      reads from the output and exit status of a run, one of [valid],
++      [invalid], [timeout], [outofmemory], [steplimitexceeded], [unknown],
++      [failure] and [highfailure];
 +    - [(calibration <qid> <prover>)], answered by
 +      [(calibration <qid> <velocity>)]. *)
 +

@@ -161,7 +161,7 @@ class Session:
             self.send(["stored", rid, "store" if self.store_policy(result) else "skip"])
         elif tag == b"done":
             self.done = True
-        elif tag in (b"printed", b"task", b"provers", b"calibration", b"error"):
+        elif tag in (b"printed", b"task", b"provers", b"calibration", b"answer-read", b"error"):
             self.replies[msg[1]] = msg
         elif tag != b"hello":
             raise ValueError("unexpected message %r" % tag)
@@ -355,6 +355,18 @@ def main():
             seen["bad-goal"] = s.request("print", "no-such-goal", prover, [])
             seen["bad-prover"] = s.request("print", gid, "no-such-prover", [])
             seen["calibration"] = s.request("calibration", prover)
+            seen["answers"] = {
+                k: s.request("read-answer", prover, status, output)
+                for k, (status, output) in {
+                    "unsat": ("0", "unsat\n"),
+                    "sat": ("0", "sat\n"),
+                    "unknown": ("0", "unknown\n(:reason-unknown incomplete)\n"),
+                    "garbage": ("0", "hello\n"),
+                    "crash": ("3", "(error \"no\")\n"),
+                    "indented": ("0", "  unsat\n"),
+                }.items()
+            }
+            seen["bad-answer"] = s.request("read-answer", "no-such-prover", "0", "unsat\n")
             seen["gid"] = gid
             seen["split"] = {}
         name = s.goals[gid][2]
@@ -365,8 +377,20 @@ def main():
     s = session(bridge)
     status = s.run()
     provers = seen["provers"][2:]
-    check("bridge: provers lists name, digest, driver and command",
-          len(provers) > 0 and all(len(p) == 4 and b"%f" in p[3] for p in provers), repr(provers)[:200])
+    check("bridge: provers lists name, digest, driver, command and file extension",
+          len(provers) > 0 and all(len(p) == 5 and b"%f" in p[3] and p[4].startswith(b".") for p in provers),
+          repr(provers)[:200])
+    answers = {k: (v[0], v[2]) for k, v in seen["answers"].items()}
+    check("bridge: the driver reads valid only from an exact unsat line",
+          answers["unsat"] == (b"answer-read", b"valid")
+          and all(answers[k][0] == b"answer-read" and answers[k][1] != b"valid"
+                  for k in ("sat", "unknown", "garbage", "crash", "indented")),
+          repr(answers))
+    check("bridge: sat and unknown read as unknown, a crash as a failure",
+          answers["sat"][1] == b"unknown" and answers["unknown"][1] == b"unknown"
+          and answers["crash"][1] in (b"failure", b"highfailure"), repr(answers))
+    check("bridge: read-answer for an unknown prover gives an error reply",
+          seen["bad-answer"][0] == b"error")
     check("bridge: task-print equals the announced task", seen["task"][2] == s.goals[seen["gid"]][4])
     check("bridge: print gives one task and the prover input",
           seen["print1"][2] == b"1" and len(seen["print1"][3]) > 0)
