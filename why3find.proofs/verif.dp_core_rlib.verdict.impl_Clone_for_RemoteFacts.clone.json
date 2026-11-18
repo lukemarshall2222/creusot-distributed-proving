@@ -1,0 +1,9 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_clone_RemoteFacts": { "prover": "alt-ergo", "time": 0.009 },
+      "vc_clone_bool": { "prover": "alt-ergo", "time": 0.009 }
+    }
+  }
+}

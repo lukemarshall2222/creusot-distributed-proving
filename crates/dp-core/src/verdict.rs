@@ -133,6 +133,36 @@ pub enum Acceptance {
     /// The Transformation_Pipeline does not yield exactly one task (R1.3
     /// criterion 10).
     NotOneTask,
+    /// The tag does not verify under the named Worker's key (R1.3 criterion 4).
+    BadSignature,
+    /// The named Worker is not in the operator-signed registry, or it is
+    /// revoked (R1.3 criterion 9, R1.7 criterion 6).
+    UnknownWorker,
+    /// The Front_End did not submit this Job with this prover (R1.3
+    /// criterion 6).
+    NotSubmitted,
+}
+
+/// What the shell established about a Result that arrived from the Cluster.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, DeepModel)]
+pub struct RemoteFacts {
+    /// The tag verifies under the verification key that the registry holds
+    /// for the Worker that the Result names.
+    pub signature_valid: bool,
+    /// The registry that the Front_End holds lists that Worker.
+    pub registered: bool,
+    /// The Front_End holds a revocation of that Worker.
+    pub revoked: bool,
+    /// The Result names an open Job of this Session and the prover that the
+    /// Front_End submitted it with.
+    pub submitted: bool,
+}
+
+/// The Result comes from an authentic, registered Worker and answers a Job
+/// that the Front_End submitted (P1.3.2, P1.3.4, P1.3.6).
+#[logic(open)]
+pub fn authentic(f: RemoteFacts) -> bool {
+    pearlite! { f.signature_valid && f.registered && !f.revoked && f.submitted }
 }
 
 #[ensures(result == (a == b))]
@@ -150,6 +180,22 @@ pub fn accept_result(r: ResultFields, ctx: &Context) -> Acceptance {
         Acceptance::WrongTaskHash
     } else {
         Acceptance::Accepted
+    }
+}
+
+/// Accepts or discards a Result that arrived from the Cluster (R1.3
+/// criteria 3, 4, 6, 9 and 10). Everything that arrives is untrusted until
+/// this function accepts it; a discarded Result is never labelled.
+#[ensures((result == Acceptance::Accepted) == (authentic(facts) && bound(r, *ctx)))]
+pub fn accept_remote(r: ResultFields, ctx: &Context, facts: RemoteFacts) -> Acceptance {
+    if !facts.registered || facts.revoked {
+        Acceptance::UnknownWorker
+    } else if !facts.signature_valid {
+        Acceptance::BadSignature
+    } else if !facts.submitted {
+        Acceptance::NotSubmitted
+    } else {
+        accept_result(r, ctx)
     }
 }
 
