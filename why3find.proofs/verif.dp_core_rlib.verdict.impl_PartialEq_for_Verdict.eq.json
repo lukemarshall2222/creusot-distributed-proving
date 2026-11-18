@@ -1,0 +1,9 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_eq_Label": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_eq_Verdict": { "prover": "alt-ergo", "time": 0.013 }
+    }
+  }
+}

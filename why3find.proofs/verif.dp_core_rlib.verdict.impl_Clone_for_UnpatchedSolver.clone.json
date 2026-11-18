@@ -1,0 +1,10 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_clone_Hash": { "prover": "alt-ergo", "time": 0.013 },
+      "vc_clone_UnpatchedSolver": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_clone_u64": { "prover": "alt-ergo", "time": 0.01 }
+    }
+  }
+}

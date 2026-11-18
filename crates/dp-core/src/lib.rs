@@ -11,3 +11,4 @@ pub mod frontend;
 pub mod labels;
 pub mod machine;
 pub mod trace;
+pub mod verdict;

@@ -1,0 +1,13 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_clone_Label": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_clone_Outcome": { "prover": "alt-ergo", "time": 0.013 },
+      "vc_clone_Vec_Verdict_Global": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_clone_Verdict": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_clone_Verdicts": { "prover": "alt-ergo", "time": 0.021 },
+      "vc_clone_u64": { "prover": "alt-ergo", "time": 0.011 }
+    }
+  }
+}

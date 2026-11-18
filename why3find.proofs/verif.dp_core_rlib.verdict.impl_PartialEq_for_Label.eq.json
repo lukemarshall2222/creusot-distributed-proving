@@ -1,0 +1,10 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_elim_NonProof": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_eq_Label": { "prover": "alt-ergo", "time": 0.021 },
+      "vc_eq_Outcome": { "prover": "alt-ergo", "time": 0.01 }
+    }
+  }
+}

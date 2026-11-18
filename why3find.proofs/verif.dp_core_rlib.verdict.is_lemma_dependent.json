@@ -1,0 +1,30 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_is_lemma_dependent": {
+        "tactic": "compute_specified",
+        "children": [
+          {
+            "tactic": "split_vc",
+            "children": [
+              { "prover": "alt-ergo", "time": 0.011 },
+              { "prover": "alt-ergo", "time": 0.012 },
+              {
+                "tactic": "split_vc",
+                "children": [
+                  { "prover": "alt-ergo", "time": 0.011 },
+                  { "prover": "alt-ergo", "time": 0.011 }
+                ]
+              },
+              { "prover": "alt-ergo", "time": 0.011 },
+              { "prover": "alt-ergo", "time": 0.011 }
+            ]
+          }
+        ]
+      },
+      "vc_is_unpatched": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_same_hash": { "prover": "alt-ergo", "time": 0.01 }
+    }
+  }
+}
