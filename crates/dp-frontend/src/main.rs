@@ -6,6 +6,7 @@ use std::{path::PathBuf, process::ExitCode};
 use dp_formats::lockfile::LockFile;
 use dp_formats::cluster::{from_hex, Registry};
 use dp_frontend::session::{self, Cluster, Config};
+use dp_shell::trace::Retention;
 
 fn fail(message: impl std::fmt::Display) -> ExitCode {
     eprintln!("dp-frontend: {message}");
@@ -47,9 +48,9 @@ fn main() -> ExitCode {
     let Some(lock_path) = std::env::var_os("DP_LOCK") else {
         return fail("DP_LOCK must name the Lock_File");
     };
-    let lock = match std::fs::read_to_string(&lock_path) {
+    let (lock, lock_hash) = match std::fs::read_to_string(&lock_path) {
         Ok(text) => match LockFile::parse(&text) {
-            Ok(lock) => lock,
+            Ok(lock) => (lock, dp_formats::hash::sha256(text.as_bytes())),
             Err(e) => return fail(e),
         },
         Err(e) => return fail(format!("{}: {e}", PathBuf::from(lock_path).display())),
@@ -80,6 +81,14 @@ fn main() -> ExitCode {
         // Portfolios come from `dp.toml` (R2.1), which does not exist yet.
         portfolio_seeds: std::env::var("DP_PORTFOLIO_SEEDS").ok().and_then(|s| s.parse().ok()).unwrap_or(1),
         export: std::env::var_os("DP_EXPORT_DIR").map(PathBuf::from),
+        // `DP_TRACE` names the trace file. The complete retention setting is
+        // `DP_TRACE_RETENTION=complete`; otherwise the most recent records
+        // are kept (1000 is a working value, not a proposal for <TBD-46>).
+        lock_hash,
+        trace: std::env::var_os("DP_TRACE").map(|path| {
+            let complete = std::env::var("DP_TRACE_RETENTION").is_ok_and(|v| v == "complete");
+            (PathBuf::from(path), if complete { Retention::Complete } else { Retention::Bounded(1000) })
+        }),
     };
     match session::run(config) {
         Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),

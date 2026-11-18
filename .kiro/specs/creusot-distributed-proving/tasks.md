@@ -41,11 +41,12 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - _Requirements: 40.9, 40.10, 5.19_
     - _Properties: 37_
 
-  - [ ] 1.5 Implement dp-shell with the `Env` abstraction and `SimEnv`
+  - [-] 1.5 Implement dp-shell with the `Env` abstraction and `SimEnv`
     - `Env` trait: transport, clock, process runner with process groups and tree kill, file store with temp-sync-rename writes, buffered append-only trace writer that is always on (D-11)
     - Tracing retention setting of each component (the `tracing_retention` option of `dp.toml` for the Front_End, the Coordinator's and each Worker's configuration): bounded, the default, keeps the most recent `<TBD-46>` trace records of the component and discards older ones; complete, which every CI job and every Experiment_Runner run sets, keeps every record; `<TBD-46>` is a named configuration parameter with no committed default
     - Production adapters: ZeroMQ TCP, OS clock, POSIX process groups, filesystem
     - `SimEnv`: one seeded discrete-event scheduler, virtual clocks, simulated network with the R1.6 fault model (crashes and restarts, partitions, delays up to D, duplicates, reordering, loss), scripted stub solvers, stub proof producers and stub checkers, exact seed replay and fault-schedule shrinking
+    - As built: `crates/dp-shell/src/` has the production pieces as plain modules: `net.rs` (TCP, D-12 as built), `solver.rs` (process groups, tree kill), `store.rs` (temporary file, sync, rename, directory sync) and `trace.rs` (trace writer with the bounded and the complete retention setting; 1000 records stand in for `<TBD-46>`). Open: the `Env` trait over them, `SimEnv`, and a trace that is on by default (the Front_End writes one only when `DP_TRACE` names a file)
     - _Requirements: 32.2, 5.10, 4.5, 5.5, 5.18, 5.19_
     - _Properties: 10, 11_
 
@@ -127,9 +128,10 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - _Requirements: 39.1, 39.2, 39.3, 39.5, 39.6_
     - _Properties: 34_
 
-  - [ ] 3.2 Implement the stage-1 format modules
+  - [-] 3.2 Implement the stage-1 format modules
     - `proof.json` extension in `crates/dp-formats/src/proofjson.rs` (`DpEntry` as a base64 member `dp`, `dp-lock`, conflict and Invalid fields, absent markers), Lock_File, Result_Cache entry, Result message, project configuration `dp.toml` (canonical TOML, holding the Solver_Configuration file grammar and the `tracing_retention` option), `dispatch` (the why3find bridge requests and replies, D-2, D-3), event trace record, canonical JSON (RFC 8785) helpers; grammars in `docs/formats/`
     - `decode_label` with its Creusot contract: any string outside the label set decodes to a non-proof outcome
+    - As built: `proofjson.rs` (`DpEntry` with the label, the replay fields and the absent markers, base64 member `dp`; the conflict field, the Invalid field, the certificate and the Partition tree hash are always absent), `cache.rs` (Result_Cache entry), `lockfile.rs`, `cluster.rs`, `dispatch.rs`. Open: conflict and Invalid fields, `dp.toml`, the event trace record as a format module, canonical JSON helpers, grammars in `docs/formats/`, and `decode_label` with its contract (an unknown label is rejected by the decoder instead)
     - _Requirements: 39.1, 39.4, 10.5, 31.1, 31.3, 31.7, 31.11, 34.3, 36.5_
     - _Properties: 30, 34_
 
@@ -144,9 +146,10 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - Registry entries in `docs/formats/index.toml` for the stage-1 formats, each naming its grammar file, codec module, round-trip test and fuzz target
     - **Validates: Requirements 39.1, 39.2, 39.3, 39.4, 39.5, 39.6, 39.7, 39.8**
 
-  - [ ] 3.5 Write property tests for `proof.json` encoding
+  - [-] 3.5 Write property tests for `proof.json` encoding
     - **Property 30: proof.json and the Creusot_CLI report labels faithfully** (encoding part)
     - `crates/dp-formats/tests/prop_proofjson.rs`: label, conflict, Invalid, replay fields with absent markers and import fields survive write and read; unknown labels decode to non-proof
+    - As built: `prop_proofjson.rs` covers the label, the replay fields with absent markers, base64 with one text per value, and rejection of unknown labels. Open: conflict, Invalid and import fields, which the encoding does not carry yet
     - **Validates: Requirements 31.1, 31.3, 31.7, 31.10, 31.11, 10.5, 10.7**
 
   - [ ] 3.6 Write snapshot tests for the pretty printer
@@ -156,7 +159,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
 - [ ] 4. Implement the dp-core decision core for the proved-standalone path
   - [-] 4.1 Implement the machine interface, trace actions and the Front_End machine skeleton (C4)
     - Create `machine.rs` (`Machine`, `Step`), `trace.rs` (`TlaAction`, generator of `verification/tla/actions.toml`) and `frontend.rs` (the Front_End machine of the Scheduler and Verdict_Recorder) handling Session start, Goal announced, print facts, cache facts, prover call, local process exit and final write; inputs carry `now`; ordered collections only, as strictly increasing vectors (Creusot has no `BTreeMap` contracts), with state rules as Creusot type invariants
-    - Open: the generator of `verification/tla/actions.toml`, and action names taken from `Coordinator.tla` (task 14)
+    - As built: `frontend.rs` is the whole Front_End machine of the distributed slice (Session start, Goal announced, prover call, print facts, cache hit, local run, remote Result, Job not run, cancellation, Cluster lost, tick, why3find done) with Creusot contracts on `step` (a finished Session takes no step, Goals are kept, recorded Verdicts are kept) and on `decide` (a proof decision implies a standalone and authentic Result); `crates/dp-core/tests/prop_frontend.rs` runs random Sessions against it. Open: the generator of `verification/tla/actions.toml`, action names taken from `Coordinator.tla` (task 14), and the final write as an input
     - _Requirements: 32.1, 32.2, 5.10_
     - _Properties: 10, 35_
 
@@ -172,8 +175,9 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - _Requirements: 30.1, 30.2, 30.4, 30.5, 30.6, 31.4, 5.1, 5.8, 5.13, 41.2_
     - _Properties: 1_
 
-  - [ ] 4.4 Implement `cache_key.rs` with Creusot contracts and a Kani harness (C15)
+  - [-] 4.4 Implement `cache_key.rs` with Creusot contracts and a Kani harness (C15)
     - `encode_key` (length-prefixed canonical S-expression of the R7.5 lookup fields), `lookup_ok`, `validate_entry`; `verification/kani/cache_key.rs` for injectivity
+    - As built: `cache_key.rs` with `encode_key`, the lemma `encoding_injective`, `lookup_ok` and `validate_entry`, all proved by Creusot; `calibration.rs` with `scale`. Open: the Kani harness `verification/kani/cache_key.rs`
     - _Requirements: 34.1, 34.2, 34.5, 34.9, 34.10, 34.11_
     - _Properties: 29_
 
@@ -239,7 +243,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
 - [ ] 6. Implement dp-frontend in local mode
   - [-] 6.1 Implement the Session shell with configuration loading and pin checks (C3)
     - Cluster option precedence through the function of task 4.11 (flag, `DP_CLUSTER`, `dp.toml`; D-13), `validate_config`, tracing retention setting from `tracing_retention`, Lock_File hash check of every local executable at Session start and before each start, TCB_Document and registry loading, start of `why3find prove --dispatch` and the dispatch loop driving the Front_End machine; errors stop the Session before any solver starts and leave `proof.json` and `.why3find` unchanged
-    - As built: a thin `dp-frontend prove` with the Lock_File checks at Session start and before each solver start, configured by `DP_WHY3FIND` and `DP_LOCK`. Open: `dp.toml`, `validate_config`, the cluster option, tracing, the TCB_Document and registry, and the loop over the dp-core Front_End machine
+    - As built: `dp-frontend prove` with the Lock_File checks at Session start and before each solver start, and `session.rs` as the shell of the dp-core Front_End machine: it turns events into inputs with locally computed facts, records the trace before the effects (`DP_TRACE`, `DP_TRACE_RETENTION=complete`) and carries out the effects; it decides nothing. Configured by environment variables (`DP_WHY3FIND`, `DP_LOCK`, `DP_CLUSTER`, `DP_REGISTRY`, `DP_OPERATOR_KEY`). Open: `dp.toml`, `validate_config`, the cluster option precedence of task 4.11, and the TCB_Document
     - _Requirements: 36.3, 36.7, 1.6, 1.2, 1.8, 1.9, 5.18_
     - _Properties: 5_
 
@@ -256,13 +260,15 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - _Requirements: 3.3, 3.5, 3.10, 39.8, 30.5_
     - _Properties: 3_
 
-  - [ ] 6.4 Implement the Result_Cache (`crates/dp-frontend/src/cache.rs`, C15)
+  - [-] 6.4 Implement the Result_Cache (`crates/dp-frontend/src/cache.rs`, C15)
     - Entries in `.dp-cache/`; legacy-layout writes only for proved-standalone (answer why3find's cache-write request with store or skip, AS-35); lookup compares stored lookup fields, then validation fields, then labels the entry under R7.1 criterion 6; entries written by unmodified why3find are misses
+    - As built: in `session.rs` (not a separate `cache.rs`): entries in `.dp-cache/<Cache_Key>` written atomically for every labelled run except failed ones; a lookup after the print compares the stored lookup fields (`lookup_ok`), then the validation fields (`validate_entry`), checks a stored Worker Result against this Session's registry, and gives the entry to dp-core as a cache-hit input, which labels it under this Session's Lock_File; anything else is a miss. why3find's own cache lookups are always answered with a miss, and its cache writes are allowed only for proved-standalone Results. `crates/dp-frontend/tests/cache.rs` covers warm hits, entries under another key, non-canonical bytes, another binary hash, another local limit and re-labelling. Open: an end-to-end test of stored Worker Results (revoked or unregistered Worker), import-set entries, and the size limit `<TBD-22>`
     - _Requirements: 34.3, 34.4, 34.6, 34.7, 34.9, 34.10, 34.11, 30.6, 41.3_
     - _Properties: 29_
 
-  - [ ] 6.5 Implement the final `proof.json` write and the Creusot_CLI report
+  - [-] 6.5 Implement the final `proof.json` write and the Creusot_CLI report
     - Atomic rewrite after why3find's legacy write with `dp` members and `dp-lock`; conflict and Invalid fields; absent markers; report of labels, counts per label and conflicts; non-zero exit for a conflict whose proof is proved-standalone
+    - As built: `proofs.rs` rewrites each proof file atomically after why3find's write: `dp` on every Goal entry (leaf of the proof tree), `dp-lock` with the Lock_File hash; an unproved Goal, which why3find writes as `null`, becomes an object with `dp` alone; an entry that why3find wrote as proved without a proof label of the Session is written as not proved. The Front_End prints the number of Goals by label. AS-19 holds for the pinned why3find: `local_session.rs` has unmodified why3find replay and re-prove from an extended file with the same Goals proved. Open: conflict and Invalid fields, the non-zero exit for conflicts, labels on tactic nodes, and the report inside Creusot_CLI's own output (it is on standard error of the backend)
     - _Requirements: 10.1, 10.4, 10.5, 10.7, 31.1, 31.2, 31.3, 31.7, 31.8, 31.9, 31.11, 31.12, 36.5, 5.2, 5.14_
     - _Properties: 30_
 

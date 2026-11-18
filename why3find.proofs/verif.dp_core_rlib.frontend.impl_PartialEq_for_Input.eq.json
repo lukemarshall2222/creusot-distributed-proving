@@ -2,14 +2,22 @@
   "profile": [],
   "proofs": {
     "Coma": {
-      "vc_elim_CacheFacts": { "prover": "alt-ergo", "time": 0.01 },
-      "vc_elim_FinalWrite": { "prover": "alt-ergo", "time": 0.013 },
+      "vc_elim_CacheHit": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_CancelCall": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_ClusterLost": { "prover": "alt-ergo", "time": 0.011 },
       "vc_elim_GoalAnnounced": { "prover": "alt-ergo", "time": 0.01 },
-      "vc_elim_LocalExit": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_JobNotRun": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_LocalRun": { "prover": "alt-ergo", "time": 0.011 },
       "vc_elim_PrintFacts": { "prover": "alt-ergo", "time": 0.011 },
       "vc_elim_ProverCall": { "prover": "alt-ergo", "time": 0.016 },
+      "vc_elim_RemoteResult": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_SessionStart": { "prover": "alt-ergo", "time": 0.011 },
-      "vc_eq_Input": { "prover": "z3", "time": 0.023 }
+      "vc_elim_Tick": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_Why3findDone": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_eq_Evidence": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_eq_Input": { "prover": "z3", "time": 0.169 },
+      "vc_eq_Option_RemoteFacts": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_eq_Pass": { "prover": "alt-ergo", "time": 0.014 }
     }
   }
 }

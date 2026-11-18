@@ -223,11 +223,12 @@ impl SignedResult {
         key.verify_strict(&self.fields.signed_bytes(), &Signature::from_bytes(&self.tag)).is_ok()
     }
 
-    fn encode(&self) -> Vec<Sexp> {
+    /// The Result exactly as it travels: its fields and its tag.
+    pub fn encode(&self) -> Vec<Sexp> {
         vec![self.fields.encode(), Sexp::atom(self.tag)]
     }
 
-    fn decode(fields: &[Sexp]) -> Result<SignedResult, DecodeError> {
+    pub fn decode(fields: &[Sexp]) -> Result<SignedResult, DecodeError> {
         match fields {
             [f, tag] => Ok(SignedResult {
                 fields: ResultFields::decode(f)?,

@@ -2,6 +2,17 @@
   "profile": [],
   "proofs": {
     "Coma": {
+      "vc_debug_struct_field1_finish": {
+        "prover": "alt-ergo",
+        "time": 0.011
+      },
+      "vc_debug_struct_field2_finish": {
+        "prover": "alt-ergo",
+        "time": 0.011
+      },
+      "vc_elim_Lost": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Proved": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Rejected": { "prover": "alt-ergo", "time": 0.011 },
       "vc_fmt_LogEntry": { "prover": "alt-ergo", "time": 0.011 },
       "vc_write_str": { "prover": "alt-ergo", "time": 0.009 }
     }

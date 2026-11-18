@@ -87,7 +87,7 @@ impl DriverAnswer {
         }
     }
 
-    fn decode(s: &Sexp) -> Result<DriverAnswer, DecodeError> {
+    pub fn decode(s: &Sexp) -> Result<DriverAnswer, DecodeError> {
         let name = s.as_str();
         DriverAnswer::ALL
             .into_iter()

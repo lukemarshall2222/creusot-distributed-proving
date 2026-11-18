@@ -4,3 +4,5 @@
 pub mod why3find;
 pub mod solver;
 pub mod net;
+pub mod store;
+pub mod trace;

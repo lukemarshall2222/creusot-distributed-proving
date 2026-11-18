@@ -6,3 +6,5 @@ pub mod sexp;
 pub mod dispatch;
 pub mod lockfile;
 pub mod cluster;
+pub mod cache;
+pub mod proofjson;

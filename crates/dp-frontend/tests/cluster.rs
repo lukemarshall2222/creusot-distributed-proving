@@ -201,10 +201,12 @@ fn workers_prove_what_the_provers_prove() {
     assert!(stderr.contains("Theory arith.Arith: ✘ (2/3)"), "{stderr}");
     assert!(stderr.contains("Goal Arith.Wrong"), "{stderr}");
     // every proof came from a Worker's signed Result
-    assert!(stderr.contains("2 proved-standalone Verdicts (2 from Workers)"), "{stderr}");
+    assert!(stderr.contains("2 proved-standalone Verdicts (2 from Workers, 0 Result_Cache hits)"), "{stderr}");
     assert!(!stderr.contains("discarded"), "{stderr}");
     let proofs = proofs(&s);
-    assert!(proofs.contains(r#""Wrong": null"#) && proofs.contains(r#""Easy": { "prover":"#), "{proofs}");
+    // Easy and Split are proved, Wrong is not.
+    assert_eq!(proofs.matches("\"prover\"").count(), 2, "{proofs}");
+    assert_eq!(proofs.matches("\"dp\"").count(), 3, "{proofs}");
     fs::remove_dir_all(&s.dir).unwrap();
 }
 
@@ -229,9 +231,11 @@ fn a_race_of_seeds_proves_the_same_goals() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(1), "{stderr}");
     assert!(stderr.contains("Theory arith.Arith: ✘ (2/3)"), "{stderr}");
-    assert!(stderr.contains("2 proved-standalone Verdicts (2 from Workers)"), "{stderr}");
+    assert!(stderr.contains("2 proved-standalone Verdicts (2 from Workers, 0 Result_Cache hits)"), "{stderr}");
     let proofs = proofs(&s);
-    assert!(proofs.contains(r#""Wrong": null"#) && proofs.contains(r#""Easy": { "prover":"#), "{proofs}");
+    // Easy and Split are proved, Wrong is not.
+    assert_eq!(proofs.matches("\"prover\"").count(), 2, "{proofs}");
+    assert_eq!(proofs.matches("\"dp\"").count(), 3, "{proofs}");
     fs::remove_dir_all(&s.dir).unwrap();
 }
 
@@ -258,7 +262,7 @@ fn results_of_an_unregistered_worker_prove_nothing() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(1), "{stderr}");
     assert!(stderr.contains("not signed by a registered Worker"), "{stderr}");
-    assert!(stderr.contains("0 proved-standalone Verdicts (0 from Workers)"), "{stderr}");
+    assert!(stderr.contains("0 proved-standalone Verdicts (0 from Workers, 0 Result_Cache hits)"), "{stderr}");
     assert!(!proofs(&s).contains("\"prover\""));
     fs::remove_dir_all(&s.dir).unwrap();
 }
@@ -342,7 +346,7 @@ fn a_coordinator_that_forges_answers_proves_nothing() {
     // Every forged Result fails its tag; even the true goals stay unproved,
     // and the false goal is not proved.
     assert!(stderr.contains("not signed by a registered Worker"), "{stderr}");
-    assert!(stderr.contains("0 proved-standalone Verdicts (0 from Workers)"), "{stderr}");
+    assert!(stderr.contains("0 proved-standalone Verdicts (0 from Workers, 0 Result_Cache hits)"), "{stderr}");
     assert!(!proofs(&s).contains("\"prover\""));
     fs::remove_dir_all(&s.dir).unwrap();
 }
@@ -356,7 +360,7 @@ fn without_a_coordinator_the_session_proves_locally() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(1), "{stderr}");
     assert!(stderr.contains("no connection to the Coordinator at 127.0.0.1:"), "{stderr}");
-    assert!(stderr.contains("2 proved-standalone Verdicts (0 from Workers)"), "{stderr}");
+    assert!(stderr.contains("2 proved-standalone Verdicts (0 from Workers, 0 Result_Cache hits)"), "{stderr}");
     fs::remove_dir_all(&s.dir).unwrap();
 }
 

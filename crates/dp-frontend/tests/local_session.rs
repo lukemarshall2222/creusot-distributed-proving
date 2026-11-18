@@ -4,6 +4,7 @@
 //! `DP_LOCK` (the Lock_File) and the pinned provers on PATH. Without
 //! `DP_WHY3FIND` and `DP_LOCK` the tests pass with a notice.
 
+use dp_formats::proofjson::DpEntry;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -91,8 +92,24 @@ fn proves_what_the_provers_prove_and_nothing_else() {
     assert!(stderr.contains("Theory arith.Arith: ✘ (2/3)"), "{stderr}");
     assert!(stderr.contains("2 proved-standalone Verdicts"), "{stderr}");
     let proofs = proofs(&dir).unwrap();
-    assert!(proofs.contains(r#""Wrong": null"#), "{proofs}");
-    assert!(proofs.contains(r#""Easy": { "prover":"#), "{proofs}");
+    let file: serde_json::Value = serde_json::from_str(&proofs).unwrap();
+    let goals = &file["proofs"]["Arith"];
+    assert_eq!(goals["Easy"]["prover"], "alt-ergo", "{proofs}");
+    assert!(goals["Wrong"].get("prover").is_none(), "{proofs}");
+    // The extension: a label per Goal and the Lock_File hash (R7.2, R7.7).
+    let label = |goal: &str| {
+        DpEntry::from_member(goals[goal]["dp"].as_str().unwrap(), 1 << 20).unwrap().label
+    };
+    assert_eq!(label("Easy"), "proved-standalone");
+    assert_eq!(label("Wrong"), "unknown");
+    let lock_hash = dp_formats::hash::sha256(lock.as_bytes()).to_hex();
+    assert_eq!(file["dp-lock"], format!("sha256:{lock_hash}"));
+    assert!(stderr.contains("Goals by label: 2 proved-standalone, 1 unknown"), "{stderr}");
+    // The replay fields name the run that proved the Goal.
+    let easy = DpEntry::from_member(goals["Easy"]["dp"].as_str().unwrap(), 1 << 20).unwrap();
+    assert_eq!(easy.replay.len(), 1);
+    assert_eq!(easy.replay[0].prover, "alt-ergo");
+    assert_eq!(easy.replay[0].place, dp_formats::proofjson::Place::Local);
     // nothing but messages on the protocol channel
     assert!(out.stdout.is_empty());
     fs::remove_dir_all(dir).unwrap();
@@ -150,5 +167,49 @@ fn a_why3find_that_differs_from_the_lock_file_is_not_started() {
     assert_eq!(out.status.code(), Some(2), "{stderr}");
     assert!(stderr.contains("pinned dependency check failed: why3find"), "{stderr}");
     assert_eq!(proofs(&dir), None);
+    fs::remove_dir_all(dir).unwrap();
+}
+
+/// AS-19: unmodified why3find reads a proof file with the extension members
+/// as it reads the same file without them.
+// P-ID: P7.2.6 (legacy reader part)
+#[test]
+fn unmodified_why3find_reads_the_extended_proof_file() {
+    let Some((why3find, lock)) = env() else { return };
+    let Some(home) = std::env::var_os("DP_CREUSOT_HOME").map(PathBuf::from) else {
+        assert!(std::env::var_os("DP_REQUIRE_TOOLS").is_none(), "DP_CREUSOT_HOME is not set");
+        return;
+    };
+    let dir = project("legacy-reader", r#""alt-ergo""#);
+    // One Goal that only a tactic proves in part: the file has a tactic
+    // node with a proved and an unproved child.
+    fs::write(
+        dir.join("arith.mlw"),
+        ARITH.replace("goal Wrong", "goal Mixed: (forall x: int. x + 0 = x) /\\ (forall x: int. x * x > x)\n\n  goal Wrong"),
+    )
+    .unwrap();
+    let out = prove(&dir, &why3find, &lock);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("Theory arith.Arith: ✘ (3/5)"), "{stderr}");
+    assert!(stderr.contains("Goals by label: 3 proved-standalone, 2 unknown"), "{stderr}");
+    let extended = proofs(&dir).unwrap();
+    assert_eq!(extended.matches("\"dp\":").count(), 5, "{extended}");
+    // Replay with unmodified why3find: the same Goals are proved, the file
+    // is not touched.
+    let path = format!("{}:{}", home.join("bin").display(), std::env::var("PATH").unwrap());
+    let legacy = |args: &[&str]| {
+        Command::new(home.join("bin/why3find")).args(args).current_dir(&dir).env("PATH", &path).output().unwrap()
+    };
+    let replay = legacy(&["prove", "-r", "arith.mlw"]);
+    let text = String::from_utf8_lossy(&replay.stderr).into_owned() + &String::from_utf8_lossy(&replay.stdout);
+    assert!(text.contains("Theory arith.Arith: ✘ (3/5)"), "{text}");
+    assert_eq!(proofs(&dir).unwrap(), extended);
+    // Proving with it gives the legacy file with the same proofs.
+    legacy(&["prove", "arith.mlw"]);
+    let plain = proofs(&dir).unwrap();
+    assert!(!plain.contains("\"dp"), "{plain}");
+    let provers = |text: &str| text.matches("\"prover\"").count();
+    assert_eq!(provers(&plain), provers(&extended));
+    assert_eq!(provers(&plain), 3);
     fs::remove_dir_all(dir).unwrap();
 }

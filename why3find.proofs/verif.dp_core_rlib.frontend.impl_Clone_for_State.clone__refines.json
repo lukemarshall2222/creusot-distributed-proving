@@ -3,8 +3,26 @@
   "proofs": {
     "Coma": {
       "refines": { "prover": "alt-ergo", "time": 0.014 },
+      "vc_clone_Call": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_clone_Config": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_clone_Hash": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_clone_Label": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_clone_Outcome": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_clone_Pass": { "prover": "alt-ergo", "time": 0.012 },
       "vc_clone_Phase": { "prover": "alt-ergo", "time": 0.013 },
+      "vc_clone_Place": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_clone_UnpatchedSolver": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_clone_Vec_Call_Global": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_clone_Vec_Outcome_Global": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_clone_Vec_UnpatchedSolver_Global": {
+        "prover": "alt-ergo",
+        "time": 0.011
+      },
+      "vc_clone_Vec_Verdict_Global": { "prover": "alt-ergo", "time": 0.012 },
       "vc_clone_Vec_u64_Global": { "prover": "alt-ergo", "time": 0.016 },
+      "vc_clone_Verdict": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_clone_Verdicts": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_clone_bool": { "prover": "alt-ergo", "time": 0.012 },
       "vc_clone_u64": { "prover": "alt-ergo", "time": 0.014 }
     }
   }

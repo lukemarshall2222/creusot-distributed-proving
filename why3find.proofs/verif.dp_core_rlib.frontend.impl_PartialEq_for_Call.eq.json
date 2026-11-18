@@ -1,0 +1,12 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_eq_Call": { "prover": "alt-ergo", "time": 0.051 },
+      "vc_eq_Pass": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_eq_Place": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_eq_Vec_Outcome_Global": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_eq_Vec_u64_Global": { "prover": "alt-ergo", "time": 0.011 }
+    }
+  }
+}

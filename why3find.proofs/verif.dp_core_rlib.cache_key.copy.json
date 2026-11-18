@@ -1,0 +1,10 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_clone_Vec_u8_Global": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_clone_u8": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_copy": { "prover": "alt-ergo", "time": 0.012 }
+    }
+  }
+}

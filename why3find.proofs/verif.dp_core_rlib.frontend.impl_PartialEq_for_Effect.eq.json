@@ -2,11 +2,14 @@
   "profile": [],
   "proofs": {
     "Coma": {
-      "vc_elim_CacheLookup": { "prover": "alt-ergo", "time": 0.012 },
-      "vc_elim_LocalStart": { "prover": "alt-ergo", "time": 0.012 },
-      "vc_elim_PrintRequest": { "prover": "alt-ergo", "time": 0.014 },
-      "vc_elim_ReplyToWhy3find": { "prover": "alt-ergo", "time": 0.015 },
-      "vc_eq_Effect": { "prover": "alt-ergo", "time": 0.075 }
+      "vc_elim_Answer": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_CancelJob": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_CancelLocal": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_Print": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_StartLocal": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Submit": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_eq_Effect": { "prover": "z3", "time": 0.016 },
+      "vc_eq_Reply": { "prover": "alt-ergo", "time": 0.011 }
     }
   }
 }

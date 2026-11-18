@@ -1,0 +1,11 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_elim_Bytes": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_Num": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_eq_Atom": { "prover": "alt-ergo", "time": 0.024 },
+      "vc_eq_Vec_u8_Global": { "prover": "alt-ergo", "time": 0.011 }
+    }
+  }
+}

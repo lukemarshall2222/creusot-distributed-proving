@@ -1,0 +1,18 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_clone_Hash": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_clone_LookupFields": { "prover": "alt-ergo", "time": 0.055 },
+      "vc_clone_Option_u64": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_clone_Vec_Vec_u8_Global_Global": {
+        "prover": "alt-ergo",
+        "time": 0.011
+      },
+      "vc_clone_Vec_u8_Global": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_clone_bool": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_clone_u64": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_clone_u8": { "prover": "alt-ergo", "time": 0.011 }
+    }
+  }
+}

@@ -12,10 +12,15 @@ use creusot_std::prelude::{Clone, DeepModel, PartialEq};
 pub enum TlaAction {
     SessionStart,
     GoalAnnounced,
-    PrintFacts,
-    CacheFacts,
     ProverCall,
+    PrintFacts,
+    CacheHit,
     LocalExit,
+    RemoteResult,
+    JobNotRun,
+    CancelCall,
+    ClusterLost,
+    Tick,
     FinalWrite,
     /// The input changed nothing.
     Discard,
@@ -23,13 +28,18 @@ pub enum TlaAction {
 
 impl TlaAction {
     /// Every action, in the order of `verification/tla/actions.toml`.
-    pub const ALL: [TlaAction; 8] = [
+    pub const ALL: [TlaAction; 13] = [
         TlaAction::SessionStart,
         TlaAction::GoalAnnounced,
-        TlaAction::PrintFacts,
-        TlaAction::CacheFacts,
         TlaAction::ProverCall,
+        TlaAction::PrintFacts,
+        TlaAction::CacheHit,
         TlaAction::LocalExit,
+        TlaAction::RemoteResult,
+        TlaAction::JobNotRun,
+        TlaAction::CancelCall,
+        TlaAction::ClusterLost,
+        TlaAction::Tick,
         TlaAction::FinalWrite,
         TlaAction::Discard,
     ];
@@ -39,10 +49,15 @@ impl TlaAction {
         match self {
             TlaAction::SessionStart => "SessionStart",
             TlaAction::GoalAnnounced => "GoalAnnounced",
-            TlaAction::PrintFacts => "PrintFacts",
-            TlaAction::CacheFacts => "CacheFacts",
             TlaAction::ProverCall => "ProverCall",
+            TlaAction::PrintFacts => "PrintFacts",
+            TlaAction::CacheHit => "CacheHit",
             TlaAction::LocalExit => "LocalExit",
+            TlaAction::RemoteResult => "RemoteResult",
+            TlaAction::JobNotRun => "JobNotRun",
+            TlaAction::CancelCall => "CancelCall",
+            TlaAction::ClusterLost => "ClusterLost",
+            TlaAction::Tick => "Tick",
             TlaAction::FinalWrite => "FinalWrite",
             TlaAction::Discard => "Discard",
         }

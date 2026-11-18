@@ -1,0 +1,15 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_eq_Hash": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_eq_LookupFields": { "prover": "alt-ergo", "time": 0.109 },
+      "vc_eq_Option_u64": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_eq_Vec_Vec_u8_Global_Global": {
+        "prover": "alt-ergo",
+        "time": 0.011
+      },
+      "vc_eq_Vec_u8_Global": { "prover": "alt-ergo", "time": 0.012 }
+    }
+  }
+}

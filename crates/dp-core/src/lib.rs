@@ -7,6 +7,8 @@
 //! global mutable state interface (R7.3 criterion 2). The I/O shells compute
 //! facts and carry out the effects that this crate returns.
 
+pub mod cache_key;
+pub mod calibration;
 pub mod frontend;
 pub mod labels;
 pub mod machine;

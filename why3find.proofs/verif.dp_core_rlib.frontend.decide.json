@@ -1,0 +1,26 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_accept_remote": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_accept_result": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_decide": {
+        "tactic": "split_vc",
+        "children": [
+          { "prover": "alt-ergo", "time": 0.011 },
+          { "prover": "alt-ergo", "time": 0.018 },
+          {
+            "tactic": "split_vc",
+            "children": [
+              { "prover": "alt-ergo", "time": 0.018 },
+              { "prover": "alt-ergo", "time": 0.02 }
+            ]
+          }
+        ]
+      },
+      "vc_elim_NonProof": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_Some": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_label'": { "prover": "alt-ergo", "time": 0.011 }
+    }
+  }
+}

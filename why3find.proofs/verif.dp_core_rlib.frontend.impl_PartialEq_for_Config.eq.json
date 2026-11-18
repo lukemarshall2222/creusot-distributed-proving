@@ -1,0 +1,13 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_eq_Config": { "prover": "alt-ergo", "time": 0.028 },
+      "vc_eq_Hash": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_eq_Vec_UnpatchedSolver_Global": {
+        "prover": "alt-ergo",
+        "time": 0.011
+      }
+    }
+  }
+}

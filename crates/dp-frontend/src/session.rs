@@ -1,17 +1,26 @@
-//! One Session of `dp-frontend prove` (design C3, flows (a) and (d)).
+//! One Session of `dp-frontend prove`: the I/O shell of the Front_End
+//! machine (design C3; "How the shells drive dp-core").
 //!
-//! The shell runs why3find in dispatch mode and answers its prover calls. A
-//! prover call of the first sequential pass runs on the local machine
-//! (R1.2); any other call goes to the Cluster when one is configured and
-//! connected, and runs locally otherwise. Every decision about a Result
-//! (acceptance, label, Verdict) is taken by dp-core, from facts that this
-//! shell computes locally: the Task_Hash of its own print, the hash of the
-//! solver binary or the signature and registry entry of the Worker, and the
-//! answer that the pinned Why3 driver reads from the solver's output.
+//! The shell decides nothing. It turns what happens into inputs of the
+//! dp-core Front_End machine, each carrying facts that it computed locally,
+//! and carries out the effects that a step returns:
 //!
-//! Not here yet: the Result_Cache (every cache read is a miss), `dp.toml`,
-//! the `dp` members of `proof.json`, event traces, heartbeats, Calibration
-//! of Workers, Races, and the loop over the dp-core Front_End machine.
+//! ```text
+//! loop:
+//!   input := next thing that happened, with its facts
+//!   step  := frontend::step(state, input)        # pure, verified
+//!   trace(step.action, input)                     # before any effect
+//!   state := step.state
+//!   for e in step.effects: perform(e)
+//! ```
+//!
+//! The facts are: the Task_Hash and task count of its own print of a Goal,
+//! the hash of a solver binary or the signature and registry entry of a
+//! Worker, the answer that the pinned Why3 driver reads from a solver's
+//! output, and the checks of a Result_Cache entry.
+//!
+//! Not here yet: `dp.toml`, the `dp` members of `proof.json` beyond the
+//! labels file, heartbeats, Calibration of Workers.
 
 use std::{
     cell::RefCell,
@@ -24,24 +33,34 @@ use std::{
 };
 
 use dp_core::{
+    cache_key::{self, LookupFields, Validation, ValidationFacts},
+    calibration,
+    frontend::{self, CallId, Effect, Evidence, Input, Pass, Reply, State},
     labels::{Outcome, ProverAnswer},
-    verdict::{self, Acceptance, Context, Label, RemoteFacts, ResultFields, UnpatchedSolver, Verdicts},
+    machine::{LogEntry, Machine},
+    verdict::{self, Label, RemoteFacts, ResultFields, UnpatchedSolver},
 };
 use dp_formats::{
+    cache::{self, Entry, Origin},
     cluster::{Job, Message, Registry, SignedResult},
     dispatch::{DriverAnswer, FromWhy3find, ProverInfo, ProverResult, StrategyStep, ToWhy3find},
     hash::{self, Hash},
     lockfile::{current_platform, Kind, LockFile},
+    proofjson::{DpEntry, Place, ReplayFields},
 };
+use crate::proofs::{self, GoalLabel};
 use dp_shell::{
     net::{Connection, Event},
     solver::{self, Run},
+    store,
+    trace::{Retention, TraceWriter},
     why3find::{Bridge, BridgeError, Poll, Printed},
 };
 
-/// Size limit of one `dispatch` message. A working value for the local pipe,
-/// not a proposal for `<TBD-22>`.
+/// Size limit of one `dispatch` message and of one cache entry. Working
+/// values, not proposals for `<TBD-22>`.
 const MESSAGE_LIMIT: usize = 1 << 30;
+const ENTRY_LIMIT: usize = 1 << 24;
 
 /// The Cluster of a Session: the Coordinator's address and the Worker
 /// registry, already verified against the operator signing key.
@@ -62,11 +81,11 @@ pub struct Config {
     pub jobs: usize,
     pub cluster: Option<Cluster>,
     /// How long, beyond twice its time limit, the Front_End waits for the
-    /// Result of a Job on the Cluster. A placeholder for the per-goal
+    /// Jobs of a prover call on the Cluster. A placeholder for the per-goal
     /// deadline `<TBD-3>`.
     pub job_margin: Duration,
-    /// When set, one JSON line per finished prover call is appended to this
-    /// file: raw measurements for the evaluation (R6.3).
+    /// When set, one JSON line per labelled run is appended to this file:
+    /// raw measurements for the evaluation (R6.3).
     pub record: Option<PathBuf>,
     /// Number of Jobs, each with its own solver seed, that race on one prover
     /// call on the Cluster (R2.2). One means no racing.
@@ -74,6 +93,12 @@ pub struct Config {
     /// When set, every Printed_Goal that a prover call runs on is written to
     /// this directory, named by its Task_Hash.
     pub export: Option<PathBuf>,
+    /// Where the event trace goes and how much of it is kept (R1.5 criteria
+    /// 18 and 19).
+    pub trace: Option<(PathBuf, Retention)>,
+    /// The hash of the Lock_File, for the member `dp-lock` of the proof
+    /// files (R7.7 criterion 5).
+    pub lock_hash: Hash,
 }
 
 #[derive(Debug)]
@@ -130,6 +155,33 @@ fn core_answer(answer: DriverAnswer) -> ProverAnswer {
     }
 }
 
+fn driver_answer(answer: ProverAnswer) -> DriverAnswer {
+    match answer {
+        ProverAnswer::Valid => DriverAnswer::Valid,
+        ProverAnswer::Invalid => DriverAnswer::Invalid,
+        ProverAnswer::Timeout => DriverAnswer::Timeout,
+        ProverAnswer::OutOfMemory => DriverAnswer::OutOfMemory,
+        ProverAnswer::StepLimitExceeded => DriverAnswer::StepLimitExceeded,
+        ProverAnswer::Unknown => DriverAnswer::Unknown,
+        ProverAnswer::Failure => DriverAnswer::Failure,
+        ProverAnswer::HighFailure => DriverAnswer::HighFailure,
+    }
+}
+
+fn json_string(text: &str) -> String {
+    let mut out = String::from("\"");
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 /// What identifies the contents of a file between two looks at it without
 /// reading it again: device, inode, size and the modification and status
 /// change times.
@@ -149,7 +201,9 @@ struct Prover {
     stamp: FileStamp,
     /// Hash of the executable at Session start, equal to its Lock_File entry.
     pinned: Hash,
-    /// Interned prover name and pinned version.
+    /// The pinned version of the Lock_File entry.
+    version: String,
+    /// Interned prover name and pinned version, as dp-core compares them.
     name_id: u64,
     version_id: u64,
     /// why3find's Calibration: local time over reference time, in millionths.
@@ -163,24 +217,16 @@ struct Goal {
     theory: String,
     name: String,
     path: String,
+    /// The tactic steps from the root Goal.
+    steps: Vec<(String, u32)>,
+    /// The non-proof outcomes of the runs on the Goal, for its final label.
+    outcomes: Vec<Outcome>,
+    /// The replay fields of the run that proved the Goal.
+    replay: Option<ReplayFields>,
 }
 
-fn json_string(text: &str) -> String {
-    let mut out = String::from("\"");
-    for c in text.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
-#[derive(Clone)]
-struct Request {
+/// A prover call of why3find that has not been answered.
+struct Call {
     rid: String,
     gid: String,
     prover: String,
@@ -189,51 +235,38 @@ struct Request {
     micros: u64,
 }
 
-struct LocalJob {
-    request: Request,
+struct LocalRun {
     run: Run,
     task_hash: Hash,
     binary_hash: Hash,
     mismatch: bool,
     velocity: u64,
+    local_micros: u64,
 }
 
-struct RemoteJob {
-    request: Request,
-    /// The seed of the Job's Solver_Configuration.
-    seed: Option<u64>,
-    /// When the Front_End stops waiting for a Result of this Job.
-    deadline: Instant,
+/// Where a finished run came from, with what a cache entry needs of it.
+enum Source {
+    Local { binary_hash: Hash, mismatch: bool, velocity: u64, local_micros: u64 },
+    Worker { seed: u64, signed: SignedResult, facts: RemoteFacts, prover_id: u64 },
+    /// A Result_Cache entry; nothing is stored again.
+    Cache { binary_hash: Hash, place: Place, seed: Option<u64>, velocity: Option<u64>, local_micros: Option<u64> },
 }
 
-/// The Jobs that race on one prover call of why3find (R2.2): the first
-/// proof label wins, and without one the call gets the most informative
-/// non-proof outcome once every Job has ended.
-struct Race {
-    /// Jobs that have not ended.
-    open: u64,
-    /// Outcome and reply of each Job that ended without a proof label.
-    lost: Vec<(Outcome, ProverResult)>,
-}
-
-/// What a finished run produced, from the local machine or from a Result.
-struct Evidence {
+/// A finished run, from the local machine, a Worker or the Result_Cache.
+struct Finished {
+    call: CallId,
+    source: Source,
     task_hash: Hash,
-    binary_hash: Hash,
-    mismatch: bool,
     status: Option<u32>,
     timed_out: bool,
     output: Vec<u8>,
-    /// Time in reference microseconds.
+    /// Time of the run in reference microseconds.
     micros: u64,
-    remote: Option<RemoteFacts>,
-    seed: Option<u64>,
 }
 
 /// A finished run whose answer the driver is reading.
 struct Awaiting {
-    request: Request,
-    evidence: Evidence,
+    finished: Finished,
     asked: Instant,
 }
 
@@ -242,36 +275,45 @@ struct Session {
     lock: LockFile,
     platform: String,
     tmp: PathBuf,
-    jobs: usize,
-    job_margin: Duration,
+    dir: PathBuf,
+    start: Instant,
     cluster: Option<(Connection, Registry)>,
     session_id: String,
-    next_job: u64,
+    /// The state of the Front_End machine; `None` only inside a step.
+    state: Option<State>,
+    /// Inputs waiting for the machine, oldest first.
+    inputs: VecDeque<(Input, Option<Finished>)>,
+    trace: TraceWriter,
     provers: Option<BTreeMap<String, Prover>>,
     names: BTreeMap<String, u64>,
+    goals: BTreeMap<String, Goal>,
+    call_ids: BTreeMap<String, CallId>,
+    calls: BTreeMap<CallId, Call>,
     prints: BTreeMap<(String, String), (Printed, Hash)>,
-    pending: VecDeque<Request>,
-    local: Vec<LocalJob>,
-    remote: BTreeMap<String, RemoteJob>,
-    /// Races by the identifier of the prover call they answer.
-    races: BTreeMap<String, Race>,
-    portfolio_seeds: u64,
+    local: BTreeMap<CallId, LocalRun>,
+    /// Open Jobs on the Cluster, by Job identifier.
+    jobs: BTreeMap<String, (CallId, u64)>,
     /// Finished runs by the identifier of their open `read-answer` request.
     awaiting: BTreeMap<String, Awaiting>,
-    verdicts: Verdicts,
     /// (goal, prover) pairs whose Result was labelled proved-standalone;
     /// shared with the bridge's responder for cache writes.
     standalone: Rc<RefCell<BTreeSet<(String, String)>>>,
-    goals: BTreeMap<String, Goal>,
+    use_cache: bool,
     record: Option<fs::File>,
     export: Option<PathBuf>,
     /// Wall-clock time by activity, for the summary line.
     spent: BTreeMap<&'static str, Duration>,
     counts: BTreeMap<String, u64>,
+    cache_hits: u64,
     remote_proofs: u64,
+    last_tick: Instant,
 }
 
 impl Session {
+    fn now(&self) -> u64 {
+        self.start.elapsed().as_micros() as u64
+    }
+
     fn intern(&mut self, text: &str) -> u64 {
         let next = self.names.len() as u64;
         *self.names.entry(text.to_string()).or_insert(next)
@@ -332,6 +374,7 @@ impl Session {
                 pinned: actual,
                 name_id: self.intern(&format!("prover:{name}")),
                 version_id: self.intern(&format!("version:{version}")),
+                version,
                 velocity: None,
                 info,
             };
@@ -359,13 +402,15 @@ impl Session {
         Ok(v)
     }
 
-    /// The Unpatched_Solver entries of the Lock_File, as dp-core reads them.
-    fn unpatched(&mut self) -> Vec<UnpatchedSolver> {
-        let pins: Vec<_> = self
-            .lock
-            .pins(Kind::UnpatchedSolver, &self.platform)
-            .map(|(tool, hash)| (tool.prover.clone().unwrap_or_default(), tool.version.clone(), hash))
-            .collect();
+    /// The solver entries of the Lock_File of the given kinds, as dp-core
+    /// reads them.
+    fn pins(&mut self, kinds: &[Kind]) -> Vec<UnpatchedSolver> {
+        let mut pins = Vec::new();
+        for kind in kinds {
+            for (tool, hash) in self.lock.pins(*kind, &self.platform) {
+                pins.push((tool.prover.clone().unwrap_or_default(), tool.version.clone(), hash));
+            }
+        }
         pins.into_iter()
             .map(|(prover, version, hash)| UnpatchedSolver {
                 prover: self.intern(&format!("prover:{prover}")),
@@ -373,10 +418,6 @@ impl Session {
                 binary_hash: core_hash(hash),
             })
             .collect()
-    }
-
-    fn answer(&mut self, rid: &str, result: ProverResult) -> Result<(), SessionError> {
-        Ok(self.bridge.send(&ToWhy3find::Answer { rid: rid.to_string(), result })?)
     }
 
     /// `print_local` of the Goal for the prover's Driver, with its Task_Hash.
@@ -395,33 +436,252 @@ impl Session {
         Ok(self.prints[&key].clone())
     }
 
-    fn start(&mut self, request: Request) -> Result<(), SessionError> {
-        self.load_provers()?;
-        self.prover(&request.prover)?;
-        let (printed, task_hash) = self.print_local(&request.gid, &request.prover)?;
-        if printed.tasks != 1 {
-            // print_local is undefined (R1.3 criterion 10): no Job, no Result.
-            eprintln!(
-                "dp-frontend: goal {} with {}: the pipeline yields {} tasks; not run",
-                request.gid, request.prover, printed.tasks
-            );
-            return self.answer(&request.rid.clone(), ProverResult::Failed);
+    /// The facts of a run for dp-core: the fields of its Result and what the
+    /// Session knows locally about its call.
+    fn evidence(
+        &mut self,
+        call: CallId,
+        answer: ProverAnswer,
+        task_hash: Hash,
+        result_prover: &str,
+        binary_hash: Hash,
+        mismatch: bool,
+    ) -> Result<Evidence, SessionError> {
+        let (gid, prover) = {
+            let c = &self.calls[&call];
+            (c.gid.clone(), c.prover.clone())
+        };
+        let (printed, local_task_hash) = self.print_local(&gid, &prover)?;
+        // The prover and version of the Result's Solver_Configuration: the
+        // pinned ones of the prover that the Result names, if the project
+        // has it.
+        let ids = self.provers.as_ref().and_then(|p| p.get(result_prover)).map(|p| (p.name_id, p.version_id));
+        let (name_id, version_id) = match ids {
+            Some(ids) => ids,
+            None => (self.intern(&format!("unknown-prover:{result_prover}")), u64::MAX),
+        };
+        let empty = hash::imports_hash(&[]);
+        Ok(Evidence {
+            fields: ResultFields {
+                answer,
+                task_hash: core_hash(task_hash),
+                partition: false,
+                imports: 0,
+                imports_hash: core_hash(empty),
+                prover: name_id,
+                version: version_id,
+                binary_hash: core_hash(binary_hash),
+            },
+            local_task_hash: core_hash(local_task_hash),
+            task_count: u64::from(printed.tasks),
+            binary_mismatch: mismatch,
+        })
+    }
+
+    // ---- The Result_Cache (R7.5) -------------------------------------------
+
+    /// The lookup fields of the run description of a call (R7.5 criterion 1).
+    fn lookup_fields(&mut self, call: CallId) -> Result<LookupFields, SessionError> {
+        let (gid, prover, micros) = {
+            let c = &self.calls[&call];
+            (c.gid.clone(), c.prover.clone(), c.micros)
+        };
+        let (_, task_hash) = self.print_local(&gid, &prover)?;
+        let goal = &self.goals[&gid];
+        let goal_path = dp_formats::sexp::print(&dp_formats::sexp::Sexp::list([
+            dp_formats::sexp::Sexp::atom(&goal.file),
+            dp_formats::sexp::Sexp::atom(&goal.theory),
+            dp_formats::sexp::Sexp::atom(&goal.name),
+            dp_formats::sexp::Sexp::atom(&goal.path),
+        ]));
+        let p = self.prover(&prover)?;
+        let name = p.info.prover.split_once('@').map_or(p.info.prover.as_str(), |(n, _)| n);
+        Ok(LookupFields {
+            goal_path,
+            task_hash: core_hash(task_hash),
+            driver: p.info.digest.clone().into_bytes(),
+            pipeline: Vec::new(),
+            prover: name.as_bytes().to_vec(),
+            version: p.version.clone().into_bytes(),
+            seed: None,
+            micros,
+            import_mark: false,
+            // The option list is the command line of the prover configuration.
+            options: vec![p.info.command.clone().into_bytes()],
+        })
+    }
+
+    fn cache_file(&self, atoms: &[cache::Atom]) -> PathBuf {
+        self.dir.join(".dp-cache").join(cache::cache_key(atoms).to_hex())
+    }
+
+    /// Looks the run description of a call up in the Result_Cache. A hit is
+    /// an entry whose stored lookup fields are those of the lookup and whose
+    /// validation fields pass; it is returned as a cache-hit input, which
+    /// dp-core still has to accept and label. Anything else is a miss.
+    fn cache_lookup(&mut self, call: CallId) -> Result<Option<(Input, Finished)>, SessionError> {
+        if !self.use_cache {
+            return Ok(None);
         }
-        if request.step != StrategyStep::Fast && self.cluster.is_some() {
-            return self.submit(request, printed);
+        let wanted = cache_key::encode_key(&self.lookup_fields(call)?);
+        let path = self.cache_file(&formats_atoms(&wanted));
+        let Ok(bytes) = fs::read(&path) else { return Ok(None) };
+        let miss = |reason: &str| {
+            eprintln!("dp-frontend: Result_Cache entry {} is a miss: {reason}", path.display());
+        };
+        let entry = match Entry::decode(&bytes, ENTRY_LIMIT) {
+            Ok(entry) => entry,
+            Err(e) => {
+                miss(&e.to_string());
+                return Ok(None);
+            }
+        };
+        // The stored lookup fields themselves, not only the key (criterion 5).
+        if !cache_key::lookup_ok(&core_atoms(&entry.lookup), &wanted) {
+            miss("its lookup fields are not those of the lookup");
+            return Ok(None);
         }
-        let velocity = self.velocity(&request.prover)?;
-        let prover = self.prover(&request.prover)?;
+        let (gid, prover, micros) = {
+            let c = &self.calls[&call];
+            (c.gid.clone(), c.prover.clone(), c.micros)
+        };
+        let (name_id, version_id) = {
+            let p = self.prover(&prover)?;
+            (p.name_id, p.version_id)
+        };
+        let empty = hash::imports_hash(&[]);
+        let facts = ValidationFacts {
+            prover: name_id,
+            version: version_id,
+            binary_hash: core_hash(entry.binary_hash),
+            velocity: entry.velocity,
+            local_micros: entry.local_micros,
+            micros,
+            imports: 0,
+            imports_hash: core_hash(entry.imports_hash),
+            recomputed_imports_hash: core_hash(empty),
+            local: entry.origin == Origin::Local,
+        };
+        let pins = self.pins(&[Kind::UnpatchedSolver, Kind::SharingSolver]);
+        match cache_key::validate_entry(&facts, &pins) {
+            Validation::Valid => {}
+            Validation::BinaryMismatch => {
+                miss("binary mismatch");
+                return Ok(None);
+            }
+            Validation::LimitMismatch => {
+                miss("local time limit");
+                return Ok(None);
+            }
+            Validation::ImportsMismatch => {
+                miss("import-set hash");
+                return Ok(None);
+            }
+        }
+        let (_, local_task_hash) = self.print_local(&gid, &prover)?;
+        // A stored Worker Result is checked again with the registry of this
+        // Session (criterion 4).
+        let (task_hash, result_prover, remote) = match &entry.origin {
+            Origin::Local => (local_task_hash, prover.clone(), None),
+            Origin::Worker(signed) => {
+                let key = self.cluster.as_ref().and_then(|(_, registry)| registry.key(&signed.fields.worker));
+                let facts = RemoteFacts {
+                    registered: key.is_some(),
+                    revoked: false,
+                    signature_valid: key.is_some_and(|k| signed.verifies(&k)),
+                    submitted: signed.fields.prover == prover
+                        && signed.fields.binary_hash == entry.binary_hash,
+                };
+                (signed.fields.task_hash, signed.fields.prover.clone(), Some(facts))
+            }
+        };
+        let evidence =
+            self.evidence(call, core_answer(entry.answer), task_hash, &result_prover, entry.binary_hash, false)?;
+        let finished = Finished {
+            call,
+            // Where the stored run took place, for the replay fields.
+            source: match &entry.origin {
+                Origin::Local => Source::Cache {
+                    binary_hash: entry.binary_hash,
+                    place: Place::Local,
+                    seed: None,
+                    velocity: Some(entry.velocity),
+                    local_micros: Some(entry.local_micros),
+                },
+                Origin::Worker(signed) => Source::Cache {
+                    binary_hash: entry.binary_hash,
+                    place: Place::Worker(signed.fields.worker.clone()),
+                    seed: signed.fields.seed,
+                    velocity: None,
+                    local_micros: None,
+                },
+            },
+            task_hash,
+            status: None,
+            timed_out: false,
+            output: Vec::new(),
+            micros: entry.micros,
+        };
+        Ok(Some((Input::CacheHit { now: self.now(), rid: call, evidence, remote }, finished)))
+    }
+
+    /// Stores the Result of a labelled run (R7.5 criterion 3).
+    fn cache_store(&mut self, finished: &Finished, answer: ProverAnswer) -> Result<(), SessionError> {
+        // A failed run says nothing that a later Session could reuse.
+        if !self.use_cache || matches!(answer, ProverAnswer::Failure | ProverAnswer::HighFailure) {
+            return Ok(());
+        }
+        let (binary_hash, velocity, local_micros, origin) = match &finished.source {
+            Source::Cache { .. } => return Ok(()),
+            Source::Local { binary_hash, mismatch, velocity, local_micros } => {
+                if *mismatch {
+                    return Ok(());
+                }
+                (*binary_hash, *velocity, *local_micros, Origin::Local)
+            }
+            // Workers are not calibrated yet: their local limit is the
+            // reference limit.
+            Source::Worker { signed, .. } => {
+                let micros = self.calls.get(&finished.call).map_or(0, |c| c.micros);
+                (signed.fields.binary_hash, 1_000_000, micros, Origin::Worker(signed.clone()))
+            }
+        };
+        if !self.calls.contains_key(&finished.call) {
+            return Ok(());
+        }
+        let lookup = formats_atoms(&cache_key::encode_key(&self.lookup_fields(finished.call)?));
+        let entry = Entry {
+            lookup,
+            binary_hash,
+            velocity,
+            local_micros,
+            imports_hash: hash::imports_hash(&[]),
+            answer: driver_answer(answer),
+            micros: finished.micros,
+            origin,
+        };
+        store::write_atomic(&self.cache_file(&entry.lookup), &entry.encode())?;
+        Ok(())
+    }
+
+    // ---- Effects ------------------------------------------------------------
+
+    fn start_local(&mut self, call: CallId) -> Result<(), SessionError> {
+        let (gid, prover_name, micros) = {
+            let c = &self.calls[&call];
+            (c.gid.clone(), c.prover.clone(), c.micros)
+        };
+        let (printed, task_hash) = self.print_local(&gid, &prover_name)?;
+        let velocity = self.velocity(&prover_name)?;
+        let prover = self.prover(&prover_name)?;
         // R7.7 criterion 7: check the solver binary just before starting it.
         // The binary is read and hashed again only if the file's stamp is
         // not the one seen when it was hashed at Session start; with an
         // unchanged stamp its contents are the pinned ones (TB-17).
-        let t = Instant::now();
         let binary_hash =
             if file_stamp(&prover.exe)? == prover.stamp { prover.pinned } else { file_hash(&prover.exe)? };
-        let hashing = t.elapsed();
         let mismatch = binary_hash != prover.pinned;
-        let local_micros = (u128::from(request.micros) * u128::from(velocity) / 1_000_000) as u64;
+        let local_micros = calibration::scale(micros, velocity);
         let run = solver::start(
             &prover.exe,
             &prover.info.command,
@@ -429,253 +689,238 @@ impl Session {
             &prover.info.extension,
             local_micros.max(1),
             &self.tmp,
-            &format!("job{}", request.rid),
+            &format!("job{call}"),
         )?;
-        *self.spent.entry("binary-hash").or_default() += hashing;
         if let Some(dir) = &self.export {
-            let file = dir.join(format!("{}{}", task_hash.to_hex(), self.prover(&request.prover)?.info.extension));
+            let file = dir.join(format!("{}{}", task_hash.to_hex(), prover.info.extension));
             if !file.exists() {
                 fs::write(file, &printed.bytes)?;
             }
         }
-        self.local.push(LocalJob { request, run, task_hash, binary_hash, mismatch, velocity });
+        self.local.insert(call, LocalRun { run, task_hash, binary_hash, mismatch, velocity, local_micros });
         Ok(())
     }
 
-    /// Submits the Jobs of one prover call to the Cluster: one Job with the
-    /// configured seed and, with a Portfolio, one more for each further seed.
-    /// On a lost connection the Session falls back to local proving (R1.6
-    /// criteria 4 and 5).
-    fn submit(&mut self, request: Request, printed: Printed) -> Result<(), SessionError> {
-        let (driver, extension) = {
-            let prover = self.prover(&request.prover)?;
-            (prover.info.digest.clone().into_bytes(), prover.info.extension.clone())
+    fn submit(&mut self, call: CallId, seed: u64) -> Result<(), SessionError> {
+        let (gid, prover_name, micros) = {
+            let c = &self.calls[&call];
+            (c.gid.clone(), c.prover.clone(), c.micros)
         };
-        let limit = Duration::from_micros(request.micros);
-        let seeds: Vec<Option<u64>> =
-            std::iter::once(None).chain((1..self.portfolio_seeds).map(Some)).collect();
-        self.races.insert(request.rid.clone(), Race { open: 0, lost: Vec::new() });
-        for seed in seeds {
-            self.next_job += 1;
-            let job = Job {
-                job_id: format!("{}/{}", self.session_id, self.next_job),
-                prover: request.prover.clone(),
-                driver: driver.clone(),
-                extension: extension.clone(),
-                micros: request.micros,
-                seed,
-                goal: printed.bytes.clone(),
-            };
-            let job_id = job.job_id.clone();
-            let (connection, _) = self.cluster.as_mut().expect("checked by the caller");
-            if connection.send(&Message::Submit(job)).is_err() {
-                self.fall_back("the connection to the Coordinator failed");
-                // If no Job of this call was submitted yet, the fallback did
-                // not see it.
-                if self.races.remove(&request.rid).is_some() {
-                    self.pending.push_front(Request { step: StrategyStep::Fast, ..request });
-                }
-                return Ok(());
-            }
-            // Twice the limit and a margin for queueing: after that the Job
-            // is treated as lost.
-            let deadline = Instant::now() + limit * 2 + self.job_margin;
-            self.remote.insert(job_id, RemoteJob { request: request.clone(), seed, deadline });
-            self.races.get_mut(&request.rid).expect("inserted").open += 1;
+        let (printed, _) = self.print_local(&gid, &prover_name)?;
+        let prover = self.prover(&prover_name)?;
+        let job = Job {
+            job_id: format!("{}/{call}/{seed}", self.session_id),
+            prover: prover_name.clone(),
+            driver: prover.info.digest.clone().into_bytes(),
+            extension: prover.info.extension.clone(),
+            micros,
+            // Seed 0 is the seed of the Worker's prover configuration.
+            seed: (seed != 0).then_some(seed),
+            goal: printed.bytes,
+        };
+        let job_id = job.job_id.clone();
+        let sent = match self.cluster.as_mut() {
+            Some((connection, _)) => connection.send(&Message::Submit(job)).is_ok(),
+            None => false,
+        };
+        if sent {
+            self.jobs.insert(job_id, (call, seed));
+        } else {
+            self.cluster_lost("the connection to the Coordinator failed");
         }
         Ok(())
     }
 
-    /// Stops using the Cluster; the prover calls that it was answering run
-    /// on the local machine.
-    fn fall_back(&mut self, reason: &str) {
+    fn cluster_lost(&mut self, reason: &str) {
         if self.cluster.take().is_some() {
             eprintln!("dp-frontend: {reason}; falling back to local proving");
+            self.jobs.clear();
+            let now = self.now();
+            self.inputs.push_back((Input::ClusterLost { now }, None));
         }
-        let mut requests: BTreeMap<String, Request> = BTreeMap::new();
-        for (_, job) in std::mem::take(&mut self.remote) {
-            requests.entry(job.request.rid.clone()).or_insert(job.request);
-        }
-        for (rid, request) in requests {
-            if self.races.remove(&rid).is_some() {
-                self.pending.push_back(Request { step: StrategyStep::Fast, ..request });
+    }
+
+    fn perform(&mut self, effect: Effect, finished: &Option<Finished>) -> Result<(), SessionError> {
+        match effect {
+            Effect::Print { rid } => {
+                self.load_provers()?;
+                let (gid, prover) = {
+                    let c = &self.calls[&rid];
+                    (c.gid.clone(), c.prover.clone())
+                };
+                self.prover(&prover)?;
+                let (printed, _) = self.print_local(&gid, &prover)?;
+                if printed.tasks == 1 {
+                    if let Some((input, finished)) = self.cache_lookup(rid)? {
+                        self.inputs.push_front((input, Some(finished)));
+                        return Ok(());
+                    }
+                } else {
+                    eprintln!(
+                        "dp-frontend: goal {gid} with {prover}: the pipeline yields {} tasks; not run",
+                        printed.tasks
+                    );
+                }
+                let now = self.now();
+                self.inputs.push_front((
+                    Input::PrintFacts { now, rid, task_count: u64::from(printed.tasks) },
+                    None,
+                ));
+                Ok(())
+            }
+            Effect::StartLocal { rid } => self.start_local(rid),
+            Effect::Submit { rid, seed } => self.submit(rid, seed),
+            Effect::CancelLocal { rid } => {
+                if let Some(local) = self.local.remove(&rid) {
+                    local.run.cancel();
+                }
+                Ok(())
+            }
+            Effect::CancelJob { rid, seed } => {
+                let job_id = format!("{}/{rid}/{seed}", self.session_id);
+                if self.jobs.remove(&job_id).is_some() {
+                    if let Some((connection, _)) = self.cluster.as_mut() {
+                        let _ = connection.send(&Message::Cancel { job_id });
+                    }
+                }
+                Ok(())
+            }
+            Effect::Answer { rid, reply } => {
+                let Some(call) = self.calls.remove(&rid) else { return Ok(()) };
+                self.call_ids.remove(&call.rid);
+                // The time of the run that settled the call, if this step
+                // concluded one.
+                let spent = finished.as_ref().filter(|f| f.call == rid).map_or(0, |f| f.micros);
+                let result = match reply {
+                    Reply::Valid => ProverResult::Valid { micros: spent },
+                    Reply::Unknown => ProverResult::Unknown { micros: spent },
+                    Reply::Timeout => ProverResult::Timeout { micros: call.micros },
+                    Reply::Failed => ProverResult::Failed,
+                    Reply::NoResult => ProverResult::NoResult,
+                };
+                Ok(self.bridge.send(&ToWhy3find::Answer { rid: call.rid, result })?)
             }
         }
     }
 
-    /// Ends the Jobs of a race that are still open.
-    fn cancel_race(&mut self, rid: &str) {
-        let open: Vec<String> =
-            self.remote.iter().filter(|(_, j)| j.request.rid == rid).map(|(id, _)| id.clone()).collect();
-        for job_id in open {
-            self.remote.remove(&job_id);
-            if let Some((connection, _)) = self.cluster.as_mut() {
-                let _ = connection.send(&Message::Cancel { job_id });
-            }
+    /// One step of the machine: trace, new state, then the effects.
+    fn step(&mut self, input: Input, finished: Option<Finished>) -> Result<(), SessionError> {
+        let state = self.state.take().expect("the state is present between steps");
+        let out = frontend::step(state, input);
+        let now = self.now();
+        if self.trace.enabled() {
+            self.trace.record(out.action.name(), now, &format!("{input:?}"))?;
         }
-    }
-
-    /// Gives why3find the answer of a prover call, directly for a local run
-    /// and through its race for a Job on the Cluster.
-    fn deliver(
-        &mut self,
-        rid: &str,
-        raced: bool,
-        outcome: Option<Outcome>,
-        reply: ProverResult,
-    ) -> Result<(), SessionError> {
-        if !raced {
-            return self.answer(rid, reply);
+        self.state = Some(out.state);
+        for entry in &out.log {
+            self.logged(*entry, &input, &finished)?;
         }
-        // A Job of a race that has already ended changes nothing.
-        let Some(race) = self.races.get_mut(rid) else { return Ok(()) };
-        race.open = race.open.saturating_sub(1);
-        match outcome {
-            // A proof label: the race is won (R2.2 criterion 8).
-            None => {
-                self.races.remove(rid);
-                self.cancel_race(rid);
-                self.answer(rid, reply)
-            }
-            Some(outcome) => {
-                race.lost.push((outcome, reply));
-                self.end_lost_race(rid, None)
-            }
+        // An entry that dp-core did not accept is a miss: the call goes on
+        // as if the Result_Cache had nothing (R7.5 criterion 6).
+        if let (Input::CacheHit { rid, .. }, dp_core::trace::TlaAction::Discard) = (input, out.action) {
+            eprintln!("dp-frontend: a Result_Cache entry was not accepted in this Session; it is a miss");
+            self.inputs.push_front((Input::PrintFacts { now, rid, task_count: 1 }, None));
         }
-    }
-
-    /// Ends a race whose Jobs have all ended without a proof label: the call
-    /// gets the most informative non-proof outcome (R2.2 criterion 14, R7.2
-    /// criterion 5). If the Cluster ran none of its Jobs, the call runs on
-    /// the local machine instead; `unrun` is then the call to run.
-    fn end_lost_race(&mut self, rid: &str, unrun: Option<Request>) -> Result<(), SessionError> {
-        let Some(race) = self.races.get(rid) else { return Ok(()) };
-        if race.open > 0 {
-            return Ok(());
+        for effect in out.effects {
+            self.perform(effect, &finished)?;
         }
-        let race = self.races.remove(rid).expect("present");
-        if race.lost.is_empty() {
-            if let Some(request) = unrun {
-                eprintln!("dp-frontend: the Cluster ran no Job for a call of {}; running it locally", request.prover);
-                self.pending.push_back(Request { step: StrategyStep::Fast, ..request });
-                return Ok(());
-            }
-        }
-        let outcomes: Vec<Outcome> = race.lost.iter().map(|(o, _)| *o).collect();
-        let best = dp_core::labels::most_informative(&outcomes);
-        let reply = race
-            .lost
-            .into_iter()
-            .find(|(o, _)| *o == best)
-            .map_or(ProverResult::Failed, |(_, reply)| reply);
-        self.answer(rid, reply)
-    }
-
-    /// Takes what a finished run produced. The answer is read by the pinned
-    /// Why3 driver, never by the Worker; the driver is asked without waiting,
-    /// so other runs keep being started and reaped meanwhile.
-    fn conclude(&mut self, request: Request, evidence: Evidence) -> Result<(), SessionError> {
-        if evidence.timed_out {
-            return self.label(request, evidence, ProverAnswer::Timeout);
-        }
-        // A run that died from a signal has no exit status; the driver still
-        // reads its output, as a failed run.
-        let status = evidence.status.unwrap_or(1);
-        let qid = self.bridge.ask_answer(&request.prover, status, &evidence.output)?;
-        self.awaiting.insert(qid, Awaiting { request, evidence, asked: Instant::now() });
         Ok(())
     }
 
-    /// The driver's answer to an open `read-answer` request has arrived.
-    fn answered(&mut self, qid: &str, answer: Option<DriverAnswer>) -> Result<(), SessionError> {
-        let Some(Awaiting { request, evidence, asked }) = self.awaiting.remove(qid) else {
-            return Err(SessionError::Bridge(BridgeError::Protocol(format!("unexpected reply {qid}"))));
-        };
-        *self.spent.entry("read-answer").or_default() += asked.elapsed();
-        let mut answer = answer.map_or(ProverAnswer::HighFailure, core_answer);
-        // Why3 never reads a proof from a run that a signal ended.
-        if evidence.status.is_none() && answer == ProverAnswer::Valid {
-            answer = ProverAnswer::HighFailure;
-        }
-        self.label(request, evidence, answer)
-    }
-
-    /// Labels a finished run and answers why3find.
-    fn label(&mut self, request: Request, evidence: Evidence, answer: ProverAnswer) -> Result<(), SessionError> {
-        let Request { rid, gid, prover, micros, step } = request;
-        let (name_id, version_id) = {
-            let p = self.prover(&prover)?;
-            (p.name_id, p.version_id)
-        };
-        let (printed, local_task_hash) = self.print_local(&gid, &prover)?;
-        let empty = hash::imports_hash(&[]);
-        let fields = ResultFields {
-            answer,
-            task_hash: core_hash(evidence.task_hash),
-            partition: false,
-            imports: 0,
-            imports_hash: core_hash(empty),
-            prover: name_id,
-            version: version_id,
-            binary_hash: core_hash(evidence.binary_hash),
-        };
-        let ctx = Context {
-            certify_all: false,
-            import_mark: false,
-            local_task_hash: core_hash(local_task_hash),
-            task_count: u64::from(printed.tasks),
-            empty_imports_hash: core_hash(empty),
-            local_binary_mismatch: evidence.mismatch,
-            unpatched: self.unpatched(),
-        };
-        let acceptance = match evidence.remote {
-            Some(facts) => verdict::accept_remote(fields, &ctx, facts),
-            None => verdict::accept_result(fields, &ctx),
-        };
-        let raced = evidence.remote.is_some();
-        if acceptance != Acceptance::Accepted {
-            eprintln!("dp-frontend: Result of {prover} for goal {gid} discarded: {acceptance:?}");
-            *self.counts.entry("discarded".into()).or_insert(0) += 1;
-            return self.deliver(&rid, raced, Some(Outcome::Failed), ProverResult::Failed);
-        }
-        let label = verdict::label(fields, &ctx);
-        let spent = evidence.micros;
-        let (name, reply) = match label {
-            Label::ProvedStandalone => {
-                let goal = self.goals[&gid].id;
-                let verdicts = std::mem::replace(&mut self.verdicts, Verdicts { entries: Vec::new() });
-                let before = verdicts.entries.len();
-                self.verdicts = verdict::record_verdict(verdicts, goal, label);
-                self.standalone.borrow_mut().insert((gid.clone(), prover.clone()));
-                // Count the Verdict, not every Result that could have given it.
-                if evidence.remote.is_some() && self.verdicts.entries.len() > before {
-                    self.remote_proofs += 1;
+    /// Acts on what the machine decided about a run: counts, the record
+    /// file, the legacy-cache set and the Result_Cache.
+    fn logged(&mut self, entry: LogEntry, input: &Input, finished: &Option<Finished>) -> Result<(), SessionError> {
+        let (call, name) = match entry {
+            LogEntry::Discarded => return Ok(()),
+            LogEntry::Proved { call } => (call, "proved-standalone".to_string()),
+            LogEntry::Lost { call, outcome } => (call, outcome_name(outcome).to_string()),
+            LogEntry::Rejected { call, reason } => {
+                if let Some(c) = self.calls.get(&call) {
+                    eprintln!("dp-frontend: Result of {} for goal {} discarded: {reason:?}", c.prover, c.gid);
                 }
-                ("proved-standalone", ProverResult::Valid { micros: spent })
+                (call, "discarded".to_string())
             }
-            // Not reachable in this build; never answered as a proof here.
-            Label::Certified => ("unchecked", ProverResult::Unknown { micros: spent }),
-            Label::NonProof(Outcome::Timeout) => ("timeout", ProverResult::Timeout { micros }),
-            Label::NonProof(Outcome::Failed) => {
-                eprintln!(
-                    "dp-frontend: {prover} gave no answer on goal {gid}: {:?}",
-                    String::from_utf8_lossy(&evidence.output).chars().take(300).collect::<String>()
-                );
-                ("failed", ProverResult::Failed)
-            }
-            Label::NonProof(Outcome::Unchecked) => {
-                eprintln!(
-                    "dp-frontend: {prover} reports a proof of goal {gid}, labelled unchecked \
-                     (its binary is not an Unpatched_Solver of the Lock_File)"
-                );
-                ("unchecked", ProverResult::Unknown { micros: spent })
-            }
-            Label::NonProof(Outcome::StandaloneInvalid | Outcome::DependentInvalid) => {
-                ("invalid", ProverResult::Unknown { micros: spent })
-            }
-            Label::NonProof(_) => ("unknown", ProverResult::Unknown { micros: spent }),
         };
-        *self.counts.entry(name.into()).or_insert(0) += 1;
+        *self.counts.entry(name.clone()).or_insert(0) += 1;
+        let Some(finished) = finished else { return Ok(()) };
+        let Some(c) = self.calls.get(&call) else { return Ok(()) };
+        let (gid, prover, step, micros) = (c.gid.clone(), c.prover.clone(), c.step, c.micros);
+        let answer = match input {
+            Input::LocalRun { evidence, .. }
+            | Input::RemoteResult { evidence, .. }
+            | Input::CacheHit { evidence, .. } => evidence.fields.answer,
+            _ => return Ok(()),
+        };
+        let (place, seed) = match &finished.source {
+            Source::Local { .. } => ("local", None),
+            Source::Worker { seed, .. } => ("worker", Some(*seed)),
+            Source::Cache { .. } => ("cache", None),
+        };
+        match entry {
+            LogEntry::Proved { .. } => {
+                self.standalone.borrow_mut().insert((gid.clone(), prover.clone()));
+                match finished.source {
+                    Source::Worker { .. } => self.remote_proofs += 1,
+                    Source::Cache { .. } => self.cache_hits += 1,
+                    Source::Local { .. } => {}
+                }
+                let (binary_hash, place, velocity, local_micros) = match &finished.source {
+                    Source::Local { binary_hash, velocity, local_micros, .. } => {
+                        (*binary_hash, Place::Local, Some(*velocity), Some(*local_micros))
+                    }
+                    Source::Worker { signed, .. } => {
+                        (signed.fields.binary_hash, Place::Worker(signed.fields.worker.clone()), None, None)
+                    }
+                    Source::Cache { binary_hash, place, velocity, local_micros, .. } => {
+                        (*binary_hash, place.clone(), *velocity, *local_micros)
+                    }
+                };
+                let seed = match &finished.source {
+                    Source::Cache { seed, .. } => *seed,
+                    _ => seed,
+                };
+                let p = self.prover(&prover)?;
+                let replay = ReplayFields {
+                    task_hash: finished.task_hash,
+                    driver: p.info.digest.clone().into_bytes(),
+                    prover: p.info.prover.split_once('@').map_or(p.info.prover.as_str(), |(n, _)| n).to_string(),
+                    version: p.version.clone(),
+                    binary_hash,
+                    place,
+                    seed: seed.filter(|s| *s != 0),
+                    velocity,
+                    local_micros,
+                    reference_micros: micros,
+                };
+                if let Some(goal) = self.goals.get_mut(&gid) {
+                    goal.replay.get_or_insert(replay);
+                }
+            }
+            LogEntry::Lost { outcome, .. } => {
+                if matches!(finished.source, Source::Cache { .. }) {
+                    self.cache_hits += 1;
+                }
+                if let Some(goal) = self.goals.get_mut(&gid) {
+                    goal.outcomes.push(outcome);
+                }
+                if outcome == Outcome::Unchecked {
+                    eprintln!(
+                        "dp-frontend: {prover} reports a proof of goal {gid}, labelled unchecked \
+                         (its binary is not an Unpatched_Solver of the Lock_File)"
+                    );
+                }
+                if outcome == Outcome::Failed {
+                    eprintln!(
+                        "dp-frontend: {prover} gave no answer on goal {gid}: {:?}",
+                        String::from_utf8_lossy(&finished.output).chars().take(300).collect::<String>()
+                    );
+                }
+            }
+            _ => {}
+        }
+        if !matches!(entry, LogEntry::Rejected { .. }) {
+            self.cache_store(finished, answer)?;
+        }
         if let Some(record) = &mut self.record {
             use std::io::Write;
             let goal = &self.goals[&gid];
@@ -687,27 +932,87 @@ impl Session {
                 json_string(&goal.name),
                 json_string(&goal.path),
                 json_string(&prover),
-                evidence.seed.map_or("null".to_string(), |s| s.to_string()),
+                seed.map_or("null".to_string(), |s| s.to_string()),
                 json_string(step.name()),
                 micros,
-                spent,
-                json_string(if evidence.remote.is_some() { "worker" } else { "local" }),
-                json_string(name),
-                json_string(&local_task_hash.to_hex()),
+                finished.micros,
+                json_string(place),
+                json_string(&name),
+                json_string(&finished.task_hash.to_hex()),
             )?;
         }
-        let outcome = match label {
-            Label::ProvedStandalone => None,
-            Label::NonProof(outcome) => Some(outcome),
-            Label::Certified => Some(Outcome::Unchecked),
-        };
-        self.deliver(&rid, raced, outcome, reply)
+        Ok(())
     }
 
-    /// Handles a Result that the Coordinator forwarded. Everything in it is
-    /// untrusted until dp-core accepts it.
+    // ---- Events -------------------------------------------------------------
+
+    /// A run ended: the answer is read by the pinned Why3 driver, never by
+    /// the Worker. The driver is asked without waiting, so other runs keep
+    /// being started and reaped meanwhile.
+    fn finished(&mut self, finished: Finished) -> Result<(), SessionError> {
+        if finished.timed_out {
+            return self.answered(finished, ProverAnswer::Timeout);
+        }
+        let Some(call) = self.calls.get(&finished.call) else { return Ok(()) };
+        // A run that died from a signal has no exit status; the driver still
+        // reads its output, as a failed run.
+        let status = finished.status.unwrap_or(1);
+        let qid = self.bridge.ask_answer(&call.prover, status, &finished.output)?;
+        self.awaiting.insert(qid, Awaiting { finished, asked: Instant::now() });
+        Ok(())
+    }
+
+    /// The answer of a finished run is known: it becomes an input.
+    fn answered(&mut self, finished: Finished, mut answer: ProverAnswer) -> Result<(), SessionError> {
+        // Why3 never reads a proof from a run that a signal ended.
+        if finished.status.is_none() && answer == ProverAnswer::Valid {
+            answer = ProverAnswer::HighFailure;
+        }
+        let Some(call) = self.calls.get(&finished.call) else { return Ok(()) };
+        let call_prover = call.prover.clone();
+        let now = self.now();
+        let input = match &finished.source {
+            Source::Local { binary_hash, mismatch, .. } => {
+                let evidence = self.evidence(
+                    finished.call,
+                    answer,
+                    finished.task_hash,
+                    &call_prover,
+                    *binary_hash,
+                    *mismatch,
+                )?;
+                Input::LocalRun { now, rid: finished.call, evidence }
+            }
+            Source::Worker { seed, signed, facts, prover_id } => {
+                let evidence = self.evidence(
+                    finished.call,
+                    answer,
+                    finished.task_hash,
+                    &signed.fields.prover,
+                    signed.fields.binary_hash,
+                    false,
+                )?;
+                Input::RemoteResult {
+                    now,
+                    rid: finished.call,
+                    seed: *seed,
+                    prover: *prover_id,
+                    evidence,
+                    signature_valid: facts.signature_valid,
+                    registered: facts.registered,
+                    revoked: facts.revoked,
+                }
+            }
+            Source::Cache { .. } => return Ok(()),
+        };
+        self.inputs.push_back((input, Some(finished)));
+        Ok(())
+    }
+
+    /// A Result that the Coordinator forwarded. Everything in it is
+    /// untrusted; the shell only computes facts about it.
     fn result(&mut self, signed: SignedResult) -> Result<(), SessionError> {
-        let Some(job) = self.remote.get(&signed.fields.job_id) else {
+        let Some(&(call, seed)) = self.jobs.get(&signed.fields.job_id) else {
             // Not an open Job of this Session: late, replayed or invented.
             eprintln!("dp-frontend: Result for {:?} discarded: no such open Job", signed.fields.job_id);
             *self.counts.entry("discarded".into()).or_insert(0) += 1;
@@ -719,92 +1024,74 @@ impl Session {
             registered: key.is_some(),
             revoked: false,
             signature_valid: key.is_some_and(|k| signed.verifies(&k)),
-            // The Job as submitted: its prover and its seed (R1.3 criterion 6).
-            submitted: signed.fields.prover == job.request.prover && signed.fields.seed == job.seed,
+            submitted: true, // decided by dp-core from the prover and the seed
         };
-        if !(facts.registered && facts.signature_valid) {
-            // Not authentic: anyone on the path can send this. The Job stays
-            // open for an authentic Result (R1.3 criterion 4).
+        let authentic = facts.registered && facts.signature_valid;
+        if !authentic {
             eprintln!(
                 "dp-frontend: Result for {:?} discarded: not signed by a registered Worker (names {:?})",
                 signed.fields.job_id, signed.fields.worker
             );
             *self.counts.entry("discarded".into()).or_insert(0) += 1;
-            return Ok(());
+        } else {
+            // An authentic Result ends its Job.
+            self.jobs.remove(&signed.fields.job_id);
         }
-        // An authentic Result ends its Job, accepted or not (R2.2 criterion 24).
-        let job = self.remote.remove(&signed.fields.job_id).expect("checked");
-        let f = signed.fields;
-        self.conclude(
-            job.request,
-            Evidence {
-                task_hash: f.task_hash,
-                binary_hash: f.binary_hash,
-                mismatch: false,
-                status: f.status,
-                timed_out: f.timed_out,
-                output: f.output,
-                micros: f.elapsed_micros,
-                remote: Some(facts),
-                seed: job.seed,
-            },
-        )
+        // The Job as submitted: its prover and its seed (R1.3 criterion 6).
+        // A Result that names another seed is for no Job of this call.
+        let signed_seed = signed.fields.seed.unwrap_or(0);
+        let prover_id = if signed_seed == seed {
+            self.intern(&format!("call-prover:{}", signed.fields.prover))
+        } else {
+            u64::MAX
+        };
+        let f = signed.fields.clone();
+        let finished = Finished {
+            call,
+            source: Source::Worker { seed, signed, facts, prover_id },
+            task_hash: f.task_hash,
+            status: f.status,
+            timed_out: f.timed_out,
+            output: f.output,
+            micros: f.elapsed_micros,
+        };
+        if authentic {
+            self.finished(finished)
+        } else {
+            // dp-core discards it whatever the answer; the driver is not asked.
+            self.answered(finished, ProverAnswer::HighFailure)
+        }
     }
 
     fn reap(&mut self) -> Result<(), SessionError> {
-        let mut i = 0;
-        while i < self.local.len() {
-            match self.local[i].run.poll()? {
-                None => i += 1,
-                Some(finished) => {
-                    let job = self.local.swap_remove(i);
-                    // Report the time in reference units, as why3find does.
-                    let micros = (finished.elapsed.as_micros() * 1_000_000 / u128::from(job.velocity)) as u64;
-                    self.conclude(
-                        job.request,
-                        Evidence {
-                            task_hash: job.task_hash,
-                            binary_hash: job.binary_hash,
-                            mismatch: job.mismatch,
-                            status: finished.status,
-                            timed_out: finished.timed_out,
-                            output: finished.output,
-                            micros,
-                            remote: None,
-                            seed: None,
-                        },
-                    )?;
-                }
+        let ids: Vec<CallId> = self.local.keys().copied().collect();
+        for call in ids {
+            let done = self.local.get_mut(&call).expect("listed").run.poll()?;
+            if let Some(done) = done {
+                let local = self.local.remove(&call).expect("listed");
+                // Report the time in reference units, as why3find does.
+                let micros = (done.elapsed.as_micros() * 1_000_000 / u128::from(local.velocity.max(1))) as u64;
+                self.finished(Finished {
+                    call,
+                    source: Source::Local {
+                        binary_hash: local.binary_hash,
+                        mismatch: local.mismatch,
+                        velocity: local.velocity,
+                        local_micros: local.local_micros,
+                    },
+                    task_hash: local.task_hash,
+                    status: done.status,
+                    timed_out: done.timed_out,
+                    output: done.output,
+                    micros,
+                })?;
             }
         }
-        let now = Instant::now();
-        let late: Vec<String> =
-            self.remote.iter().filter(|(_, j)| now >= j.deadline).map(|(id, _)| id.clone()).collect();
-        for job_id in late {
-            let job = self.remote.remove(&job_id).expect("listed");
-            eprintln!("dp-frontend: no Result for {job_id} in time");
-            if let Some((connection, _)) = self.cluster.as_mut() {
-                let _ = connection.send(&Message::Cancel { job_id });
-            }
-            *self.counts.entry("timeout".into()).or_insert(0) += 1;
-            let reply = ProverResult::Timeout { micros: job.request.micros };
-            self.deliver(&job.request.rid, true, Some(Outcome::Timeout), reply)?;
-        }
-        // Remote submissions do not count against the local limit.
-        let mut deferred = VecDeque::new();
-        while let Some(request) = self.pending.pop_front() {
-            let goes_remote = request.step != StrategyStep::Fast && self.cluster.is_some();
-            if goes_remote || self.local.len() < self.jobs {
-                self.start(request)?;
-            } else {
-                deferred.push_back(request);
-            }
-        }
-        self.pending = deferred;
         Ok(())
     }
 
     fn handle(&mut self, msg: FromWhy3find) -> Result<(), SessionError> {
+        let now = self.now();
         match msg {
             FromWhy3find::Hello { version: 1 } => Ok(()),
             FromWhy3find::Hello { version } => {
@@ -812,37 +1099,41 @@ impl Session {
             }
             FromWhy3find::Goal { gid, file, theory, name, path, .. } => {
                 let id = self.goals.len() as u64;
+                let steps: Vec<_> = path.iter().map(|p| (p.tactic.clone(), p.index)).collect();
                 let path = path.iter().map(|p| format!("{}.{}", p.tactic, p.index)).collect::<Vec<_>>().join("/");
-                self.goals.insert(gid, Goal { id, file, theory, name, path });
+                self.goals.insert(
+                    gid,
+                    Goal { id, file, theory, name, path, steps, outcomes: Vec::new(), replay: None },
+                );
+                self.inputs.push_back((Input::GoalAnnounced { now, goal: id }, None));
                 Ok(())
             }
             FromWhy3find::Prove { rid, gid, step, prover, micros } => {
-                if !self.goals.contains_key(&gid) {
+                let Some(goal) = self.goals.get(&gid).map(|g| g.id) else {
                     return Err(SessionError::Bridge(BridgeError::Protocol(format!(
                         "prover call for the unannounced goal {gid}"
                     ))));
-                }
-                self.pending.push_back(Request { rid, gid, prover, step, micros });
+                };
+                let call = self.intern(&format!("call:{rid}:{now}:{}", self.calls.len()));
+                let prover_id = self.intern(&format!("call-prover:{prover}"));
+                self.call_ids.insert(rid.clone(), call);
+                self.calls.insert(call, Call { rid, gid, prover, step, micros });
+                let pass = if step == StrategyStep::Fast { Pass::Fast } else { Pass::Later };
+                self.inputs.push_back((
+                    Input::ProverCall { now, rid: call, goal, prover: prover_id, pass, micros },
+                    None,
+                ));
                 Ok(())
             }
             FromWhy3find::Cancel { rid } => {
-                if let Some(i) = self.pending.iter().position(|r| r.rid == rid) {
-                    self.pending.remove(i);
-                    return self.answer(&rid, ProverResult::NoResult);
+                if let Some(&call) = self.call_ids.get(&rid) {
+                    self.inputs.push_back((Input::CancelCall { now, rid: call }, None));
                 }
-                if let Some(i) = self.local.iter().position(|j| j.request.rid == rid) {
-                    self.local.swap_remove(i).run.cancel();
-                    return self.answer(&rid, ProverResult::NoResult);
-                }
-                if self.races.remove(&rid).is_some() {
-                    self.cancel_race(&rid);
-                    return self.answer(&rid, ProverResult::NoResult);
-                }
-                Ok(()) // already answered
+                Ok(())
             }
-            FromWhy3find::AnswerRead { qid, answer } => self.answered(&qid, Some(answer)),
+            FromWhy3find::AnswerRead { qid, answer } => self.driver_answered(&qid, Some(answer)),
             FromWhy3find::Error { qid, .. } if self.awaiting.contains_key(&qid) => {
-                self.answered(&qid, None)
+                self.driver_answered(&qid, None)
             }
             FromWhy3find::Done => Ok(()),
             other => Err(SessionError::Bridge(BridgeError::Protocol(format!(
@@ -851,13 +1142,21 @@ impl Session {
         }
     }
 
+    fn driver_answered(&mut self, qid: &str, answer: Option<DriverAnswer>) -> Result<(), SessionError> {
+        let Some(Awaiting { finished, asked }) = self.awaiting.remove(qid) else {
+            return Err(SessionError::Bridge(BridgeError::Protocol(format!("unexpected reply {qid}"))));
+        };
+        *self.spent.entry("read-answer").or_default() += asked.elapsed();
+        self.answered(finished, answer.map_or(ProverAnswer::HighFailure, core_answer))
+    }
+
     fn cluster_events(&mut self) -> Result<(), SessionError> {
         loop {
             let Some((connection, _)) = self.cluster.as_mut() else { return Ok(()) };
             match connection.poll(Duration::ZERO) {
                 Event::Idle => return Ok(()),
                 Event::Closed(reason) => {
-                    self.fall_back(&format!(
+                    self.cluster_lost(&format!(
                         "the Coordinator is gone{}",
                         reason.map(|r| format!(" ({r})")).unwrap_or_default()
                     ));
@@ -865,16 +1164,10 @@ impl Session {
                 }
                 Event::Message(Message::Result(signed)) => self.result(signed)?,
                 Event::Message(Message::Failed { job_id, reason }) => {
-                    // The Cluster did not run this Job. Its race goes on
-                    // with the other Jobs; if none of them ran either, the
-                    // call runs here.
-                    if let Some(job) = self.remote.remove(&job_id) {
+                    if let Some((call, seed)) = self.jobs.remove(&job_id) {
                         eprintln!("dp-frontend: {job_id} was not run on the Cluster ({reason})");
-                        let rid = job.request.rid.clone();
-                        if let Some(race) = self.races.get_mut(&rid) {
-                            race.open = race.open.saturating_sub(1);
-                        }
-                        self.end_lost_race(&rid, Some(job.request))?;
+                        let now = self.now();
+                        self.inputs.push_back((Input::JobNotRun { now, rid: call, seed }, None));
                     }
                 }
                 // Nothing else is part of the protocol towards a Front_End.
@@ -883,17 +1176,120 @@ impl Session {
         }
     }
 
+    fn drain(&mut self) -> Result<(), SessionError> {
+        while let Some((input, finished)) = self.inputs.pop_front() {
+            self.step(input, finished)?;
+        }
+        Ok(())
+    }
+
     fn run(&mut self) -> Result<(), SessionError> {
+        let now = self.now();
+        let cluster = self.cluster.is_some();
+        self.inputs.push_back((Input::SessionStart { now, cluster }, None));
         loop {
+            self.drain()?;
             match self.bridge.poll(Duration::from_millis(5))? {
                 Poll::Message(msg) => self.handle(msg)?,
                 Poll::Idle => {}
-                Poll::Closed => return Ok(()),
+                Poll::Closed => {
+                    let now = self.now();
+                    self.inputs.push_back((Input::Why3findDone { now }, None));
+                    return self.drain();
+                }
             }
             self.cluster_events()?;
             self.reap()?;
+            // Deadlines of races are checked a few times a second, while
+            // there are Jobs on the Cluster.
+            if !self.jobs.is_empty() && self.last_tick.elapsed() >= Duration::from_millis(200) {
+                self.last_tick = Instant::now();
+                let now = self.now();
+                self.inputs.push_back((Input::Tick { now }, None));
+            }
         }
     }
+}
+
+fn outcome_name(outcome: Outcome) -> &'static str {
+    match outcome {
+        Outcome::StandaloneInvalid | Outcome::DependentInvalid => "invalid",
+        Outcome::CheckedIncomplete => "checked-incomplete",
+        Outcome::Unchecked => "unchecked",
+        Outcome::Timeout => "timeout",
+        Outcome::Unknown => "unknown",
+        Outcome::Failed => "failed",
+        Outcome::Unresolved => "unresolved",
+    }
+}
+
+/// The final write (R1.5 criterion 14): every proof file that why3find
+/// wrote gets the label of each of its Goals and the Lock_File hash.
+/// Returns the number of Goals by label.
+fn final_write(
+    dir: &Path,
+    lock_hash: Hash,
+    state: &State,
+    goals: &BTreeMap<String, Goal>,
+) -> Result<BTreeMap<String, u64>, SessionError> {
+    let imports_hash = hash::imports_hash(&[]);
+    let mut files: BTreeMap<&str, Vec<GoalLabel>> = BTreeMap::new();
+    for goal in goals.values() {
+        let recorded = frontend::verdict_of(&state.verdicts, goal.id).map(|v| v.label);
+        let label = verdict::final_label(recorded, &goal.outcomes);
+        let (name, proof) = match label {
+            Label::ProvedStandalone => ("proved-standalone", true),
+            Label::Certified => ("certified", true),
+            Label::NonProof(outcome) => (outcome_name(outcome), false),
+        };
+        files.entry(&goal.file).or_default().push(GoalLabel {
+            theory: goal.theory.clone(),
+            name: goal.name.clone(),
+            steps: goal.steps.clone(),
+            entry: DpEntry {
+                label: name.to_string(),
+                replay: if proof { goal.replay.clone().into_iter().collect() } else { Vec::new() },
+                imports_hash,
+            },
+            proof,
+        });
+    }
+    let unresolved = DpEntry { label: "unresolved".to_string(), replay: Vec::new(), imports_hash };
+    let mut labels = BTreeMap::new();
+    for (file, goals) in files {
+        let path = proofs::proof_file(dir, file);
+        let report = proofs::rewrite(&path, lock_hash, &goals, &unresolved)?;
+        for (label, n) in report.labels {
+            *labels.entry(label).or_insert(0) += n;
+        }
+        for goal in report.withdrawn {
+            eprintln!(
+                "dp-frontend: {}: {goal} was written as proved without a proof label of this Session; it is written as not proved",
+                path.display()
+            );
+        }
+    }
+    Ok(labels)
+}
+
+fn formats_atoms(atoms: &[cache_key::Atom]) -> Vec<cache::Atom> {
+    atoms
+        .iter()
+        .map(|a| match a {
+            cache_key::Atom::Bytes(b) => cache::Atom::Bytes(b.clone()),
+            cache_key::Atom::Num(n) => cache::Atom::Num(*n),
+        })
+        .collect()
+}
+
+fn core_atoms(atoms: &[cache::Atom]) -> Vec<cache_key::Atom> {
+    atoms
+        .iter()
+        .map(|a| match a {
+            cache::Atom::Bytes(b) => cache_key::Atom::Bytes(b.clone()),
+            cache::Atom::Num(n) => cache_key::Atom::Num(*n),
+        })
+        .collect()
 }
 
 /// Runs one Session and returns the exit status for Creusot_CLI.
@@ -938,9 +1334,10 @@ pub fn run(config: Config) -> Result<i32, SessionError> {
     fs::create_dir_all(&tmp)?;
     let standalone = Rc::new(RefCell::new(BTreeSet::new()));
     let proved = Rc::clone(&standalone);
-    // why3find blocks on its cache messages, so the bridge answers them itself.
+    // why3find blocks on its cache messages, so the bridge answers them
+    // itself. The Result_Cache proper is consulted when a prover call
+    // arrives, after the Goal is printed; why3find's own lookup is a miss.
     let responder = move |msg: &FromWhy3find| match msg {
-        // No Result_Cache yet: every lookup is a miss.
         FromWhy3find::CacheGet { rid, .. } => {
             Some(ToWhy3find::Cache { rid: rid.clone(), result: ProverResult::NoResult })
         }
@@ -953,30 +1350,35 @@ pub fn run(config: Config) -> Result<i32, SessionError> {
         }),
         _ => None,
     };
+    let use_cache = !config.args.iter().any(|a| a == "--no-cache");
     let bridge =
         Bridge::start(&why3find, &config.args, &config.dir, MESSAGE_LIMIT, Box::new(responder))?;
+    let trace = match &config.trace {
+        Some((path, retention)) => TraceWriter::to_file("front-end", path.clone(), *retention)?,
+        None => TraceWriter::off("front-end"),
+    };
     let mut session = Session {
         bridge,
-        lock: config.lock,
         platform,
         tmp: tmp.clone(),
-        jobs: config.jobs.max(1),
-        job_margin: config.job_margin,
+        dir: config.dir.clone(),
+        start: Instant::now(),
         cluster,
         session_id,
-        next_job: 0,
+        state: None,
+        inputs: VecDeque::new(),
+        trace,
         provers: None,
         names: BTreeMap::new(),
-        prints: BTreeMap::new(),
-        pending: VecDeque::new(),
-        local: Vec::new(),
-        remote: BTreeMap::new(),
-        races: BTreeMap::new(),
-        portfolio_seeds: config.portfolio_seeds.max(1),
-        awaiting: BTreeMap::new(),
-        verdicts: Verdicts { entries: Vec::new() },
-        standalone,
         goals: BTreeMap::new(),
+        call_ids: BTreeMap::new(),
+        calls: BTreeMap::new(),
+        prints: BTreeMap::new(),
+        local: BTreeMap::new(),
+        jobs: BTreeMap::new(),
+        awaiting: BTreeMap::new(),
+        standalone,
+        use_cache,
         record: match &config.record {
             Some(path) => Some(fs::OpenOptions::new().create(true).append(true).open(path)?),
             None => None,
@@ -984,23 +1386,46 @@ pub fn run(config: Config) -> Result<i32, SessionError> {
         export: config.export.clone(),
         spent: BTreeMap::new(),
         counts: BTreeMap::new(),
+        cache_hits: 0,
         remote_proofs: 0,
+        last_tick: Instant::now(),
+        lock: config.lock,
     };
+    let unpatched = session.pins(&[Kind::UnpatchedSolver]);
+    session.state = Some(frontend::FrontEnd::init(&frontend::Config {
+        local_jobs: config.jobs.max(1) as u64,
+        seeds: config.portfolio_seeds.max(1),
+        job_margin: config.job_margin.as_micros() as u64,
+        certify_all: false,
+        unpatched,
+        empty_imports_hash: core_hash(hash::imports_hash(&[])),
+    }));
     let result = session.run();
-    for job in session.local.drain(..) {
-        job.run.cancel();
+    for (_, local) in std::mem::take(&mut session.local) {
+        local.run.cancel();
     }
     let _ = fs::remove_dir_all(&tmp);
-    let Session { bridge, verdicts, counts, remote_proofs, spent, .. } = session;
+    session.trace.finish()?;
+    let Session { bridge, state, counts, cache_hits, remote_proofs, spent, goals, dir, .. } = session;
     match result {
         Ok(()) => {
             let status = bridge.wait()?;
+            let state = state.expect("the state is present between steps");
+            // why3find has written its proof files; now the final write.
+            let labels = final_write(&dir, config.lock_hash, &state, &goals)?;
+            let verdicts =
+                state.verdicts.entries.iter().filter(|v| v.label == Label::ProvedStandalone).count();
             let summary: Vec<_> = counts.iter().map(|(label, n)| format!("{n} {label}")).collect();
             eprintln!(
-                "dp-frontend: {} proved-standalone Verdicts ({} from Workers); prover results: {}",
-                verdicts.entries.len(),
-                remote_proofs,
+                "dp-frontend: {verdicts} proved-standalone Verdicts ({remote_proofs} from Workers, {cache_hits} Result_Cache hits); prover results: {}",
                 if summary.is_empty() { "none".to_string() } else { summary.join(", ") }
+            );
+            // The report of labels (R7.2 criterion 6): Goals of the proof
+            // files by label.
+            let by_label: Vec<_> = labels.iter().map(|(label, n)| format!("{n} {label}")).collect();
+            eprintln!(
+                "dp-frontend: Goals by label: {}",
+                if by_label.is_empty() { "none".to_string() } else { by_label.join(", ") }
             );
             if std::env::var_os("DP_PROFILE").is_some() {
                 let parts: Vec<_> = spent.iter().map(|(k, d)| format!("{k} {:.2}s", d.as_secs_f64())).collect();

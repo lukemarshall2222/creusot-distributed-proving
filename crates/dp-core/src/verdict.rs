@@ -166,7 +166,7 @@ pub fn authentic(f: RemoteFacts) -> bool {
 }
 
 #[ensures(result == (a == b))]
-fn same_hash(a: Hash, b: Hash) -> bool {
+pub fn same_hash(a: Hash, b: Hash) -> bool {
     a.w0 == b.w0 && a.w1 == b.w1 && a.w2 == b.w2 && a.w3 == b.w3
 }
 

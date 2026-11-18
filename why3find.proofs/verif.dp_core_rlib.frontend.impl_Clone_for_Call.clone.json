@@ -1,0 +1,14 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_clone_Call": { "prover": "alt-ergo", "time": 0.022 },
+      "vc_clone_Outcome": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_clone_Pass": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_clone_Place": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_clone_Vec_Outcome_Global": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_clone_Vec_u64_Global": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_clone_u64": { "prover": "alt-ergo", "time": 0.01 }
+    }
+  }
+}

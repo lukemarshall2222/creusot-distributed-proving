@@ -1,8 +1,9 @@
 //! The machine interface that every state machine of dp-core implements
 //! (design: "Machine interface").
 
-use crate::trace::TlaAction;
-use creusot_std::prelude::{Clone, DeepModel, PartialEq};
+use crate::{labels::Outcome, trace::TlaAction, verdict::Acceptance};
+#[allow(unused_imports)] // Creusot's derives need the prelude in scope
+use creusot_std::prelude::{Clone, DeepModel, PartialEq, *};
 
 /// A deterministic state machine. The I/O shell computes facts, passes them
 /// in as fields of an input, and carries out the effects that a step returns.
@@ -34,4 +35,10 @@ pub struct Step<S, E> {
 pub enum LogEntry {
     /// The input did not apply in the current state and changed nothing.
     Discarded,
+    /// A run of the call was accepted and labelled with a proof label.
+    Proved { call: u64 },
+    /// A run of the call was accepted and labelled with a non-proof outcome.
+    Lost { call: u64, outcome: Outcome },
+    /// A run of the call was not accepted, for this reason (R1.3).
+    Rejected { call: u64, reason: Acceptance },
 }
