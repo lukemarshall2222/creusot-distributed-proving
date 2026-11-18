@@ -1,0 +1,1 @@
+{"file":"verif/CreuSAT_rlib/lit/impl_PartialEq_for_Lit/eq__refines.coma","theory":"Coma","goal":"refines","path":"","prover":"alt-ergo@","step":"fast","limit_us":200000,"time_us":18814,"where":"local","label":"proved-standalone","task_hash":"c3f54204b86502a184d8a02669eaa7a88835e68008f0cb6a6a0e5cc8b528c4ba"}

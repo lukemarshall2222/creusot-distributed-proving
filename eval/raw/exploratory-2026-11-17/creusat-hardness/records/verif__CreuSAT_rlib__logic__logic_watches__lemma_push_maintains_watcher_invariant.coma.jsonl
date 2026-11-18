@@ -1,0 +1,1 @@
+{"file":"verif/CreuSAT_rlib/logic/logic_watches/lemma_push_maintains_watcher_invariant.coma","theory":"Coma","goal":"vc_lemma_push_maintains_watcher_invariant","path":"","prover":"alt-ergo@","step":"fast","limit_us":200000,"time_us":18788,"where":"local","label":"proved-standalone","task_hash":"453f32da25cb2dc1667a29f0011ea43cd3b6d36ae7e72b1ab1c46194efb4dc04"}

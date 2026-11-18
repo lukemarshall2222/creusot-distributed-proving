@@ -1,0 +1,14 @@
+{"file": "verif/CreuSAT_rlib/conflict_analysis/analyze_conflict.coma", "status": 0, "wall_seconds": 11.0, "goals": 25, "proved": 25}
+{"file": "verif/CreuSAT_rlib/conflict_analysis/resolve.coma", "status": 0, "wall_seconds": 14.9, "goals": 11, "proved": 11}
+{"file": "verif/CreuSAT_rlib/formula/impl_Formula/add_clause.coma", "status": 0, "wall_seconds": 14.0, "goals": 5, "proved": 5}
+{"file": "verif/CreuSAT_rlib/formula/impl_Formula/add_unit.coma", "status": 0, "wall_seconds": 16.6, "goals": 3, "proved": 3}
+{"file": "verif/CreuSAT_rlib/formula/impl_Formula/add_unwatched_clause.coma", "status": 0, "wall_seconds": 20.1, "goals": 3, "proved": 3}
+{"file": "verif/CreuSAT_rlib/logic/logic_clause/lemma_permuted_clause_maintains_equisat.coma", "status": 0, "wall_seconds": 11.5, "goals": 1, "proved": 1}
+{"file": "verif/CreuSAT_rlib/solver/impl_Solver/handle_long_clause.coma", "status": 0, "wall_seconds": 11.1, "goals": 14, "proved": 14}
+{"file": "verif/CreuSAT_rlib/unit_prop/check_and_move_watch.coma", "status": 0, "wall_seconds": 10.7, "goals": 7, "proved": 7}
+{"file": "verif/CreuSAT_rlib/unit_prop/propagate_lit_with_regard_to_clause.coma", "status": 0, "wall_seconds": 12.6, "goals": 12, "proved": 12}
+{"file": "verif/CreuSAT_rlib/util/sort.coma", "status": 0, "wall_seconds": 11.1, "goals": 5, "proved": 5}
+{"file": "verif/CreuSAT_rlib/util/sort_reverse.coma", "status": 0, "wall_seconds": 10.6, "goals": 5, "proved": 5}
+{"file": "verif/CreuSAT_rlib/watches/impl_Watches/unwatch.coma", "status": 0, "wall_seconds": 11.9, "goals": 10, "proved": 10}
+{"file": "verif/CreuSAT_rlib/watches/update_watch.coma", "status": 0, "wall_seconds": 14.4, "goals": 13, "proved": 13}
+{"file": "verif/Robinson_rlib/util/sort_reverse.coma", "status": 0, "wall_seconds": 10.7, "goals": 5, "proved": 5}

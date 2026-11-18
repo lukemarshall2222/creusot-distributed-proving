@@ -1,0 +1,1 @@
+{"file":"verif/CreuSAT_rlib/logic/logic_util/lemma_pop_maintains_sorted.coma","theory":"Coma","goal":"vc_lemma_pop_maintains_sorted","path":"","prover":"alt-ergo@","step":"fast","limit_us":200000,"time_us":23932,"where":"local","label":"proved-standalone","task_hash":"0644289a164420de368245e091c4326f5c4c801860bce629eec67642e800fe13"}

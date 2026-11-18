@@ -1,0 +1,19 @@
+# Sources of the corpus of Creusot goals (R6.1, OQ-N9). Goals are taken from
+# the Coma files that each project commits, at the pinned commit; no Rust is
+# compiled. Not yet here: the selection rule, the CI selection rule
+# (OQ-N50), license records (AS-15) and content-hashed releases.
+
+[[source]]
+name = "creusot-examples"
+repository = "https://github.com/creusot-rs/creusot"
+commit = "fd4d85b2c237ef93147e99f6a0c04acfc89a6a17" # v0.15.0, the pinned Creusot
+directory = "examples"
+# Proved with the why3find.json of the pinned Creusot.
+
+[[source]]
+name = "creusat"
+repository = "https://github.com/sarsko/CreuSAT"
+commit = "232edff08ec6a5713cc3d61797f353550ca94d6f"
+directory = "verif"
+# Proved with the why3find.json of the project. Its Coma files were generated
+# by Creusot 0.14.0-dev; they load with the prelude of the pinned Creusot.

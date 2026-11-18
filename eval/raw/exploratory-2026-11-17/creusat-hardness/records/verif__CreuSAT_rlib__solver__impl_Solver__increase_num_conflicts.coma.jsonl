@@ -1,0 +1,1 @@
+{"file":"verif/CreuSAT_rlib/solver/impl_Solver/increase_num_conflicts.coma","theory":"Coma","goal":"vc_increase_num_conflicts","path":"","prover":"alt-ergo@","step":"fast","limit_us":200000,"time_us":18826,"where":"local","label":"proved-standalone","task_hash":"986dcd4a8637b292cf1a8e27a230f308927e88243e1e6ff0f56ba86041d2a004"}

@@ -1,0 +1,1 @@
+{"file":"verif/CreuSAT_rlib/logic/logic_clause/dup_stable_on_permut.coma","theory":"Coma","goal":"vc_dup_stable_on_permut","path":"","prover":"alt-ergo@","step":"fast","limit_us":200000,"time_us":30146,"where":"local","label":"proved-standalone","task_hash":"3385b4201df2a480dc0196516ba26c260e7b82609e9978803cae7ae118f3b52e"}

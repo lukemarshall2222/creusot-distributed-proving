@@ -1,0 +1,1 @@
+{"file":"verif/CreuSAT_rlib/logic/logic_trail/lemma_push_maintains_lit_not_in_less.coma","theory":"Coma","goal":"vc_lemma_push_maintains_lit_not_in_less","path":"","prover":"alt-ergo@","step":"fast","limit_us":200000,"time_us":55448,"where":"local","label":"proved-standalone","task_hash":"792e0e1afc3cbbd021b0c73904a531578ba56149ef3d7e2dcdb1fc9b5121feec"}

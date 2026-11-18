@@ -1,0 +1,36 @@
+{
+ "status": "exploratory: not pre-registered, one repetition, not evidence for a research question (R6.2, R6.3)",
+ "date": "2026-11-17",
+ "repository_commit": "ff962140e3f1b9d88c1c49e68c543e1653a0a563 plus uncommitted changes (portfolio seeds, recording, front-end overhead fixes)",
+ "machine": {
+  "system": "aarch64-darwin",
+  "cores": 14,
+  "model": "arm64"
+ },
+ "tools": {
+  "creusot": "0.15.0 (fd4d85b2)",
+  "why3": "05bf4ddf",
+  "why3find": "89dd8721 with patches/why3find",
+  "alt-ergo": "2.6.4",
+  "z3": "5.3.2",
+  "cvc5": "1.4.1",
+  "cvc4": "1.8"
+ },
+ "corpus": {
+  "source": "https://github.com/sarsko/CreuSAT",
+  "commit": "232edff08ec6a5713cc3d61797f353550ca94d6f",
+  "directory": "verif",
+  "files": 143
+ },
+ "runs": {
+  "creusat-hardness": "dp-frontend (release), local, every file of verif/ proved from scratch (-f) with the project's why3find.json; other work ran on the machine at the same time, so times are noisy",
+  "race-local": "the 14 files with a goal beyond the first sequential pass; local",
+  "race-cluster1": "the same files; Coordinator and 6 Workers on the same machine; one Job per prover call",
+  "race-cluster3": "the same files; 3 Jobs with different seeds race on every prover call after the first sequential pass"
+ },
+ "caveats": [
+  "Workers and Front_End share one machine, so the Cluster adds no compute",
+  "records list the prover calls that were labelled; Jobs cancelled when their race was won are not listed",
+  "no Calibration of Workers"
+ ]
+}
