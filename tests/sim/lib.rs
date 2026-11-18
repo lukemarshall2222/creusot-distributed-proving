@@ -12,13 +12,14 @@ use std::{
 use dp_coordinator::shell::Shell as CoordinatorShell;
 use dp_core::{coord, worker};
 use dp_formats::{
-    cluster::Registry,
+    cluster::{Message, Operation, Registry, SignedCommand},
     dispatch::{DriverAnswer, FromWhy3find, ProverInfo, ProverResult, StrategyStep, ToWhy3find},
     hash,
     lockfile::{current_platform, LockFile},
 };
 use dp_frontend::session::{self, Session};
 use dp_shell::{
+    env::{Env, NetEvent},
     trace::TraceWriter,
     why3find::{BridgeError, Poll, Printed, Why3find},
 };
@@ -38,6 +39,8 @@ pub const MARGIN: u64 = 50_000;
 
 pub const COORDINATOR: Node = 0;
 pub const FRONT_END: Node = 1;
+/// The operator's machine.
+pub const OPERATOR: Node = 2;
 /// Workers are the nodes from this number on.
 pub const WORKERS: Node = 10;
 
@@ -102,6 +105,11 @@ pub struct Scripted {
     velocity: u64,
     /// The reply to each call, by its index, with the time of the reply.
     pub answers: BTreeMap<usize, (Reply, u64)>,
+    /// Prints of Goals for provers that the script makes no call with: a
+    /// Portfolio member may be such a prover.
+    prints: BTreeMap<(u64, String), Vec<u8>>,
+    /// The strategy step of every call.
+    step: StrategyStep,
 }
 
 impl Scripted {
@@ -122,12 +130,17 @@ impl Scripted {
             self.out.push_back(FromWhy3find::Prove {
                 rid: format!("r{}", self.next),
                 gid: format!("g{}", call.goal),
-                step: StrategyStep::Parallel,
+                step: self.step,
                 prover: call.prover.clone(),
                 micros: call.micros,
             });
             self.next += 1;
         }
+    }
+
+    /// Makes every call a call of the first sequential pass.
+    pub fn first_pass(&mut self) {
+        self.step = StrategyStep::Fast;
     }
 
     /// Whether a message waits for the Front_End.
@@ -160,6 +173,9 @@ impl Why3find for Scripted {
 
     fn print(&mut self, gid: &str, prover: &str, _transformations: &[String]) -> Result<Printed, BridgeError> {
         let goal: u64 = gid[1..].parse().expect("a scripted Goal");
+        if let Some(text) = self.prints.get(&(goal, prover.to_string())) {
+            return Ok(Printed { tasks: 1, bytes: text.clone() });
+        }
         let call = self
             .script
             .iter()
@@ -223,6 +239,33 @@ impl Speeds {
     }
 }
 
+/// What a simulated Session is configured with beyond its script.
+#[derive(Clone, Debug)]
+pub struct Setup {
+    /// Jobs of different seeds per call, when there is no Portfolio.
+    pub seeds: u64,
+    pub speeds: Speeds,
+    /// The Portfolio: provers that race on every call on the Cluster.
+    pub portfolio: Vec<String>,
+    /// The first pass goes to the Cluster, and every scripted call is of
+    /// the first pass.
+    pub first_pass_on_cluster: bool,
+    /// Prints of Goals for the other prover, by Goal.
+    pub other_prints: BTreeMap<u64, Vec<u8>>,
+}
+
+impl Setup {
+    pub fn plain() -> Setup {
+        Setup {
+            seeds: 1,
+            speeds: Speeds::reference(),
+            portfolio: Vec::new(),
+            first_pass_on_cluster: false,
+            other_prints: BTreeMap::new(),
+        }
+    }
+}
+
 /// A Cluster with one Coordinator, some Workers and one Front_End.
 pub struct Cluster {
     pub world: Rc<RefCell<World>>,
@@ -235,7 +278,17 @@ pub struct Cluster {
 
 fn coordinator_shell(world: &Rc<RefCell<World>>) -> CoordinatorShell<SimEnv> {
     let config = coord::Config { silence_limit: SILENCE, beat_period: BEAT, retries: 2 };
-    CoordinatorShell::new(SimEnv::new(world, COORDINATOR), config, TraceWriter::off("coordinator"))
+    CoordinatorShell::new(
+        SimEnv::new(world, COORDINATOR),
+        config,
+        TraceWriter::off("coordinator"),
+        Some(operator_key().verifying_key()),
+    )
+}
+
+/// The operator's signing key of every simulated Cluster.
+pub fn operator_key() -> SigningKey {
+    SigningKey::from_bytes(&[7; 32])
 }
 
 fn key(node: Node, salt: u8) -> SigningKey {
@@ -260,6 +313,11 @@ impl Cluster {
         seeds: u64,
         speeds: Speeds,
     ) -> Cluster {
+        Cluster::with(seed, faults, workers, strangers, script, Setup { seeds, speeds, ..Setup::plain() })
+    }
+
+    pub fn with(seed: u64, faults: Faults, workers: u32, strangers: u32, script: Vec<Call>, setup: Setup) -> Cluster {
+        let Setup { seeds, speeds, portfolio, first_pass_on_cluster, other_prints } = setup;
         let world = World::new(seed, faults);
         world.borrow_mut().listen(COORDINATOR, ADDRESS);
         world.borrow_mut().set_velocity(FRONT_END, speeds.front_end);
@@ -281,12 +339,22 @@ impl Cluster {
             args: vec!["--no-cache".into()],
             dir: std::env::temp_dir(),
             jobs: 2,
-            cluster: Some(session::Cluster { address: ADDRESS.into(), registry }),
+            cluster: Some(session::Cluster {
+                address: ADDRESS.into(),
+                registry,
+                operator: operator_key().verifying_key(),
+            }),
             job_margin: Duration::from_micros(MARGIN),
             silence_limit: Duration::from_micros(SILENCE),
             beat_period: Duration::from_micros(BEAT),
             record: None,
             portfolio_seeds: seeds,
+            portfolio: portfolio
+                .iter()
+                .map(|p| session::Member { name: p.clone(), prover: p.trim_end_matches('@').to_string(), seed: None })
+                .collect(),
+            fast_remote: first_pass_on_cluster,
+            certify_all: false,
             export: None,
             trace: None,
             lock_hash,
@@ -301,9 +369,11 @@ impl Cluster {
             questions: 0,
             velocity: speeds.front_end,
             answers: BTreeMap::new(),
+            prints: other_prints.into_iter().map(|(goal, text)| ((goal, OTHER_PROVER.to_string()), text)).collect(),
+            step: if first_pass_on_cluster { StrategyStep::Fast } else { StrategyStep::Parallel },
         };
         // The Front_End connects once the Coordinator listens.
-        let front_end = Session::start(SimEnv::new(&world, FRONT_END), why3find, config, Default::default())
+        let front_end = Session::start(SimEnv::new(&world, FRONT_END), why3find, config, Default::default(), None)
             .expect("a simulated Session starts");
         let mut cluster = Cluster { world, coordinator, workers: BTreeMap::new(), front_end, keys, speeds };
         for node in nodes {
@@ -343,7 +413,12 @@ impl Cluster {
         let config = coord::Config { silence_limit: SILENCE, beat_period: BEAT, retries: 2 };
         let trace = TraceWriter::to_file("coordinator", path.into(), dp_shell::trace::Retention::Complete)
             .expect("the trace file can be written");
-        self.coordinator = Some(CoordinatorShell::new(SimEnv::new(&self.world, COORDINATOR), config, trace));
+        self.coordinator = Some(CoordinatorShell::new(
+            SimEnv::new(&self.world, COORDINATOR),
+            config,
+            trace,
+            Some(operator_key().verifying_key()),
+        ));
     }
 
     /// The node stops. Its shell and everything it knew are gone.
@@ -386,6 +461,46 @@ impl Cluster {
             self.world.borrow_mut().advance(STEP);
         }
         self.turns();
+    }
+
+    /// Sends an operator command about a Worker, signed with `key`, and
+    /// runs the Cluster for a moment. Returns whether the Coordinator took
+    /// the command.
+    pub fn operate(&mut self, serial: u64, operation: Operation, worker: Node, key: &SigningKey) -> bool {
+        let mut env = SimEnv::new(&self.world, OPERATOR);
+        let peer = env.connect(ADDRESS).expect("the Coordinator listens");
+        env.send(peer, &Message::Operator(SignedCommand::sign(serial, operation, &format!("w{worker}"), key)));
+        let until = self.now() + 2_000;
+        self.run_until(until);
+        let mut taken = false;
+        while let Some(event) = env.poll(Duration::ZERO) {
+            if let NetEvent::Message(_, Message::OperatorResult { taken: t, .. }) = event {
+                taken = t;
+            }
+        }
+        env.close(peer);
+        taken
+    }
+
+    /// Asks the Coordinator for its status report.
+    pub fn status(&mut self) -> Option<Message> {
+        let mut env = SimEnv::new(&self.world, OPERATOR);
+        let peer = env.connect(ADDRESS).expect("the Coordinator listens");
+        env.send(peer, &Message::StatusRequest);
+        let until = self.now() + 2_000;
+        self.run_until(until);
+        let mut report = None;
+        while let Some(event) = env.poll(Duration::ZERO) {
+            if let NetEvent::Message(_, status @ Message::Status { .. }) = event {
+                report = Some(status);
+            }
+        }
+        env.close(peer);
+        report
+    }
+
+    pub fn now(&self) -> u64 {
+        self.world.borrow().now()
     }
 
     /// The reply to the call with this index, and when it came.

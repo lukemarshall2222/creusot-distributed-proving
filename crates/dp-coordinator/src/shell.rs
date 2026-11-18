@@ -8,7 +8,8 @@ use dp_core::{
     coord::{self, Config, Effect, Failure, Input, JobId, Offer, State},
     machine::Machine,
 };
-use dp_formats::cluster::{Job, Message};
+use dp_formats::cluster::{Job, Message, Operation, SignedCommand, WorkerStatus};
+use ed25519_dalek::VerifyingKey;
 use dp_shell::{
     env::{Env, NetEvent, Peer},
     trace::TraceWriter,
@@ -26,10 +27,17 @@ pub struct Shell<E: Env> {
     last_tick: u64,
     tick_period: u64,
     trace: TraceWriter,
+    /// The operator's verification key; without it no command is taken.
+    operator: Option<VerifyingKey>,
+    /// The names of the connected Workers.
+    names: BTreeMap<Peer, String>,
+    /// The revocations that were taken, as signed, for Front_Ends that
+    /// connect later, and the names that they revoke.
+    revocations: Vec<SignedCommand>,
 }
 
 impl<E: Env> Shell<E> {
-    pub fn new(env: E, config: Config, trace: TraceWriter) -> Shell<E> {
+    pub fn new(env: E, config: Config, trace: TraceWriter, operator: Option<VerifyingKey>) -> Shell<E> {
         Shell {
             state: Some(coord::Coordinator::init(&config)),
             env,
@@ -41,6 +49,35 @@ impl<E: Env> Shell<E> {
             // Often enough to see a silence or a due heartbeat in time.
             tick_period: (config.beat_period.min(config.silence_limit) / 4).max(1),
             trace,
+            operator,
+            names: BTreeMap::new(),
+            revocations: Vec::new(),
+        }
+    }
+
+    fn revoked(&self, worker: &str) -> bool {
+        self.revocations.iter().any(|r| r.worker == worker)
+    }
+
+    /// The status report (R1.7 criterion 9), from the machine's state.
+    fn status(&self) -> Message {
+        let state = self.state();
+        let name_of = |id: u64| {
+            self.provers.iter().find(|(_, v)| **v == id).map_or_else(|| id.to_string(), |(k, _)| k.clone())
+        };
+        Message::Status {
+            workers: state
+                .workers
+                .iter()
+                .map(|w| WorkerStatus {
+                    worker: self.names.get(&w.peer).cloned().unwrap_or_default(),
+                    job: w.busy.and_then(|j| self.jobs.get(&j.id)).map(|(_, job)| job.job_id.clone()),
+                    draining: w.draining,
+                    provers: w.offers.iter().map(|o| name_of(o.prover)).collect(),
+                })
+                .collect(),
+            queued: state.queue.len() as u64,
+            front_ends: state.front_ends.len() as u64,
         }
     }
 
@@ -100,11 +137,32 @@ impl<E: Env> Shell<E> {
                     }
                 }
                 Effect::Beat { peer } => self.env.send(peer, &Message::Heartbeat),
-                Effect::Drop { peer } => self.env.close(peer),
+                Effect::Drop { peer } => {
+                    self.names.remove(&peer);
+                    self.env.close(peer);
+                }
                 Effect::Forget { front_end, job } => {
                     if let Some((_, job)) = self.jobs.remove(&job) {
                         self.ids.remove(&(front_end, job.job_id));
                     }
+                }
+                Effect::OperatorReply { peer, serial, taken } => {
+                    // A revocation that was taken is kept, as signed.
+                    if let (true, Some(Message::Operator(command))) = (taken, message) {
+                        if command.operation == Operation::Revoke {
+                            self.revocations.push(command.clone());
+                        }
+                    }
+                    self.env.send(peer, &Message::OperatorResult { serial, taken });
+                }
+                Effect::Announce { front_end } => {
+                    if let Some(Message::Operator(command)) = message {
+                        self.env.send(front_end, &Message::Revocation(command.clone()));
+                    }
+                }
+                Effect::Report { peer } => {
+                    let report = self.status();
+                    self.env.send(peer, &report);
                 }
             }
         }
@@ -115,13 +173,20 @@ impl<E: Env> Shell<E> {
         let now = self.env.now();
         match event {
             NetEvent::Connected(_) => Ok(()),
-            NetEvent::Disconnected(peer) => self.step(Input::Disconnected { now, peer }, None),
+            NetEvent::Disconnected(peer) => {
+                self.names.remove(&peer);
+                self.step(Input::Disconnected { now, peer }, None)
+            }
             NetEvent::Message(peer, message) => {
                 let input = match &message {
                     Message::FrontEndHello { .. } => Input::FrontEndHello { now, peer },
-                    Message::WorkerHello { offers, .. } => Input::WorkerHello {
+                    Message::WorkerHello { worker, offers } => Input::WorkerHello {
                         now,
                         peer,
+                        revoked: {
+                            self.names.insert(peer, worker.clone());
+                            self.revoked(worker)
+                        },
                         offers: offers
                             .iter()
                             .map(|(prover, velocity)| Offer { prover: self.prover(prover), velocity: *velocity })
@@ -153,8 +218,28 @@ impl<E: Env> Shell<E> {
                         None => Input::Heartbeat { now, peer },
                     },
                     Message::Idle => Input::WorkerIdle { now, peer },
+                    Message::StatusRequest => Input::Status { now, peer },
+                    Message::Operator(command) => Input::Operator {
+                        now,
+                        peer,
+                        authentic: self.operator.as_ref().is_some_and(|key| command.verifies(key)),
+                        serial: command.serial,
+                        operation: match command.operation {
+                            Operation::Drain => coord::Operation::Drain,
+                            Operation::Remove => coord::Operation::Remove,
+                            Operation::Revoke => coord::Operation::Revoke,
+                        },
+                        // The connection of the Worker with that name, among
+                        // the Workers that the machine holds.
+                        worker: self
+                            .state()
+                            .workers
+                            .iter()
+                            .map(|w| w.peer)
+                            .find(|peer| self.names.get(peer) == Some(&command.worker)),
+                    },
                     // Anything else only shows that the peer is alive.
-                    Message::Heartbeat | Message::Assign { .. } => Input::Heartbeat { now, peer },
+                    _ => Input::Heartbeat { now, peer },
                 };
                 // A Front_End that left before its submission was read
                 // leaves a Job that the machine does not hold.
@@ -162,7 +247,14 @@ impl<E: Env> Shell<E> {
                     Input::Submit { job, .. } => Some(*job),
                     _ => None,
                 };
+                let joined = matches!(input, Input::FrontEndHello { .. });
                 self.step(input, Some(&message))?;
+                // A Front_End that joins learns of the revocations so far.
+                if joined && self.state().front_ends.iter().any(|f| f.peer == peer) {
+                    for revocation in self.revocations.clone() {
+                        self.env.send(peer, &Message::Revocation(revocation));
+                    }
+                }
                 if let Some(job) = submitted {
                     let held = self.state().queue.iter().any(|j| j.id == job)
                         || self.state().workers.iter().any(|w| w.busy.is_some_and(|j| j.id == job));

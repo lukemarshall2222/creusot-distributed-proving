@@ -2,6 +2,7 @@
   "profile": [],
   "proofs": {
     "Coma": {
+      "vc_clone_CheckFacts": { "prover": "alt-ergo", "time": 0.01 },
       "vc_clone_Evidence": { "prover": "alt-ergo", "time": 0.011 },
       "vc_clone_Hash": { "prover": "alt-ergo", "time": 0.011 },
       "vc_clone_Input": { "prover": "z3", "time": 0.02 },
@@ -14,6 +15,7 @@
       "vc_clone_u64": { "prover": "alt-ergo", "time": 0.017 },
       "vc_elim_CacheHit": { "prover": "alt-ergo", "time": 0.011 },
       "vc_elim_CancelCall": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Certificate": { "prover": "alt-ergo", "time": 0.011 },
       "vc_elim_ClusterHeard": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_ClusterLost": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_GoalAnnounced": { "prover": "alt-ergo", "time": 0.012 },

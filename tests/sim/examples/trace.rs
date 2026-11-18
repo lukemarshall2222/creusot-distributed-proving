@@ -3,7 +3,8 @@
 //!
 //!     cargo run -p dp-sim --example trace -- OUT_FILE SEED
 
-use dp_sim::{Call, Cluster, PROVER, SILENCE, WORKERS};
+use dp_formats::cluster::Operation;
+use dp_sim::{operator_key, Call, Cluster, PROVER, SILENCE, WORKERS};
 use dp_testkit::sim::Faults;
 
 fn main() {
@@ -14,9 +15,9 @@ fn main() {
     };
     // Calls of every kind, more than the Workers can run at once.
     let texts = ["unsat 30000", "unknown 20000", "hang", "unsat 90000", "sat 10000", "unsat 5000", "unknown 60000"];
-    let script: Vec<Call> = (0..10u64)
+    let script: Vec<Call> = (0..16u64)
         .map(|i| Call {
-            at: i * 15_000,
+            at: if i < 10 { i * 15_000 } else { 560_000 + (i - 10) * 15_000 },
             goal: i,
             prover: PROVER.into(),
             text: texts[((seed + i) % texts.len() as u64) as usize].as_bytes().to_vec(),
@@ -35,6 +36,10 @@ fn main() {
     cluster.crash(other, seed % 2 == 0);
     cluster.run_until(40_000 + 4 * SILENCE);
     cluster.start_worker(other);
+    // The operator drains one Worker and removes another.
+    cluster.run_until(40_000 + 5 * SILENCE);
+    cluster.operate(1, Operation::Drain, WORKERS + (seed % 3) as u32, &operator_key());
+    cluster.operate(2, if seed % 2 == 0 { Operation::Remove } else { Operation::Revoke }, other, &operator_key());
     cluster.run_until(2_000_000);
     cluster.coordinator.as_mut().expect("the Coordinator runs").finish().expect("the trace is written");
 }

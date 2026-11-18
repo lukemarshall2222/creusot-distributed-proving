@@ -2,7 +2,10 @@
   "profile": [],
   "proofs": {
     "Coma": {
-      "vc_debug_struct_field5_finish": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_debug_struct_fields_finish": {
+        "prover": "alt-ergo",
+        "time": 0.011
+      },
       "vc_fmt_State": { "prover": "alt-ergo", "time": 0.011 }
     }
   }

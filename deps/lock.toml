@@ -46,6 +46,24 @@ hash = "sha256:2c413ac988586ea446b2791dc793357e18e903e716bc32d0671f6d55bac0ee87"
 upstream = { tag = "cvc4-1.8", rebuild_hashes = [] }
 
 [[tool]]
+name = "ethos"
+version = "c7d3db90"
+kind = "checker"
+
+[[tool.platform]]
+platform = "aarch64-darwin"
+hash = "sha256:f57d2ec521e08dd16684e86addcb8fb5c4385867dcaf110fe83df7c50c09b335"
+
+[[tool]]
+name = "cpc-signature"
+version = "cvc5-1.4.1"
+kind = "checker-signature"
+
+[[tool.platform]]
+platform = "aarch64-darwin"
+hash = "sha256:97d0e63ed5b1f5c5c496fe32c31d0eeb02bcc299f97379b38d5996b40b1e3a61"
+
+[[tool]]
 name = "why3find-dispatch"
 version = "89dd8721fb9de7fea5d00e58ebdabdc75a8235b8"
 kind = "why3find"

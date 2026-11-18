@@ -17,7 +17,7 @@ use crate::{
     machine::{LogEntry, Machine, Step},
     trace::TlaAction,
     verdict::{
-        accept_remote, accept_result, label, record_verdict, Acceptance,
+        accept_remote, accept_result, label, label_from_checker_output, record_verdict, Acceptance, CheckFacts,
         Context, Hash, Label, RemoteFacts, ResultFields, UnpatchedSolver, Verdict, Verdicts,
     },
 };
@@ -62,6 +62,9 @@ pub enum Place {
     Local,
     /// Jobs on the Cluster race for it.
     Remote,
+    /// A run reported a proof that needs a certificate; the shell is
+    /// getting one and having the pinned checker check it.
+    Certifying,
 }
 
 /// One prover call of why3find that has not been answered.
@@ -88,11 +91,18 @@ pub struct Call {
 pub struct Config {
     /// Number of solver processes that run at once on the local machine.
     pub local_jobs: u64,
-    /// Number of Jobs, each with its own seed, that race on one prover call
-    /// on the Cluster (R2.2). At least one.
+    /// Number of Jobs that race on one prover call on the Cluster (R2.2):
+    /// the members of the Portfolio, or the seeds of the call's prover. The
+    /// shell knows what member each number stands for. At least one.
     pub seeds: u64,
+    /// The first sequential pass also goes to the Cluster, as a race, when
+    /// there is one. Without this it stays local (R1.2).
+    pub fast_remote: bool,
     /// How long, beyond twice its time limit, the Front_End waits for a race.
     pub job_margin: Time,
+    /// Certification is on (R5.1): a reported proof that is not
+    /// proved-standalone gets a certificate and a run of the pinned checker.
+    pub certify: bool,
     /// Without a message from the Coordinator for longer than this, the
     /// Front_End falls back to local proving (R1.6). Zero: no such check.
     pub silence_limit: Time,
@@ -179,6 +189,8 @@ pub enum Input {
     ClusterLost { now: Time },
     /// A message arrived from the Coordinator.
     ClusterHeard { now: Time },
+    /// The shell tried to certify the Goal of a call.
+    Certificate { now: Time, rid: CallId, facts: CheckFacts },
     Tick { now: Time },
     /// why3find finished.
     Why3findDone { now: Time },
@@ -208,6 +220,9 @@ pub enum Effect {
     CancelLocal { rid: CallId },
     /// Cancel a Job on the Cluster.
     CancelJob { rid: CallId, seed: u64 },
+    /// Get a certificate for the Goal of the call and have the pinned
+    /// checker check it, then send `Certificate`.
+    Certify { rid: CallId },
     /// Send a heartbeat to the Coordinator.
     Beat,
     /// Close the connection to the Coordinator.
@@ -451,7 +466,30 @@ fn end_lost_race(s: &mut State, k: usize, effects: &mut Vec<Effect>) {
     } else {
         let call = s.calls.remove(k);
         let best = most_informative(&call.lost);
-        effects.push(Effect::Answer { rid: call.rid, reply: reply_of(best) });
+        answer_or_certify(s, call, best, effects);
+    }
+}
+
+/// A call ends with a non-proof outcome. If that outcome is a reported
+/// proof that lacks a certificate, and certification is on, the call waits
+/// for one instead (R5.1 criterion 1); otherwise why3find gets its answer.
+#[ensures((^s).goals == s.goals && (^s).verdicts == s.verdicts && (^s).phase == s.phase
+    && (^s).local_running == s.local_running)]
+#[ensures((^s).calls@.len() >= s.calls@.len())]
+fn answer_or_certify(s: &mut State, call: Call, outcome: Outcome, effects: &mut Vec<Effect>) {
+    let unchecked = match outcome {
+        Outcome::Unchecked => true,
+        _ => false,
+    };
+    if s.config.certify && unchecked {
+        let rid = call.rid;
+        let mut call = call;
+        call.place = Place::Certifying;
+        call.jobs.clear();
+        s.calls.push(call);
+        effects.push(Effect::Certify { rid });
+    } else {
+        effects.push(Effect::Answer { rid: call.rid, reply: reply_of(outcome) });
     }
 }
 
@@ -514,7 +552,7 @@ fn conclude(
             } else {
                 let call = s.calls.remove(k);
                 release_local(&mut s, &mut effects);
-                effects.push(Effect::Answer { rid: call.rid, reply: reply_of(outcome) });
+                answer_or_certify(&mut s, call, outcome, &mut effects);
             }
         }
     }
@@ -607,7 +645,7 @@ pub fn step(mut s: State, i: Input) -> Step<State, Effect> {
             }
             let remote = match s.calls[k].pass {
                 Pass::Later => s.cluster,
-                Pass::Fast => false,
+                Pass::Fast => s.cluster && s.config.fast_remote,
             };
             if remote {
                 // One Job with the configured seed and one for each further
@@ -755,6 +793,35 @@ pub fn step(mut s: State, i: Input) -> Step<State, Effect> {
             fall_back(&mut s, &mut effects);
             done(s, effects, TlaAction::ClusterLost)
         }
+        Input::Certificate { rid, facts, .. } => {
+            let k = match find_call(&s.calls, rid) {
+                Some(k) => k,
+                None => return discard(s),
+            };
+            if s.calls[k].place != Place::Certifying {
+                return discard(s);
+            }
+            let call = s.calls.remove(k);
+            let mut log = Vec::new();
+            match label_from_checker_output(facts) {
+                Label::Certified => {
+                    // The second route to a proof label (R7.1 criterion 3).
+                    s.verdicts = record_verdict(s.verdicts, call.goal, Label::Certified);
+                    effects.push(Effect::Answer { rid, reply: Reply::Valid });
+                    log.push(LogEntry::Certified { call: rid });
+                }
+                Label::NonProof(outcome) => {
+                    effects.push(Effect::Answer { rid, reply: reply_of(outcome) });
+                    log.push(LogEntry::Lost { call: rid, outcome });
+                }
+                // Not reachable: a checker run never gives proved-standalone.
+                Label::ProvedStandalone => {
+                    effects.push(Effect::Answer { rid, reply: Reply::Unknown });
+                    log.push(LogEntry::Lost { call: rid, outcome: Outcome::Unchecked });
+                }
+            }
+            Step { state: s, effects, action: TlaAction::Certificate, log }
+        }
         Input::ClusterHeard { now } => {
             if !s.cluster {
                 return discard(s);
@@ -788,7 +855,7 @@ pub fn step(mut s: State, i: Input) -> Step<State, Effect> {
                     cancel_jobs(&call, &mut effects);
                     call.lost.push(Outcome::Timeout);
                     let best = most_informative(&call.lost);
-                    effects.push(Effect::Answer { rid: call.rid, reply: reply_of(best) });
+                    answer_or_certify(&mut s, call, best, &mut effects);
                 } else {
                     k += 1;
                 }

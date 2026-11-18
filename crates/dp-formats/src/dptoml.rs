@@ -15,6 +15,41 @@ pub struct ProjectConfig {
     pub tracing: TracingOptions,
     #[serde(default)]
     pub certification: CertificationOptions,
+    /// The Solver_Configurations that a Portfolio can name (R2.1).
+    #[serde(default)]
+    pub solver: Vec<SolverOption>,
+    #[serde(default)]
+    pub portfolio: PortfolioOptions,
+}
+
+/// A named Solver_Configuration: a prover of the project and a seed. The
+/// command line is the one of the prover configuration of whoever runs it;
+/// option lists are not part of the format yet (OQ-N37).
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct SolverOption {
+    pub name: String,
+    /// The prover as `why3find.json` names it.
+    pub prover: String,
+    pub seed: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum FirstPass {
+    Local,
+    Cluster,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PortfolioOptions {
+    /// Names of the Solver_Configurations that race on every prover call
+    /// that goes to the Cluster, in order.
+    pub race: Option<Vec<String>>,
+    /// Where the first sequential pass runs: local, the default, or as a
+    /// race on the Cluster.
+    pub first_pass: Option<FirstPass>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
@@ -61,6 +96,10 @@ pub struct TracingOptions {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CertificationOptions {
+    /// A reported proof that is not proved-standalone gets a certificate
+    /// and a run of the pinned checker (R5.1).
+    pub enabled: Option<bool>,
+    /// Every reported proof does (R5.5).
     pub certify_all: Option<bool>,
 }
 

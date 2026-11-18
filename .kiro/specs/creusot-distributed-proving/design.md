@@ -605,6 +605,8 @@ One module per exchanged format of R7.10, each with a grammar file in `docs/form
 
 ### C17 Replay_Tool (`crates/dp-replay/`)
 
+As built for certified Verdicts: the tool loads the certificate from `.dp-certs/` by the content hash in the `dp` member and runs the pinned checker again, with its own print of the Goal as the reference.
+
 As built: `dp-replay` drives `why3find prove -r` in dispatch mode, so why3find walks the proof files and makes one prover call per entry that the legacy members say is proved; the tool answers each call from the `dp` member of that entry and its own re-run. It builds without the `cluster` feature of dp-shell, which holds all transport code.
 
 Implements flow (e) and R7.6, R2.3 criterion 8, R5.4 criteria 8 and 9 and R7.2 criterion 10. It links no networking code; in CI it runs in a container without a network (P7.6.3). It uses the why3find bridge for re-printing, the dp-cert checker driver with the same binding checks, and `label_from_checker_output` from dp-core, so the replay rule and the Session rule are one function (P7.6.4).

@@ -231,3 +231,97 @@ fn unmodified_why3find_reads_the_extended_proof_file() {
     assert_eq!(provers(&plain), 3);
     fs::remove_dir_all(dir).unwrap();
 }
+
+/// R5: with certification on, a proof that a solver outside the
+/// Unpatched_Solvers reports is certified: cvc5 proves the Goal again with
+/// a proof, and the pinned checker accepts it against the local print.
+#[test]
+fn a_proof_of_an_unpinned_solver_is_certified() {
+    let Some((why3find, lock)) = env() else { return };
+    if std::env::var_os("DP_ETHOS").is_none() || std::env::var_os("DP_CPC_SIGNATURE").is_none() {
+        assert!(std::env::var_os("DP_REQUIRE_TOOLS").is_none(), "DP_ETHOS or DP_CPC_SIGNATURE is not set");
+        return;
+    }
+    // Alt-Ergo's binary is pinned, but not as an Unpatched_Solver.
+    let start = lock.find("name = \"alt-ergo\"").unwrap();
+    let kind = start + lock[start..].find("unpatched-solver").unwrap();
+    let demoted = format!("{}sharing-solver{}", &lock[..kind], &lock[kind + "unpatched-solver".len()..]);
+    // Without certification its proofs are unchecked.
+    let dir = project("uncertified", r#""alt-ergo""#);
+    let out = prove(&dir, &why3find, &demoted);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("0 proved-standalone Verdicts"));
+    assert!(!proofs(&dir).unwrap().contains("\"prover\""));
+    fs::remove_dir_all(dir).unwrap();
+
+    // With it, and with cvc5 in the project as the proof producer.
+    let dir = project("certified", r#""alt-ergo", "cvc5""#);
+    fs::write(dir.join("dp.toml"), "[certification]\nenabled = true\n").unwrap();
+    let out = prove(&dir, &why3find, &demoted);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("Theory arith.Arith: ✘ (2/3)"), "{stderr}");
+    assert!(stderr.contains("2 certified Verdicts"), "{stderr}");
+    assert!(stderr.contains("Goals by label: 2 certified, 1 unknown"), "{stderr}");
+    let proofs = proofs(&dir).unwrap();
+    let file: serde_json::Value = serde_json::from_str(&proofs).unwrap();
+    let goals = &file["proofs"]["Arith"];
+    let entry = |goal: &str| DpEntry::from_member(goals[goal]["dp"].as_str().unwrap(), 1 << 20).unwrap();
+    for goal in ["Easy", "Split"] {
+        let e = entry(goal);
+        assert_eq!(e.label, "certified", "{goal}");
+        // The certificate is in the store under its content hash, complete.
+        let content = e.certificate.expect("a certified entry names its certificate");
+        let stored = dp_cert::Certificate::load(&dir.join(".dp-certs"), content).unwrap();
+        assert!(stored.prover.starts_with("cvc5"), "{}", stored.prover);
+        assert!(!stored.proof.is_empty());
+    }
+    assert_eq!(entry("Wrong").label, "unknown");
+    assert!(entry("Wrong").certificate.is_none());
+    assert!(goals["Wrong"].get("prover").is_none());
+    fs::remove_dir_all(dir).unwrap();
+}
+
+/// R5.5: with certify-all, a proof of an Unpatched_Solver needs a
+/// certificate too, and gets the label certified, not proved-standalone.
+#[test]
+fn certify_all_certifies_proofs_of_unpatched_solvers_too() {
+    let Some((why3find, lock)) = env() else { return };
+    if std::env::var_os("DP_ETHOS").is_none() || std::env::var_os("DP_CPC_SIGNATURE").is_none() {
+        assert!(std::env::var_os("DP_REQUIRE_TOOLS").is_none(), "DP_ETHOS or DP_CPC_SIGNATURE is not set");
+        return;
+    }
+    let dir = project("certify-all", r#""alt-ergo", "cvc5""#);
+    fs::write(dir.join("dp.toml"), "[certification]\nenabled = true\ncertify_all = true\n").unwrap();
+    let out = prove(&dir, &why3find, &lock);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("0 proved-standalone Verdicts"), "{stderr}");
+    assert!(stderr.contains("2 certified Verdicts"), "{stderr}");
+    fs::remove_dir_all(dir).unwrap();
+}
+
+/// A checker that is not the pinned one certifies nothing.
+#[test]
+fn a_checker_that_is_not_pinned_certifies_nothing() {
+    let Some((why3find, lock)) = env() else { return };
+    if std::env::var_os("DP_ETHOS").is_none() || std::env::var_os("DP_CPC_SIGNATURE").is_none() {
+        assert!(std::env::var_os("DP_REQUIRE_TOOLS").is_none(), "DP_ETHOS or DP_CPC_SIGNATURE is not set");
+        return;
+    }
+    let start = lock.find("name = \"alt-ergo\"").unwrap();
+    let kind = start + lock[start..].find("unpatched-solver").unwrap();
+    let mut lock = format!("{}sharing-solver{}", &lock[..kind], &lock[kind + "unpatched-solver".len()..]);
+    // The Lock_File pins another checker binary.
+    let start = lock.find("name = \"ethos\"").unwrap();
+    let at = start + lock[start..].find("sha256:").unwrap() + 7;
+    let flipped = if &lock[at..at + 1] == "0" { "1" } else { "0" };
+    lock.replace_range(at..at + 1, flipped);
+    let dir = project("unpinned-checker", r#""alt-ergo", "cvc5""#);
+    fs::write(dir.join("dp.toml"), "[certification]\nenabled = true\n").unwrap();
+    let out = prove(&dir, &why3find, &lock);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // cvc5 is an Unpatched_Solver and still proves what it is asked; what
+    // only Alt-Ergo reported, and the checker checked, is not certified.
+    assert!(!stderr.contains("certified Verdicts"), "{stderr}");
+    assert!(!proofs(&dir).unwrap().contains("\"alt-ergo\""), "{stderr}");
+    fs::remove_dir_all(dir).unwrap();
+}

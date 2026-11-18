@@ -267,3 +267,80 @@ fn a_file_that_unmodified_why3find_wrote_has_nothing_confirmed() {
     assert!(report.contains("not-proved arith.mlw Arith.Wrong [] unresolved"), "{report}");
     fs::remove_dir_all(dir).unwrap();
 }
+
+fn certified_session(e: &Env, name: &str) -> Option<(PathBuf, String)> {
+    if std::env::var_os("DP_ETHOS").is_none() || std::env::var_os("DP_CPC_SIGNATURE").is_none() {
+        assert!(std::env::var_os("DP_REQUIRE_TOOLS").is_none(), "DP_ETHOS or DP_CPC_SIGNATURE is not set");
+        return None;
+    }
+    // Alt-Ergo is not an Unpatched_Solver here, so its proofs need
+    // certificates; cvc5 is in the project as the proof producer.
+    let start = e.lock.find("name = \"alt-ergo\"").unwrap();
+    let kind = start + e.lock[start..].find("unpatched-solver").unwrap();
+    let lock = format!("{}sharing-solver{}", &e.lock[..kind], &e.lock[kind + "unpatched-solver".len()..]);
+    let dir = project(name);
+    fs::write(
+        dir.join("why3find.json"),
+        r#"{ "fast": 0.2, "time": 1.0, "depth": 4, "packages": [], "provers": [ "alt-ergo", "cvc5" ], "tactics": [ "split_vc" ], "drivers": [], "warnoff": [] }"#,
+    )
+    .unwrap();
+    fs::write(dir.join("dp.toml"), "[certification]\nenabled = true\n").unwrap();
+    let out = tool(e, &e.frontend, &dir, &lock, &["prove", "-f", "arith.mlw"]);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("certified Verdicts"), "{out:?}");
+    Some((dir, lock))
+}
+
+// P-ID: P7.6.4 (certified part)
+#[test]
+fn replay_confirms_certified_verdicts_from_the_store_alone() {
+    let Some(e) = env() else { return };
+    let Some((dir, lock)) = certified_session(&e, "certified") else { return };
+    // Neither cache has a say.
+    fs::remove_dir_all(dir.join(".dp-cache")).unwrap();
+    let _ = fs::remove_dir_all(dir.join(".why3find"));
+    let (status, report) = replay(&e, &dir, &lock);
+    assert_eq!(status, Some(0), "{report}");
+    assert!(report.contains("confirmed arith.mlw Arith.Easy [] certificate"), "{report}");
+    assert!(report.contains("0 not confirmed"), "{report}");
+    fs::remove_dir_all(dir).unwrap();
+}
+
+// P-ID: P7.6.4, P5.4.3
+#[test]
+fn a_changed_or_missing_certificate_is_not_confirmed() {
+    let Some(e) = env() else { return };
+    let Some((dir, lock)) = certified_session(&e, "tampered-certificate") else { return };
+    let entries: Vec<PathBuf> = fs::read_dir(dir.join(".dp-certs")).unwrap().flatten().map(|e| e.path()).collect();
+    assert!(!entries.is_empty());
+    // A proof that is not the stored one: found by its hash.
+    let saved: Vec<Vec<u8>> = entries.iter().map(|d| fs::read(d.join("proof")).unwrap()).collect();
+    for dir in &entries {
+        fs::write(dir.join("proof"), b"(step @p1 :rule refl :args (x))\n").unwrap();
+    }
+    let (status, report) = replay(&e, &dir, &lock);
+    assert_eq!(status, Some(1), "{report}");
+    assert!(report.contains("the certificate entry is damaged"), "{report}");
+    // The certificate of one Goal under the reference of another: every
+    // file is as stored, and the checker does not accept it for that Goal.
+    for (dir, proof) in entries.iter().zip(&saved) {
+        fs::write(dir.join("proof"), proof).unwrap();
+    }
+    assert_eq!(replay(&e, &dir, &lock).0, Some(0));
+    edit(&dir, |file| {
+        let goals = file["proofs"]["Arith"].as_object_mut().unwrap();
+        let easy = goals["Easy"].clone();
+        goals.insert("Wrong".into(), easy);
+    });
+    let (status, report) = replay(&e, &dir, &lock);
+    assert_eq!(status, Some(1), "{report}");
+    assert!(
+        report.contains("not-confirmed arith.mlw Arith.Wrong []: the certificate is not for the Goal as printed here"),
+        "{report}"
+    );
+    // Without the store nothing certified is confirmed.
+    fs::remove_dir_all(dir.join(".dp-certs")).unwrap();
+    let (status, report) = replay(&e, &dir, &lock);
+    assert_eq!(status, Some(1), "{report}");
+    assert!(!report.contains("\nconfirmed "), "{report}");
+    fs::remove_dir_all(dir).unwrap();
+}

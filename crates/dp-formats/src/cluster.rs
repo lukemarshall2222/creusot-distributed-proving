@@ -15,6 +15,7 @@ use crate::{
 
 const SIG_RESULT: &str = "dp/sig/result/v1";
 const SIG_REGISTRY: &str = "dp/sig/registry/v1";
+const SIG_OPERATOR: &str = "dp/sig/operator/v1";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DecodeError(pub String);
@@ -247,6 +248,90 @@ impl SignedResult {
     }
 }
 
+/// What the operator tells the Coordinator about a Worker (R1.7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Operation {
+    /// The Worker gets no new Job; the one it runs ends normally.
+    Drain,
+    /// The Worker is disconnected; its Job goes to another Worker.
+    Remove,
+    /// As Remove, and its Results are no longer accepted by anyone
+    /// (R1.7 criterion 6): Front_Ends are told.
+    Revoke,
+}
+
+impl Operation {
+    pub fn name(self) -> &'static str {
+        match self {
+            Operation::Drain => "drain",
+            Operation::Remove => "remove",
+            Operation::Revoke => "revoke",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Operation> {
+        [Operation::Drain, Operation::Remove, Operation::Revoke].into_iter().find(|o| o.name() == name)
+    }
+}
+
+/// An operator command with the operator's signature. The serial number
+/// orders the commands: the Coordinator takes a command only if its number
+/// is larger than every one it has taken, so a recorded command cannot be
+/// sent again.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SignedCommand {
+    pub serial: u64,
+    pub operation: Operation,
+    pub worker: String,
+    pub tag: [u8; 64],
+}
+
+impl SignedCommand {
+    fn body(serial: u64, operation: Operation, worker: &str) -> Sexp {
+        Sexp::list([n(serial), a(operation.name()), a(worker)])
+    }
+
+    fn signed_bytes(&self) -> Vec<u8> {
+        sexp::print(&Sexp::list([a(SIG_OPERATOR), SignedCommand::body(self.serial, self.operation, &self.worker)]))
+    }
+
+    pub fn sign(serial: u64, operation: Operation, worker: &str, operator: &SigningKey) -> SignedCommand {
+        let mut command = SignedCommand { serial, operation, worker: worker.to_string(), tag: [0; 64] };
+        command.tag = operator.sign(&command.signed_bytes()).to_bytes();
+        command
+    }
+
+    /// The command carries the operator's signature.
+    pub fn verifies(&self, operator: &VerifyingKey) -> bool {
+        operator.verify_strict(&self.signed_bytes(), &Signature::from_bytes(&self.tag)).is_ok()
+    }
+
+    fn encode(&self) -> Vec<Sexp> {
+        vec![SignedCommand::body(self.serial, self.operation, &self.worker), Sexp::atom(self.tag)]
+    }
+
+    fn decode(fields: &[Sexp]) -> Result<SignedCommand, DecodeError> {
+        let [body, tag] = fields else { return err("signed command") };
+        let [serial, operation, worker] = items(body)? else { return err("command") };
+        Ok(SignedCommand {
+            serial: number(serial)?,
+            operation: operation.as_str().and_then(Operation::parse).ok_or_else(|| DecodeError("operation".into()))?,
+            worker: text(worker)?,
+            tag: <[u8; 64]>::try_from(bytes(tag)?).or_else(|_| err("a tag has 64 bytes"))?,
+        })
+    }
+}
+
+/// One Worker in a status report.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorkerStatus {
+    pub worker: String,
+    /// The name of the Job that it runs.
+    pub job: Option<String>,
+    pub draining: bool,
+    pub provers: Vec<String>,
+}
+
 /// A message of the cluster protocol.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Message {
@@ -270,6 +355,19 @@ pub enum Message {
     Result(SignedResult),
     /// The Job ended without a Result.
     Failed { job_id: String, reason: String },
+    /// Anyone to Coordinator: what is the state of the Cluster?
+    StatusRequest,
+    /// The answer: the connected Workers, the number of queued Jobs and of
+    /// connected Front_Ends (R1.7 criterion 9). It is a report of an
+    /// untrusted component; nothing is decided from it.
+    Status { workers: Vec<WorkerStatus>, queued: u64, front_ends: u64 },
+    /// Operator to Coordinator.
+    Operator(SignedCommand),
+    /// Coordinator to operator: whether the command was taken.
+    OperatorResult { serial: u64, taken: bool },
+    /// Coordinator to Front_End: a revocation, as the operator signed it.
+    /// The Front_End checks the signature itself.
+    Revocation(SignedCommand),
 }
 
 impl Message {
@@ -289,6 +387,30 @@ impl Message {
             Message::Cancel { job_id } => ("cancel", vec![a(job_id)]),
             Message::Result(r) => ("result", r.encode()),
             Message::Failed { job_id, reason } => ("failed", vec![a(job_id), a(reason)]),
+            Message::StatusRequest => ("status-request", vec![]),
+            Message::Status { workers, queued, front_ends } => (
+                "status",
+                vec![
+                    Sexp::list(workers.iter().map(|w| {
+                        Sexp::list([
+                            a(&w.worker),
+                            match &w.job {
+                                Some(job) => Sexp::list([a(job)]),
+                                None => Sexp::list([]),
+                            },
+                            a(if w.draining { "draining" } else { "serving" }),
+                            Sexp::list(w.provers.iter().map(|p| a(p))),
+                        ])
+                    })),
+                    n(*queued),
+                    n(*front_ends),
+                ],
+            ),
+            Message::Operator(command) => ("operator", command.encode()),
+            Message::OperatorResult { serial, taken } => {
+                ("operator-result", vec![n(*serial), a(if *taken { "taken" } else { "refused" })])
+            }
+            Message::Revocation(command) => ("revocation", command.encode()),
         };
         Sexp::List(std::iter::once(a(tag)).chain(fields).collect())
     }
@@ -323,6 +445,41 @@ impl Message {
             ("failed", [job_id, reason]) => {
                 Ok(Message::Failed { job_id: text(job_id)?, reason: text(reason)? })
             }
+            ("status-request", []) => Ok(Message::StatusRequest),
+            ("status", [workers, queued, front_ends]) => Ok(Message::Status {
+                workers: items(workers)?
+                    .iter()
+                    .map(|w| match items(w)? {
+                        [worker, job, state, provers] => Ok(WorkerStatus {
+                            worker: text(worker)?,
+                            job: match items(job)? {
+                                [] => None,
+                                [job] => Some(text(job)?),
+                                _ => return err("job"),
+                            },
+                            draining: match state.as_str() {
+                                Some("draining") => true,
+                                Some("serving") => false,
+                                _ => return err("worker state"),
+                            },
+                            provers: items(provers)?.iter().map(text).collect::<Result<_, _>>()?,
+                        }),
+                        _ => err("worker status"),
+                    })
+                    .collect::<Result<_, _>>()?,
+                queued: number(queued)?,
+                front_ends: number(front_ends)?,
+            }),
+            ("operator", fields) => Ok(Message::Operator(SignedCommand::decode(fields)?)),
+            ("operator-result", [serial, taken]) => Ok(Message::OperatorResult {
+                serial: number(serial)?,
+                taken: match taken.as_str() {
+                    Some("taken") => true,
+                    Some("refused") => false,
+                    _ => return err("operator result"),
+                },
+            }),
+            ("revocation", fields) => Ok(Message::Revocation(SignedCommand::decode(fields)?)),
             _ => err(tag),
         }
     }

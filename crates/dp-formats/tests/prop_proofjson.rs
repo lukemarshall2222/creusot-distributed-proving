@@ -48,11 +48,13 @@ fn entry() -> impl Strategy<Value = DpEntry> {
         any::<[u8; 32]>(),
         any::<bool>(),
         proptest::collection::vec(invalid, 0..3),
+        any::<Option<[u8; 32]>>(),
     )
-        .prop_map(|(label, replay, imports, conflict, invalid)| DpEntry {
+        .prop_map(|(label, replay, imports, conflict, invalid, certificate)| DpEntry {
             label: label.to_string(),
             replay,
             imports_hash: Hash(imports),
+            certificate: certificate.map(Hash),
             conflict,
             invalid,
         })
@@ -110,6 +112,6 @@ fn known_base64_values() {
 
 #[test]
 fn an_unknown_label_is_rejected() {
-    let e = DpEntry { label: "proved".into(), replay: vec![], imports_hash: Hash([0; 32]), conflict: false, invalid: vec![] };
+    let e = DpEntry { label: "proved".into(), replay: vec![], imports_hash: Hash([0; 32]), certificate: None, conflict: false, invalid: vec![] };
     assert!(DpEntry::from_member(&e.to_member(), 1 << 20).is_err());
 }

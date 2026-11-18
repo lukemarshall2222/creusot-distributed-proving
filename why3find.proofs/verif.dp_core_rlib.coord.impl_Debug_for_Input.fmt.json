@@ -5,13 +5,23 @@
       "vc_debug_struct_field1_finish": { "prover": "alt-ergo", "time": 0.01 },
       "vc_debug_struct_field2_finish": { "prover": "alt-ergo", "time": 0.01 },
       "vc_debug_struct_field3_finish": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_debug_struct_field4_finish": {
+        "prover": "alt-ergo",
+        "time": 0.011
+      },
       "vc_debug_struct_field5_finish": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_debug_struct_fields_finish": {
+        "prover": "alt-ergo",
+        "time": 0.011
+      },
       "vc_elim_Cancel": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_Disconnected": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_Failed": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_FrontEndHello": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_Heartbeat": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Operator": { "prover": "alt-ergo", "time": 0.011 },
       "vc_elim_Result": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Status": { "prover": "alt-ergo", "time": 0.011 },
       "vc_elim_Submit": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_Tick": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_WorkerHello": { "prover": "alt-ergo", "time": 0.01 },

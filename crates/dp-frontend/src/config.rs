@@ -12,11 +12,11 @@ use std::{path::Path, time::Duration};
 use dp_core::config::{validate_config, ConfigError, Settings, MAX_SEEDS};
 use dp_formats::{
     cluster::{from_hex, Registry},
-    dptoml::{cluster_address, ProjectConfig, RetentionOption},
+    dptoml::{cluster_address, FirstPass, ProjectConfig, RetentionOption},
 };
 use dp_shell::trace::Retention;
 
-use crate::session::Cluster;
+use crate::session::{Cluster, Member};
 
 /// The options of a Session that the configuration decides.
 pub struct Options {
@@ -26,6 +26,11 @@ pub struct Options {
     pub silence_limit: Duration,
     pub beat_period: Duration,
     pub portfolio_seeds: u64,
+    pub portfolio: Vec<Member>,
+    pub fast_remote: bool,
+    /// The checker of certification, when certification is on.
+    pub checker: Option<dp_cert::Checker>,
+    pub certify_all: bool,
     pub trace: Option<(std::path::PathBuf, Retention)>,
 }
 
@@ -98,6 +103,18 @@ pub fn load(dir: &Path) -> Result<Options, String> {
         file.certification.certify_all,
         false,
     )?;
+    let certify =
+        pick("certification.enabled", "DP_CERTIFY", |t| t.parse().ok(), file.certification.enabled, false)?;
+    // The checker and its signature files come from the environment of the
+    // pinned tools, not from the project.
+    let ethos = env_text("DP_ETHOS")?.unwrap_or_else(|| "ethos".to_string());
+    let signature = env_text("DP_CPC_SIGNATURE")?;
+    let checker = match (dp_shell::solver::find_executable(&ethos), &signature) {
+        (Ok(ethos), Some(signature)) if std::path::Path::new(signature).join("Cpc.eo").is_file() => {
+            Some(dp_cert::Checker { ethos, signature: signature.into() })
+        }
+        _ => None,
+    };
     let trace_file = text("tracing.file", "DP_TRACE", &file.tracing.file)?;
     let retention = match (env_text("DP_TRACE_RETENTION")?, file.tracing.retention) {
         (Some(t), _) if t == "complete" => RetentionOption::Complete,
@@ -110,6 +127,33 @@ pub fn load(dir: &Path) -> Result<Options, String> {
     };
     let keep = pick("tracing.keep", "DP_TRACE_KEEP", |t| t.parse().ok(), file.tracing.keep, 1000)?;
 
+    // The Portfolio: every name is a Solver_Configuration of the file, and
+    // neither list has a name twice (R2.1 criteria 3 to 5).
+    let race = file.portfolio.race.clone().unwrap_or_default();
+    let mut portfolio = Vec::new();
+    let mut names_ok = true;
+    for (i, name) in race.iter().enumerate() {
+        let defined: Vec<_> = file.solver.iter().filter(|s| &s.name == name).collect();
+        match defined.as_slice() {
+            [solver] if !race[..i].contains(name) => portfolio.push(Member {
+                name: solver.name.clone(),
+                prover: solver.prover.clone(),
+                seed: solver.seed,
+            }),
+            _ => names_ok = false,
+        }
+    }
+    if file.portfolio.race.as_ref().is_some_and(Vec::is_empty) {
+        return Err("portfolio.race (dp.toml) = []: a Portfolio has at least one member".to_string());
+    }
+    let first_pass = match (env_text("DP_FIRST_PASS")?, file.portfolio.first_pass) {
+        (Some(t), _) if t == "cluster" => (FirstPass::Cluster, "portfolio.first_pass (DP_FIRST_PASS) = cluster"),
+        (Some(t), _) if t == "local" => (FirstPass::Local, "portfolio.first_pass (DP_FIRST_PASS) = local"),
+        (Some(t), _) => return Err(format!("portfolio.first_pass (DP_FIRST_PASS) = {t:?}: not local or cluster")),
+        (None, Some(FirstPass::Cluster)) => (FirstPass::Cluster, "portfolio.first_pass (dp.toml) = cluster"),
+        (None, _) => (FirstPass::Local, "portfolio.first_pass = local"),
+    };
+
     let micros = |s: f64| (s * 1e6) as u64;
     let parsed_address = address.as_ref().and_then(|a| cluster_address(&a.value));
     let settings = Settings {
@@ -118,8 +162,13 @@ pub fn load(dir: &Path) -> Result<Options, String> {
         registry_given: registry.is_some() && operator_key.is_some(),
         local_jobs: jobs.value,
         seeds: seeds.value,
+        portfolio: race.len() as u64,
+        portfolio_names_ok: names_ok,
+        fast_remote: first_pass.0 == FirstPass::Cluster,
         silence_limit: micros(silence.value),
         beat_period: micros(beat.value),
+        certify: certify.value,
+        checker_given: checker.is_some(),
         certify_all: certify_all.value,
         trace_bounded: retention == RetentionOption::Bounded,
         trace_keep: keep.value,
@@ -137,11 +186,25 @@ pub fn load(dir: &Path) -> Result<Options, String> {
             ConfigError::SeedsWithoutCluster => {
                 format!("{}: a race of several seeds needs the cluster option", seeds.shown)
             }
+            ConfigError::PortfolioNames => format!(
+                "portfolio.race (dp.toml) = {race:?}: every member is the name of one [[solver]] entry, and no name is there twice"
+            ),
+            ConfigError::PortfolioUse => format!(
+                "portfolio.race (dp.toml) = {race:?}: a Portfolio has at most {MAX_SEEDS} members, needs the cluster option, and is not combined with {}",
+                seeds.shown
+            ),
+            ConfigError::FirstPassWithoutCluster => {
+                format!("{}: the first pass can go to the Cluster only with the cluster option", first_pass.1)
+            }
             ConfigError::HeartbeatMargin => format!(
                 "{} with {}: the heartbeat period must be positive and at most half of the silence limit",
                 beat.shown, silence.shown
             ),
-            ConfigError::CertifyAll => format!("{}: certification is not available in this build", certify_all.shown),
+            ConfigError::Certification => format!(
+                "{}: certification needs the checker Ethos (DP_ETHOS, or `ethos` on PATH) and its signature files (DP_CPC_SIGNATURE)",
+                certify.shown
+            ),
+            ConfigError::CertifyAll => format!("{}: needs certification.enabled", certify_all.shown),
             ConfigError::TraceRetention => format!("{}: the bounded setting keeps at least one record", keep.shown),
         });
     }
@@ -157,7 +220,7 @@ pub fn load(dir: &Path) -> Result<Options, String> {
             let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", registry.shown))?;
             let registry =
                 Registry::verify(&bytes, &verification, 1 << 20).map_err(|e| format!("{}: {e}", registry.shown))?;
-            Some(Cluster { address, registry })
+            Some(Cluster { address, registry, operator: verification })
         }
         _ => None,
     };
@@ -168,6 +231,10 @@ pub fn load(dir: &Path) -> Result<Options, String> {
         silence_limit: Duration::from_secs_f64(silence.value),
         beat_period: Duration::from_secs_f64(beat.value),
         portfolio_seeds: seeds.value,
+        portfolio,
+        fast_remote: first_pass.0 == FirstPass::Cluster,
+        checker: if certify.value { checker } else { None },
+        certify_all: certify_all.value,
         trace: trace_file.map(|f| {
             let retention = match retention {
                 RetentionOption::Complete => Retention::Complete,

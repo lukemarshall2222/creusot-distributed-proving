@@ -428,3 +428,53 @@ pub fn conflict(label: Label, invalid_answers: u64) -> bool {
         _ => invalid_answers > 0,
     }
 }
+
+/// What the shell established about a certificate of a Goal (R5.3). The
+/// certificate itself is untrusted: these are facts about what the pinned
+/// checker said on the local print of the Goal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, DeepModel)]
+pub struct CheckFacts {
+    /// A certificate was produced.
+    pub produced: bool,
+    /// The checker binary that ran has the hash of the Lock_File's checker
+    /// entry, and its signature files have the hash of their entry.
+    pub checker_pinned: bool,
+    pub signature_pinned: bool,
+    /// The checker ran on the certificate with the Front_End's own print of
+    /// the Goal as the reference, and that print is one task.
+    pub bound_to_local_print: bool,
+    /// The checker accepted the certificate as a proof of false from
+    /// exactly the assertions of the reference.
+    pub accepted: bool,
+    /// The certificate has no step that the checker takes on trust.
+    pub complete: bool,
+    /// The certificate is stored completely (R5.4), so it can be replayed.
+    pub stored: bool,
+}
+
+/// Every condition under which a certificate gives the label certified
+/// (R5.3 criterion 17, R7.1 criterion 3).
+#[logic(open)]
+pub fn certifies(f: CheckFacts) -> bool {
+    pearlite! {
+        f.produced && f.checker_pinned && f.signature_pinned && f.bound_to_local_print
+            && f.accepted && f.complete && f.stored
+    }
+}
+
+/// The label that a checker run gives (design: `label_from_checker_output`).
+/// It is certified exactly when every fact holds. A certificate that the
+/// pinned checker accepted, but with trusted steps or without a complete
+/// store entry, is checked-incomplete; anything else is unchecked.
+#[ensures((result == Label::Certified) == certifies(f))]
+#[ensures(result != Label::ProvedStandalone)]
+pub fn label_from_checker_output(f: CheckFacts) -> Label {
+    let checked = f.produced && f.checker_pinned && f.signature_pinned && f.bound_to_local_print && f.accepted;
+    if checked && f.complete && f.stored {
+        Label::Certified
+    } else if checked {
+        Label::NonProof(Outcome::CheckedIncomplete)
+    } else {
+        Label::NonProof(Outcome::Unchecked)
+    }
+}

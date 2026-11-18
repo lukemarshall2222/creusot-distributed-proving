@@ -57,6 +57,9 @@ fn main() -> ExitCode {
         // Raw measurements for the evaluation (R6.3); not project options.
         record: std::env::var_os("DP_RECORD").map(PathBuf::from),
         portfolio_seeds: options.portfolio_seeds,
+        portfolio: options.portfolio,
+        fast_remote: options.fast_remote,
+        certify_all: options.certify_all,
         export: std::env::var_os("DP_EXPORT_DIR").map(PathBuf::from),
         trace: options.trace,
         lock_hash,
@@ -67,7 +70,13 @@ fn main() -> ExitCode {
             .filter(|s| *s > 0.0)
             .map(std::time::Duration::from_secs_f64),
     };
-    match session::run(config) {
+    let scratch = std::env::temp_dir().join(format!("dp-frontend-certify-{}", std::process::id()));
+    let certifier = options.checker.map(|checker| {
+        Box::new(session::EthosCertifier { checker, tmp: scratch.clone() }) as Box<dyn session::Certifier>
+    });
+    let result = session::run(config, certifier);
+    let _ = std::fs::remove_dir_all(&scratch);
+    match result {
         Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
         Err(e) => fail(e),
     }

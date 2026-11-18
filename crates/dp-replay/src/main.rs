@@ -32,8 +32,19 @@ fn main() -> ExitCode {
         Ok(dir) => dir,
         Err(e) => return fail(e),
     };
-    let config =
-        Config { why3find: why3find.into(), lock, lock_hash, dir, args: std::env::args_os().skip(1).collect() };
+    // The checker of certificates, when the pinned tools provide it.
+    let checker = match (std::env::var_os("DP_ETHOS"), std::env::var_os("DP_CPC_SIGNATURE")) {
+        (Some(ethos), Some(signature)) => Some(dp_cert::Checker { ethos: ethos.into(), signature: signature.into() }),
+        _ => None,
+    };
+    let config = Config {
+        why3find: why3find.into(),
+        lock,
+        lock_hash,
+        dir,
+        args: std::env::args_os().skip(1).collect(),
+        checker,
+    };
     let report = match replay(config) {
         Ok(report) => report,
         Err(e) => return fail(e),

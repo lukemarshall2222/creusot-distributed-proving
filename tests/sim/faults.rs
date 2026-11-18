@@ -5,7 +5,8 @@
 // dp-core Front_End machine, on a simulated network. Every test is
 // deterministic in its seed.
 
-use dp_sim::{truth, Call, Cluster, Reply, Speeds, COORDINATOR, MARGIN, OTHER_PROVER, PROVER, SILENCE, WORKERS};
+use dp_formats::cluster::{Message, Operation};
+use dp_sim::{operator_key, truth, Call, Cluster, Reply, Setup, Speeds, COORDINATOR, MARGIN, OTHER_PROVER, PROVER, SILENCE, WORKERS};
 use dp_testkit::sim::Faults;
 use proptest::prelude::*;
 
@@ -323,4 +324,188 @@ fn a_proof_and_an_invalid_answer_for_one_goal_are_a_conflict() {
     assert_eq!(conflicted.invalid[0].prover, "stub");
     assert_eq!(conflicted.replay[0].prover, "other");
     assert!(!goal("G1").entry.conflict && goal("G1").entry.invalid.is_empty());
+}
+
+// P-ID: P2.2.1, P2.2.8
+#[test]
+fn a_portfolio_races_provers_and_the_first_proof_wins() {
+    // The call's prover never answers on these Goals; the other member of
+    // the Portfolio proves the first, and neither proves the second.
+    let script = numbered(vec![call(0, "hang", 100_000), call(1_000, "unknown 20000", 100_000)]);
+    let setup = Setup {
+        portfolio: vec![PROVER.into(), OTHER_PROVER.into()],
+        other_prints: [(0, b"unsat 10000".to_vec()), (1, b"unknown 30000".to_vec())].into(),
+        ..Setup::plain()
+    };
+    let mut cluster = Cluster::with(11, Faults::none(), 2, 0, script.clone(), setup);
+    cluster.run_until(horizon(&script));
+    // The first call is proved long before its own prover's limit.
+    let (reply, at) = cluster.answer(0).unwrap();
+    assert_eq!(reply, Reply::Valid);
+    assert!(at < 30_000, "answered at {at}");
+    assert_eq!(cluster.answer(1).unwrap().0, Reply::Unknown);
+    assert_eq!(cluster.local_runs(), 0);
+    // The record names the prover that proved the Goal, not the call's.
+    let labels = cluster.front_end.labels();
+    let goal = |name: &str| labels["sim.mlw"].iter().find(|g| g.name == name).unwrap();
+    assert_eq!(goal("G0").entry.label, "proved-standalone");
+    assert_eq!(goal("G0").entry.replay[0].prover, "other");
+    assert_eq!(goal("G1").entry.label, "unknown");
+    // The loser of the won race was cancelled: the Workers are idle again.
+    assert!(cluster.workers.values().all(|w| w.state().running.is_none()));
+}
+
+// P-ID: P7.2.7, P2.2.19
+#[test]
+fn a_conflict_inside_a_race_is_recorded() {
+    // One member answers Invalid before the other proves the Goal.
+    let script = numbered(vec![call(0, "sat 5000", 100_000)]);
+    let setup = Setup {
+        portfolio: vec![PROVER.into(), OTHER_PROVER.into()],
+        other_prints: [(0, b"unsat 40000".to_vec())].into(),
+        ..Setup::plain()
+    };
+    let mut cluster = Cluster::with(12, Faults::none(), 2, 0, script.clone(), setup);
+    cluster.run_until(horizon(&script));
+    assert_eq!(cluster.answer(0).unwrap().0, Reply::Valid);
+    let labels = cluster.front_end.labels();
+    let entry = &labels["sim.mlw"][0].entry;
+    assert!(entry.conflict);
+    assert_eq!(entry.invalid[0].prover, "stub");
+    assert_eq!(entry.replay[0].prover, "other");
+}
+
+// P-ID: P1.2.1 (the option that moves the first pass)
+#[test]
+fn the_first_pass_runs_on_the_cluster_when_configured() {
+    let script = mixed();
+    let setup = Setup { first_pass_on_cluster: true, ..Setup::plain() };
+    let mut cluster = Cluster::with(13, Faults::none(), 2, 0, script.clone(), setup);
+    cluster.run_until(horizon(&script));
+    for (rid, call) in script.iter().enumerate() {
+        assert_eq!(cluster.answer(rid).unwrap().0, truth(call), "call {rid}");
+    }
+    assert_eq!(cluster.local_runs(), 0);
+    // Without the option, calls of the first pass stay on this machine.
+    let mut cluster = Cluster::with(13, Faults::none(), 2, 0, script.clone(), Setup::plain());
+    cluster.front_end.bridge.first_pass();
+    cluster.run_until(horizon(&script));
+    assert_eq!(cluster.local_runs(), script.len());
+}
+
+/// Calls that keep two Workers busy for a while: one every 20 ms, each
+/// 30 ms long.
+fn steady(n: u64) -> Vec<Call> {
+    numbered((0..n).map(|i| call(i * 20_000, "unsat 30000", 200_000)).collect())
+}
+
+// P-ID: P1.7.3
+#[test]
+fn a_drained_worker_ends_its_job_and_gets_no_other() {
+    let script = steady(10);
+    let mut cluster = Cluster::new(20, Faults::none(), 2, 0, script.clone(), 1);
+    cluster.run_until(45_000);
+    assert!(cluster.operate(1, Operation::Drain, WORKERS, &operator_key()));
+    let drained_at = cluster.now();
+    cluster.run_until(horizon(&script));
+    // Every call is proved, on the Cluster, and nothing was lost.
+    for rid in 0..script.len() {
+        assert_eq!(cluster.answer(rid).unwrap().0, Reply::Valid, "call {rid}");
+    }
+    assert_eq!(cluster.local_runs(), 0);
+    let world = cluster.world.borrow();
+    assert_eq!(world.started.len(), script.len(), "no Job ran twice");
+    // After the command the drained Worker started nothing.
+    assert!(world.started.iter().all(|(node, at, _)| *node != WORKERS || *at <= drained_at), "{:?}", world.started);
+    drop(world);
+    // The report says so.
+    let Some(Message::Status { workers, queued, front_ends }) = cluster.status() else { panic!("no status") };
+    assert_eq!((queued, front_ends), (0, 1));
+    let state: Vec<_> = workers.iter().map(|w| (w.worker.as_str(), w.draining, w.job.is_some())).collect();
+    assert_eq!(state, vec![("w10", true, false), ("w11", false, false)]);
+}
+
+// P-ID: P1.7.5
+#[test]
+fn only_the_operator_commands_and_each_command_once() {
+    let script = steady(4);
+    let mut cluster = Cluster::new(21, Faults::none(), 2, 0, script.clone(), 1);
+    cluster.run_until(10_000);
+    // Another key: refused, and nothing changes.
+    let stranger = ed25519_dalek::SigningKey::from_bytes(&[9; 32]);
+    assert!(!cluster.operate(1, Operation::Remove, WORKERS, &stranger));
+    assert_eq!(cluster.coordinator.as_ref().unwrap().state().workers.len(), 2);
+    // The operator's command is taken once; the same serial number again,
+    // or a smaller one, is not: a recorded command cannot be replayed.
+    assert!(cluster.operate(5, Operation::Drain, WORKERS, &operator_key()));
+    assert!(!cluster.operate(5, Operation::Remove, WORKERS, &operator_key()));
+    assert!(!cluster.operate(4, Operation::Remove, WORKERS, &operator_key()));
+    assert_eq!(cluster.coordinator.as_ref().unwrap().state().workers.len(), 2);
+    assert!(cluster.operate(6, Operation::Remove, WORKERS + 1, &operator_key()));
+    cluster.run_until(horizon(&script));
+    for rid in 0..script.len() {
+        assert_eq!(cluster.answer(rid).unwrap().0, Reply::Valid, "call {rid}");
+    }
+}
+
+// P-ID: P1.7.6
+#[test]
+fn a_revoked_worker_is_removed_and_its_results_count_for_nothing() {
+    let script = steady(8);
+    let mut cluster = Cluster::new(22, Faults::none(), 2, 0, script.clone(), 1);
+    cluster.run_until(45_000);
+    assert!(cluster.operate(1, Operation::Revoke, WORKERS, &operator_key()));
+    let revoked_at = cluster.now();
+    // The Front_End has the revocation, with the operator's signature.
+    assert!(cluster.front_end.revoked().contains("w10"));
+    cluster.run_until(horizon(&script));
+    for rid in 0..script.len() {
+        assert_eq!(cluster.answer(rid).unwrap().0, Reply::Valid, "call {rid}");
+    }
+    // The revoked Worker keeps trying to join and is turned away: it is
+    // not among the Workers, and it ran nothing after the revocation.
+    let Some(Message::Status { workers, .. }) = cluster.status() else { panic!("no status") };
+    assert_eq!(workers.iter().map(|w| w.worker.as_str()).collect::<Vec<_>>(), vec!["w11"]);
+    assert!(cluster.workers[&WORKERS].connections > 1);
+    let world = cluster.world.borrow();
+    assert!(world.started.iter().all(|(node, at, _)| *node != WORKERS || *at <= revoked_at));
+    drop(world);
+    // No proof in the record names it for a Job that began after that; and
+    // the Job it was running went to the other Worker.
+    let labels = cluster.front_end.labels();
+    let by_revoked = labels["sim.mlw"]
+        .iter()
+        .filter(|g| g.entry.replay.iter().any(|r| r.place == dp_formats::proofjson::Place::Worker("w10".into())))
+        .count();
+    assert!(by_revoked <= 2, "{by_revoked} proofs by the revoked Worker");
+}
+
+/// The Front_End does not rely on the Coordinator to enforce a revocation:
+/// here the Coordinator goes on giving Jobs to the Worker, and the
+/// Front_End alone refuses its Results. A revocation that the operator did
+/// not sign changes nothing.
+// P-ID: P1.7.6, P1.3.9
+#[test]
+fn the_front_end_enforces_a_revocation_by_itself() {
+    use dp_formats::cluster::SignedCommand;
+    use dp_shell::env::Env;
+    use dp_testkit::sim::SimEnv;
+    for (signer, proved) in [(operator_key(), false), (ed25519_dalek::SigningKey::from_bytes(&[9; 32]), true)] {
+        let script = steady(4);
+        let mut cluster = Cluster::new(23, Faults::none(), 1, 0, script.clone(), 1);
+        cluster.run_until(5_000);
+        // The revocation arrives on the Front_End's connection, as if the
+        // Coordinator passed it on without acting on it.
+        let front_end = cluster.coordinator.as_ref().unwrap().state().front_ends[0].peer;
+        let command = SignedCommand::sign(1, Operation::Revoke, "w10", &signer);
+        SimEnv::new(&cluster.world, COORDINATOR).send(front_end, &Message::Revocation(command));
+        cluster.run_until(horizon(&script));
+        assert_eq!(cluster.front_end.revoked().contains("w10"), !proved);
+        for rid in 0..script.len() {
+            let reply = cluster.answer(rid).unwrap().0;
+            assert_eq!(reply == Reply::Valid, proved, "call {rid}: {reply:?}");
+        }
+        // The Worker did run the Jobs: its Results were refused, not missing.
+        assert!(cluster.runners().contains(&WORKERS));
+    }
 }

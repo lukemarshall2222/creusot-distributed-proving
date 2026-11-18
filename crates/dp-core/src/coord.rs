@@ -51,6 +51,8 @@ pub struct Worker {
     pub busy: Option<Job>,
     /// When the Coordinator last heard from it.
     pub heard: Time,
+    /// The operator drains it: it gets no new Job (R1.7).
+    pub draining: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, DeepModel)]
@@ -80,12 +82,21 @@ pub struct State {
     pub queue: Vec<Job>,
     /// When the last heartbeats were sent.
     pub beat: Time,
+    /// The largest serial number of an operator command that was taken.
+    pub serial: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, DeepModel)]
 pub enum Input {
     FrontEndHello { now: Time, peer: Peer },
-    WorkerHello { now: Time, peer: Peer, offers: Vec<Offer> },
+    /// `revoked`: the operator revoked the Worker that the offer names.
+    WorkerHello { now: Time, peer: Peer, offers: Vec<Offer>, revoked: bool },
+    /// A command with the operator's name on it. `authentic`: it carries
+    /// the operator's signature. `worker`: the connection of the Worker
+    /// that it names, if that Worker is connected.
+    Operator { now: Time, peer: Peer, authentic: bool, serial: u64, operation: Operation, worker: Option<Peer> },
+    /// Someone asks for the state of the Cluster.
+    Status { now: Time, peer: Peer },
     Submit { now: Time, peer: Peer, job: JobId, prover: ProverId, micros: u64 },
     Cancel { now: Time, peer: Peer, job: JobId },
     /// A Worker's Result for a Job. The shell holds the message.
@@ -97,6 +108,14 @@ pub enum Input {
     WorkerIdle { now: Time, peer: Peer },
     Disconnected { now: Time, peer: Peer },
     Tick { now: Time },
+}
+
+/// What the operator tells the Coordinator about a Worker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, DeepModel)]
+pub enum Operation {
+    Drain,
+    Remove,
+    Revoke,
 }
 
 /// Why a Job ended without a Result.
@@ -126,6 +145,12 @@ pub enum Effect {
     Drop { peer: Peer },
     /// The Job is gone from the Coordinator: the shell forgets its bytes.
     Forget { front_end: Peer, job: JobId },
+    /// Tell the sender of an operator command whether it was taken.
+    OperatorReply { peer: Peer, serial: u64, taken: bool },
+    /// Send the revocation that was just taken to a Front_End, as signed.
+    Announce { front_end: Peer },
+    /// Send a status report.
+    Report { peer: Peer },
 }
 
 #[ensures(match result {
@@ -216,6 +241,7 @@ pub enum Pick {
 #[ensures(match result {
     Pick::Idle { index, velocity } => index@ < workers@.len()
         && workers[index@].busy == None
+        && !workers[index@].draining
         && offers(workers[index@], prover, velocity),
     _ => true,
 })]
@@ -224,14 +250,17 @@ pub fn pick(workers: &Vec<Worker>, prover: ProverId) -> Pick {
     let mut k = 0;
     #[invariant(k@ <= workers@.len())]
     while k < workers.len() {
-        match offer(&workers[k], prover) {
-            Some(velocity) => {
-                if workers[k].busy.is_none() {
-                    return Pick::Idle { index: k, velocity };
+        // A Worker that is being drained offers nothing.
+        if !workers[k].draining {
+            match offer(&workers[k], prover) {
+                Some(velocity) => {
+                    if workers[k].busy.is_none() {
+                        return Pick::Idle { index: k, velocity };
+                    }
+                    offered = true;
                 }
-                offered = true;
+                None => {}
             }
-            None => {}
         }
         k += 1;
     }
@@ -404,9 +433,19 @@ pub fn step(state: State, input: Input) -> Step<State, Effect> {
             s.front_ends.push(FrontEnd { peer, heard: now });
             TlaAction::FrontEndJoined
         }
-        Input::WorkerHello { now, peer, offers } => {
+        Input::WorkerHello { now, peer, offers, revoked } => {
             if find_front_end(&s.front_ends, peer).is_some() {
                 return discard(s);
+            }
+            // A revoked Worker does not join (R1.7 criterion 6).
+            if revoked {
+                effects.push(Effect::Drop { peer });
+                match find_worker(&s.workers, peer) {
+                    Some(k) => lose_worker(&mut s, k, &mut effects),
+                    None => {}
+                }
+                assign(&mut s, &mut effects);
+                return done(s, effects, TlaAction::PeerLost);
             }
             match find_worker(&s.workers, peer) {
                 // A new offer of a Worker that is connected replaces its old one.
@@ -414,7 +453,7 @@ pub fn step(state: State, input: Input) -> Step<State, Effect> {
                     s.workers[k].offers = offers;
                     s.workers[k].heard = now;
                 }
-                None => s.workers.push(Worker { peer, offers, busy: None, heard: now }),
+                None => s.workers.push(Worker { peer, offers, busy: None, heard: now, draining: false }),
             }
             TlaAction::WorkerJoined
         }
@@ -490,6 +529,53 @@ pub fn step(state: State, input: Input) -> Step<State, Effect> {
         Input::Heartbeat { now, peer } => {
             heard(&mut s, peer, now);
             TlaAction::Heartbeat
+        }
+        Input::Status { peer, .. } => {
+            effects.push(Effect::Report { peer });
+            return done(s, effects, TlaAction::Heartbeat);
+        }
+        // Only a command that the operator signed, and that is newer than
+        // every command taken so far, changes anything (R1.7 criterion 5).
+        Input::Operator { peer, authentic, serial, operation, worker, .. } => {
+            if !authentic || serial <= s.serial {
+                effects.push(Effect::OperatorReply { peer, serial, taken: false });
+                return done(s, effects, TlaAction::Discard);
+            }
+            s.serial = serial;
+            effects.push(Effect::OperatorReply { peer, serial, taken: true });
+            match operation {
+                Operation::Drain => match worker {
+                    Some(w) => match find_worker(&s.workers, w) {
+                        Some(k) => s.workers[k].draining = true,
+                        None => {}
+                    },
+                    None => {}
+                },
+                Operation::Remove | Operation::Revoke => match worker {
+                    Some(w) => match find_worker(&s.workers, w) {
+                        Some(k) => {
+                            effects.push(Effect::Drop { peer: w });
+                            lose_worker(&mut s, k, &mut effects);
+                        }
+                        None => {}
+                    },
+                    None => {}
+                },
+            }
+            match operation {
+                // Every Front_End learns of a revocation, whether the
+                // Worker is connected or not.
+                Operation::Revoke => {
+                    let mut f = 0;
+                    #[invariant(f@ <= s.front_ends@.len())]
+                    while f < s.front_ends.len() {
+                        effects.push(Effect::Announce { front_end: s.front_ends[f].peer });
+                        f += 1;
+                    }
+                }
+                _ => {}
+            }
+            TlaAction::Operator
         }
         // The Worker runs nothing, and the Coordinator has a Job for it:
         // the assignment or the Job's end was lost on the way. The Job is
@@ -598,7 +684,7 @@ impl Machine for Coordinator {
     type Effect = Effect;
 
     fn init(cfg: &Config) -> State {
-        State { config: *cfg, front_ends: Vec::new(), workers: Vec::new(), queue: Vec::new(), beat: 0 }
+        State { config: *cfg, front_ends: Vec::new(), workers: Vec::new(), queue: Vec::new(), beat: 0, serial: 0 }
     }
 
     fn step(s: State, i: Input) -> Step<State, Effect> {

@@ -80,6 +80,11 @@ def events(records):
             main = (action, peer, job, None, None)
         elif action == "PeerLost":
             main = ("PeerLost", peer, None, None, None)
+        elif action == "Operator":
+            # Remove and revoke show as the loss of the Worker, below.
+            worker = re.search(r"operation: Drain, worker: Some\((\d+)\)", inp)
+            if worker:
+                main = ("Drain", int(worker.group(1)), None, None, None)
         elif action not in ("Heartbeat", "Tick", "Discard"):
             raise SystemExit("step %s: unknown action %s" % (seq, action))
         if main:
@@ -128,6 +133,7 @@ Step(e) ==
     [] e.a = "CancelCall" -> CancelCall(e.p, e.j)
     [] e.a = "Forward" -> Forward(e.p, e.j)
     [] e.a = "JobNotRun" -> JobNotRun(e.p, e.j)
+    [] e.a = "Drain" -> Drain(e.p)
     [] e.a = "PeerLost" -> PeerLost(e.p) \\/ (e.p \\notin workers \\cup frontEnds /\\ UNCHANGED vars)
 TraceNext == i <= Len(Trace) /\\ Step(Trace[i]) /\\ i' = i + 1
 TraceSpec == Init /\\ i = 1 /\\ [][TraceNext]_<<vars, i>>

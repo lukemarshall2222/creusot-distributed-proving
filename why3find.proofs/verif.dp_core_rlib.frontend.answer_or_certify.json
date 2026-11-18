@@ -1,0 +1,12 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_answer_or_certify": { "prover": "alt-ergo", "time": 0.041 },
+      "vc_clear_u64": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_push_Call": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_push_Effect": { "prover": "alt-ergo", "time": 0.013 },
+      "vc_reply_of": { "prover": "alt-ergo", "time": 0.013 }
+    }
+  }
+}

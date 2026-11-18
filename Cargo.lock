@@ -271,6 +271,7 @@ dependencies = [
 name = "dp-frontend"
 version = "0.0.0"
 dependencies = [
+ "dp-cert",
  "dp-coordinator",
  "dp-core",
  "dp-formats",

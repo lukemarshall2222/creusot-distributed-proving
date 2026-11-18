@@ -13,6 +13,12 @@ use dp_shell::{
 const USAGE: &str = "usage:
   dp-coordinator --listen HOST:PORT [--silence-seconds S] [--beat-seconds S] [--retries N] [--trace FILE]
       [--with-parent yes]   stop when the process that started it is gone
+  dp-coordinator --listen HOST:PORT --operator-key VERIFICATION_KEY ...
+      takes operator commands that are signed with that key
+  dp-coordinator status HOST:PORT
+      prints the connected Workers and the queue
+  dp-coordinator operate KEY_FILE HOST:PORT SERIAL drain|remove|revoke WORKER
+      sends a signed operator command; SERIAL must grow with every command
   dp-coordinator operator-keygen KEY_FILE
       writes a new operator signing key and prints the verification key
   dp-coordinator sign-registry KEY_FILE VERSION WORKER=VERIFICATION_KEY...
@@ -21,7 +27,7 @@ const USAGE: &str = "usage:
 /// The operator's offline tooling (design decision D-9). It is here for the
 /// first distributed slice; it needs no running Coordinator.
 fn operator(args: &[String]) -> Result<(), String> {
-    use dp_formats::cluster::{from_hex, to_hex, Registry};
+    use dp_formats::cluster::{from_hex, to_hex, Message, Operation, Registry, SignedCommand};
     use ed25519_dalek::SigningKey;
     match args {
         [cmd, path] if cmd == "operator-keygen" => {
@@ -47,8 +53,62 @@ fn operator(args: &[String]) -> Result<(), String> {
             };
             std::io::stdout().write_all(&registry.sign(&SigningKey::from_bytes(&secret))).map_err(|e| e.to_string())
         }
+        [cmd, address] if cmd == "status" => {
+            match request(address, &Message::StatusRequest)? {
+                Message::Status { workers, queued, front_ends } => {
+                    println!("{front_ends} Front_Ends, {queued} queued Jobs, {} Workers", workers.len());
+                    for w in workers {
+                        println!(
+                            "worker {} {} {} provers: {}",
+                            w.worker,
+                            if w.draining { "draining" } else { "serving" },
+                            w.job.map_or("idle".to_string(), |j| format!("runs {j}")),
+                            w.provers.join(" ")
+                        );
+                    }
+                    Ok(())
+                }
+                other => Err(format!("unexpected answer {other:?}")),
+            }
+        }
+        [cmd, path, address, serial, operation, worker] if cmd == "operate" => {
+            let secret = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
+            let secret = from_hex::<32>(&secret).ok_or("the key file is not 64 hex digits")?;
+            let serial = serial.parse().map_err(|_| "SERIAL is not a number")?;
+            let operation = Operation::parse(operation).ok_or("OPERATION is drain, remove or revoke")?;
+            let command = SignedCommand::sign(serial, operation, worker, &SigningKey::from_bytes(&secret));
+            match request(address, &Message::Operator(command))? {
+                Message::OperatorResult { taken: true, .. } => {
+                    println!("taken: {} {worker}", operation.name());
+                    Ok(())
+                }
+                Message::OperatorResult { taken: false, .. } => Err(
+                    "refused: the command is not signed by the Coordinator's operator key, or its serial number is not larger than the last one taken".into(),
+                ),
+                other => Err(format!("unexpected answer {other:?}")),
+            }
+        }
         _ => Err(USAGE.into()),
     }
+}
+
+/// Sends one message to a Coordinator and waits for its answer.
+fn request(address: &str, message: &dp_formats::cluster::Message) -> Result<dp_formats::cluster::Message, String> {
+    use dp_formats::cluster::Message;
+    use dp_shell::env::{Env, NetEvent};
+    let mut env = OsEnv::new("dp-coordinator-client").map_err(|e| e.to_string())?;
+    let peer = env.connect(address).map_err(|e| format!("{address}: {e}"))?;
+    env.send(peer, message);
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while std::time::Instant::now() < deadline {
+        match env.poll(Duration::from_millis(100)) {
+            Some(NetEvent::Message(_, Message::Heartbeat)) | None => {}
+            Some(NetEvent::Message(_, answer)) => return Ok(answer),
+            Some(NetEvent::Disconnected(_)) => return Err("the Coordinator closed the connection".into()),
+            Some(NetEvent::Connected(_)) => {}
+        }
+    }
+    Err("no answer from the Coordinator".into())
 }
 
 fn main() -> ExitCode {
@@ -92,7 +152,16 @@ fn main() -> ExitCode {
             Some(path) => TraceWriter::to_file("coordinator", path.into(), Retention::Complete)?,
             None => TraceWriter::off("coordinator"),
         };
-        Ok((Shell::new(env, config, trace), bound))
+        // The operator's verification key: without it no command is taken.
+        let operator = match options.get("--operator-key") {
+            Some(hex) => Some(
+                dp_formats::cluster::from_hex::<32>(hex)
+                    .and_then(|k| ed25519_dalek::VerifyingKey::from_bytes(&k).ok())
+                    .ok_or_else(|| std::io::Error::other("--operator-key is not a verification key (64 hex digits)"))?,
+            ),
+            None => None,
+        };
+        Ok((Shell::new(env, config, trace, operator), bound))
     });
     let (mut shell, bound) = match started {
         Ok(started) => started,

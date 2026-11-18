@@ -355,7 +355,7 @@ fn tampering_coordinator() -> u16 {
     let mut env = OsEnv::new("dp-tampering-coordinator").unwrap();
     let port = env.listen("127.0.0.1:0").unwrap().port();
     let config = dp_core::coord::Config { silence_limit: 10_000_000, beat_period: 2_000_000, retries: 2 };
-    let mut shell = Shell::new(Tampering(env), config, TraceWriter::off("coordinator"));
+    let mut shell = Shell::new(Tampering(env), config, TraceWriter::off("coordinator"), None);
     thread::spawn(move || loop {
         shell.turn(Duration::from_millis(20)).unwrap();
     });
@@ -454,5 +454,121 @@ fn calibrated_workers_run_with_scaled_limits() {
         }
     }
     assert_eq!(seen, 2, "{proofs}");
+    fs::remove_dir_all(&s.dir).unwrap();
+}
+
+/// R2.2: a Portfolio of two provers races on every prover call, the first
+/// pass included; the proof file records the prover that won, and replay
+/// confirms it with that prover.
+#[test]
+fn a_portfolio_of_provers_races_and_its_winners_replay() {
+    use dp_formats::proofjson::{DpEntry, Place};
+    let Some(e) = env() else { return };
+    let s = setup(&e, "portfolio");
+    // A first pass exists in this project, and it goes to the Cluster.
+    fs::write(
+        s.dir.join("why3find.json"),
+        r#"{ "fast": 0.5, "time": 1.0, "depth": 4, "packages": [], "provers": [ "alt-ergo", "z3" ], "tactics": [ "split_vc" ], "drivers": [], "warnoff": [] }"#,
+    )
+    .unwrap();
+    fs::write(
+        s.dir.join("dp.toml"),
+        "[[solver]]\nname = \"ae\"\nprover = \"alt-ergo\"\n\n[[solver]]\nname = \"z3\"\nprover = \"z3\"\n\n\
+         [portfolio]\nrace = [\"ae\", \"z3\"]\nfirst_pass = \"cluster\"\n",
+    )
+    .unwrap();
+    sign_registry(&e, &s, &[("w1", &s.worker_keys[0]), ("w2", &s.worker_keys[1])]);
+    let port = free_port();
+    let coordinator = Command::new(e.bin.join("dp-coordinator"))
+        .args(["--listen", &format!("127.0.0.1:{port}"), "--with-parent", "yes"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let _guard = Guard(vec![coordinator]);
+    wait_for_port(port);
+    let _workers = start_workers(&e, &s, port);
+    let out = prove(&e, &s, port);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("Theory arith.Arith: ✘ (2/3)"), "{stderr}");
+    assert!(all_from_workers(&stderr, 2), "{stderr}");
+    // Every proof names a member of the Portfolio and the Worker that ran it.
+    let proofs = proofs(&s);
+    let mut winners = Vec::new();
+    for line in proofs.lines().filter(|l| l.contains("\"dp\"")) {
+        let entry = DpEntry::from_member(line.split('"').nth(3).unwrap(), 1 << 20).unwrap();
+        for replay in entry.replay {
+            assert!(replay.prover == "alt-ergo" || replay.prover == "z3", "{replay:?}");
+            assert!(matches!(replay.place, Place::Worker(_)));
+            winners.push(replay.prover);
+        }
+    }
+    assert_eq!(winners.len(), 2, "{proofs}");
+    // Replay reruns each recorded prover, whichever prover the legacy
+    // members name.
+    let replay = Command::new(e.bin.join("dp-replay"))
+        .args(["--no-autodetect", "--no-autoload", "arith.mlw"])
+        .current_dir(&s.dir)
+        .env("WHY3CONFIG", &e.why3_conf)
+        .env("DP_WHY3FIND", &e.why3find)
+        .env("DP_LOCK", &e.lock)
+        .output()
+        .unwrap();
+    let report = String::from_utf8_lossy(&replay.stdout);
+    assert_eq!(replay.status.code(), Some(0), "{report}");
+    assert!(report.contains("2 confirmed, 0 not confirmed"), "{report}");
+    fs::remove_dir_all(&s.dir).unwrap();
+}
+
+/// R1.7: the operator sees the Cluster, and a Worker that it revokes is
+/// gone: it gets no Job, and no proof comes from it.
+#[test]
+fn the_operator_sees_the_cluster_and_revokes_a_worker() {
+    use dp_formats::proofjson::{DpEntry, Place};
+    let Some(e) = env() else { return };
+    let s = setup(&e, "operator");
+    sign_registry(&e, &s, &[("w1", &s.worker_keys[0]), ("w2", &s.worker_keys[1])]);
+    let port = free_port();
+    let address = format!("127.0.0.1:{port}");
+    let coordinator = Command::new(e.bin.join("dp-coordinator"))
+        .args(["--listen", &address, "--with-parent", "yes", "--operator-key", &s.operator_key])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let _guard = Guard(vec![coordinator]);
+    wait_for_port(port);
+    let _workers = start_workers(&e, &s, port);
+    let tool = |args: &[&str]| Command::new(e.bin.join("dp-coordinator")).args(args).output().unwrap();
+    let status = || String::from_utf8_lossy(&tool(&["status", &address]).stdout).into_owned();
+    let report = status();
+    assert!(report.contains("0 queued Jobs, 2 Workers"), "{report}");
+    assert!(report.contains("worker w1 serving idle") && report.contains("worker w2 serving idle"), "{report}");
+    assert!(report.contains("alt-ergo@"), "{report}");
+    let operator_key = s.dir.join("operator.key").display().to_string();
+    // A command that another key signed is refused.
+    let other_key = s.dir.join("w1.key").display().to_string();
+    let refused = tool(&["operate", &other_key, &address, "1", "revoke", "w1"]);
+    assert_eq!(refused.status.code(), Some(2), "{refused:?}");
+    assert!(status().contains("2 Workers"));
+    // The operator's is taken, once.
+    let taken = tool(&["operate", &operator_key, &address, "1", "revoke", "w1"]);
+    assert!(taken.status.success(), "{taken:?}");
+    assert_eq!(tool(&["operate", &operator_key, &address, "1", "revoke", "w2"]).status.code(), Some(2));
+    let report = status();
+    assert!(report.contains("1 Workers") && !report.contains("worker w1"), "{report}");
+    // A Session started now learns of the revocation and proves with the
+    // other Worker.
+    let out = prove(&e, &s, port);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("the operator revoked Worker \"w1\""), "{stderr}");
+    assert!(all_from_workers(&stderr, 2), "{stderr}");
+    for line in proofs(&s).lines().filter(|l| l.contains("\"dp\"")) {
+        let entry = DpEntry::from_member(line.split('"').nth(3).unwrap(), 1 << 20).unwrap();
+        for replay in entry.replay {
+            assert_eq!(replay.place, Place::Worker("w2".into()));
+        }
+    }
     fs::remove_dir_all(&s.dir).unwrap();
 }

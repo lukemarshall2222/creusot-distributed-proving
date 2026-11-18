@@ -7,12 +7,16 @@
       "vc_elim_Failed": { "prover": "alt-ergo", "time": 0.011 },
       "vc_elim_FrontEndHello": { "prover": "alt-ergo", "time": 0.011 },
       "vc_elim_Heartbeat": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_Operator": { "prover": "alt-ergo", "time": 0.011 },
       "vc_elim_Result": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Status": { "prover": "alt-ergo", "time": 0.011 },
       "vc_elim_Submit": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_Tick": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_WorkerHello": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_WorkerIdle": { "prover": "alt-ergo", "time": 0.012 },
       "vc_eq_Input": { "prover": "z3", "time": 0.033 },
+      "vc_eq_Operation": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_eq_Option_u64": { "prover": "alt-ergo", "time": 0.01 },
       "vc_eq_Vec_Offer_Global": { "prover": "alt-ergo", "time": 0.011 }
     }
   }

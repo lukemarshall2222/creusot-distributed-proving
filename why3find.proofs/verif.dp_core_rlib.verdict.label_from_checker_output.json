@@ -1,0 +1,8 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_label_from_checker_output": { "prover": "alt-ergo", "time": 0.011 }
+    }
+  }
+}

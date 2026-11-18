@@ -148,7 +148,7 @@ mod tests {
     use super::*;
 
     fn entry(label: &str) -> DpEntry {
-        DpEntry { label: label.into(), replay: vec![], imports_hash: Hash([0; 32]), conflict: false, invalid: vec![] }
+        DpEntry { label: label.into(), replay: vec![], imports_hash: Hash([0; 32]), certificate: None, conflict: false, invalid: vec![] }
     }
 
     fn goal(name: &str, steps: &[(&str, u32)], label: &str) -> GoalLabel {
@@ -250,14 +250,14 @@ mod conflict_tests {
                 label: "proved-standalone".into(),
                 replay: vec![],
                 imports_hash: Hash([0; 32]),
-                conflict: true,
+                certificate: None, conflict: true,
                 invalid: vec![invalid.clone()],
             },
             proof: true,
         };
         let text = r#"{ "profile": [], "proofs": { "T": { "A": { "prover": "z3", "time": 0.5 } } } }"#;
         let unresolved =
-            DpEntry { label: "unresolved".into(), replay: vec![], imports_hash: Hash([0; 32]), conflict: false, invalid: vec![] };
+            DpEntry { label: "unresolved".into(), replay: vec![], imports_hash: Hash([0; 32]), certificate: None, conflict: false, invalid: vec![] };
         let (out, report) = extend(text, Hash([7; 32]), &[goal], &unresolved).unwrap();
         assert_eq!(report.conflicts.len(), 1);
         assert!(report.conflicts[0].contains("cvc5 answered Invalid"), "{:?}", report.conflicts);

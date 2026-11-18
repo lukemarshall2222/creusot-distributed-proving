@@ -46,6 +46,12 @@ fn key() -> impl Strategy<Value = SigningKey> {
     any::<[u8; 32]>().prop_map(|b| SigningKey::from_bytes(&b))
 }
 
+fn command() -> impl Strategy<Value = SignedCommand> {
+    (any::<u64>(), 0usize..3, s(), key()).prop_map(|(serial, op, worker, key)| {
+        SignedCommand::sign(serial, [Operation::Drain, Operation::Remove, Operation::Revoke][op], &worker, &key)
+    })
+}
+
 fn message() -> impl Strategy<Value = Message> {
     prop_oneof![
         s().prop_map(|session| Message::FrontEndHello { session }),
@@ -53,6 +59,18 @@ fn message() -> impl Strategy<Value = Message> {
             .prop_map(|(worker, offers)| Message::WorkerHello { worker, offers }),
         Just(Message::Heartbeat),
         Just(Message::Idle),
+        Just(Message::StatusRequest),
+        (proptest::collection::vec((s(), proptest::option::of(s()), any::<bool>(), proptest::collection::vec(s(), 0..3)), 0..3), any::<u64>(), any::<u64>())
+            .prop_map(|(workers, queued, front_ends)| Message::Status {
+                workers: workers
+                    .into_iter()
+                    .map(|(worker, job, draining, provers)| WorkerStatus { worker, job, draining, provers })
+                    .collect(),
+                queued,
+                front_ends,
+            }),
+        (command(), any::<bool>()).prop_map(|(c, revocation)| if revocation { Message::Revocation(c) } else { Message::Operator(c) }),
+        (any::<u64>(), any::<bool>()).prop_map(|(serial, taken)| Message::OperatorResult { serial, taken }),
         job().prop_map(Message::Submit),
         (job(), any::<u64>(), any::<u64>())
             .prop_map(|(job, local_micros, velocity)| Message::Assign { job, local_micros, velocity }),
@@ -131,4 +149,25 @@ fn hex_round_trips_and_rejects_bad_text() {
     assert_eq!(from_hex::<4>("0001abf"), None);
     assert_eq!(from_hex::<4>("0001abfg"), None);
     assert_eq!(from_hex::<3>("0001abff"), None);
+}
+
+proptest! {
+    // P-ID: P1.7.6
+    #[test]
+    fn an_operator_command_verifies_only_as_signed(c in command(), other in key(), which in 0u8..3) {
+        // `command` signs with its own key; recover it by signing again.
+        let mut changed = c.clone();
+        match which {
+            0 => changed.serial = changed.serial.wrapping_add(1),
+            1 => changed.worker.push('x'),
+            _ => changed.operation = if changed.operation == Operation::Revoke { Operation::Drain } else { Operation::Revoke },
+        }
+        let signer = SignedCommand::sign(c.serial, c.operation, &c.worker, &other);
+        prop_assert!(signer.verifies(&other.verifying_key()));
+        let mut forged = signer.clone();
+        forged.serial = changed.serial;
+        forged.worker = changed.worker.clone();
+        forged.operation = changed.operation;
+        prop_assert!(!forged.verifies(&other.verifying_key()));
+    }
 }

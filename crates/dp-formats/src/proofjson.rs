@@ -10,9 +10,10 @@
 //! the Invalid field (the runs on the Goal that answered Invalid, R7.2
 //! criterion 11), the conflict field (set when a Goal has a proof label and
 //! an Invalid answer, R7.2 criterion 7), and the import list, which is
-//! empty. The certificate reference and the Partition tree hash are always
-//! the atom `absent`; they are in the encoding so that adding them does not
-//! change its shape.
+//! empty, and for the label certified the content hash of the certificate's
+//! entry in the Certificate_Store. The Partition tree hash is always the
+//! atom `absent`; it is in the encoding so that adding it does not change
+//! the shape.
 
 use std::path::{Path, PathBuf};
 
@@ -79,6 +80,9 @@ pub struct DpEntry {
     /// One entry for a proof label, none otherwise.
     pub replay: Vec<ReplayFields>,
     pub imports_hash: Hash,
+    /// For the label certified: the content hash of the entry of the
+    /// Certificate_Store that holds the certificate (R5.4 criterion 2).
+    pub certificate: Option<Hash>,
     /// The Goal has a proof label and an Invalid answer of another run
     /// (R7.2 criterion 7); the runs are in `invalid`.
     pub conflict: bool,
@@ -197,7 +201,10 @@ impl DpEntry {
             Sexp::list(self.replay.iter().map(ReplayFields::sexp)),
             Sexp::list([]), // imports
             Sexp::atom(self.imports_hash.0),
-            Sexp::atom(ABSENT), // certificate
+            match self.certificate {
+                Some(content) => Sexp::list([Sexp::atom(content.0)]),
+                None => Sexp::atom(ABSENT),
+            },
             Sexp::atom(ABSENT), // Partition tree hash
             if self.conflict { Sexp::list([Sexp::atom("conflict")]) } else { Sexp::atom(ABSENT) },
             Sexp::list(self.invalid.iter().map(|i| {
@@ -229,9 +236,14 @@ impl DpEntry {
         // place is not an entry that it can read faithfully.
         let absent = |s: &Sexp| s.as_str() == Some(ABSENT);
         let empty = |s: &Sexp| s.as_list().is_some_and(<[Sexp]>::is_empty);
-        if !empty(imports) || !absent(certificate) || !absent(tree) {
+        if !empty(imports) || !absent(tree) {
             return err("a member that this build does not read");
         }
+        let certificate = match certificate.as_list() {
+            Some([content]) => Some(hash32(content)?),
+            None if absent(certificate) => None,
+            _ => return err("certificate"),
+        };
         let conflict = match conflict.as_list() {
             Some([tag]) if tag.as_str() == Some("conflict") => true,
             None if absent(conflict) => false,
@@ -257,7 +269,7 @@ impl DpEntry {
             .iter()
             .map(ReplayFields::from_sexp)
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(DpEntry { label, replay, imports_hash: hash32(imports_hash)?, conflict, invalid })
+        Ok(DpEntry { label, replay, imports_hash: hash32(imports_hash)?, certificate, conflict, invalid })
     }
 
     /// The value of the member `"dp"`.

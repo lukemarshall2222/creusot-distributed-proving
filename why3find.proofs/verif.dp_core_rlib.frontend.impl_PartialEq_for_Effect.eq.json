@@ -5,6 +5,7 @@
       "vc_elim_Answer": { "prover": "alt-ergo", "time": 0.011 },
       "vc_elim_CancelJob": { "prover": "alt-ergo", "time": 0.011 },
       "vc_elim_CancelLocal": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_Certify": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_Print": { "prover": "alt-ergo", "time": 0.011 },
       "vc_elim_StartLocal": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_Submit": { "prover": "alt-ergo", "time": 0.011 },

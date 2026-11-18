@@ -110,6 +110,10 @@
             # Signature files that Ethos loads for CPC proofs (TB-11).
             DP_CPC_SIGNATURE = "${pkgs.dp.cpc-signature}";
 
+            # The pinned checker of certificates (R5.3). It is named by its
+            # path so that no other `ethos` on PATH is taken for it.
+            DP_ETHOS = "${pkgs.dp.ethos}/bin/ethos";
+
             # Creusot's wrapper puts unpatched why3find on PATH, as Creusot_CLI
             # needs without the backend option. The patched build has the same
             # program name, so it is reached through this variable.

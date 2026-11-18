@@ -37,6 +37,8 @@ pub enum LogEntry {
     Discarded,
     /// A run of the call was accepted and labelled with a proof label.
     Proved { call: u64 },
+    /// The pinned checker accepted a certificate for the call's Goal.
+    Certified { call: u64 },
     /// A run of the call was accepted and labelled with a non-proof outcome.
     Lost { call: u64, outcome: Outcome },
     /// A run of the call was not accepted, for this reason (R1.3).

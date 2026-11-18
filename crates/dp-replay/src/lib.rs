@@ -10,8 +10,8 @@
 //!
 //! 1. the entry decodes canonically and its label is proved-standalone;
 //! 2. the file's `dp-lock` is the hash of the Lock_File in use;
-//! 3. the recorded prover is the one of the call, the recorded binary hash
-//!    is an Unpatched_Solver of the Lock_File, and the local executable has
+//! 3. the recorded prover is configured here, the recorded binary hash is
+//!    an Unpatched_Solver of the Lock_File, and the local executable has
 //!    that hash;
 //! 4. the Task_Hash of its own print of the Goal is the recorded one;
 //! 5. the solver, started here with the recorded seed and the recorded
@@ -60,6 +60,8 @@ pub struct Config {
     pub dir: PathBuf,
     /// The files to replay, and any other argument of `why3find prove`.
     pub args: Vec<OsString>,
+    /// The checker of certificates, for certified Verdicts.
+    pub checker: Option<dp_cert::Checker>,
 }
 
 /// What replay found for one Goal entry of a proof file.
@@ -251,7 +253,7 @@ impl Replay {
 
     /// Replays one prover call of why3find: the checks of the module
     /// documentation, in order.
-    fn check(&mut self, gid: &str, call_prover: &str) -> Result<Outcome, ReplayError> {
+    fn check(&mut self, gid: &str) -> Result<Outcome, ReplayError> {
         let no = |reason: &str| Ok(Outcome::NotConfirmed(reason.to_string()));
         let Some(goal) = self.goals.get(gid) else { return no("the Goal was not announced") };
         let (file, key) = (goal.file.clone(), goal.key.clone());
@@ -267,20 +269,26 @@ impl Replay {
         };
         match label_of(&entry) {
             Label::ProvedStandalone => {}
-            // Certificates are replayed with the Certificate_Store.
-            Label::Certified => return no("certified Verdicts are not replayed yet"),
+            Label::Certified => return self.check_certificate(gid, &entry),
             Label::NonProof(_) => {
                 return no(&format!("the entry is proved for a legacy reader, and its label is {}", entry.label))
             }
         }
         let [replay] = entry.replay.as_slice() else { return no("the entry does not have one set of replay fields") };
-        // The prover and its binary.
-        let Some(prover) = self.provers()?.get(call_prover) else { return no("the prover is not configured here") };
-        let name = prover.info.prover.split_once('@').map_or(prover.info.prover.as_str(), |(n, _)| n).to_string();
+        // The prover and its binary: the recorded ones. The winner of a
+        // race may be another prover than the one of why3find's call, which
+        // is the one that the legacy members name.
+        let recorded = replay.prover.clone();
+        let Some(prover) = self
+            .provers()?
+            .values()
+            .find(|p| p.info.prover.split_once('@').map_or(p.info.prover.as_str(), |(n, _)| n) == recorded)
+        else {
+            return no(&format!("the recorded prover {recorded} is not configured here"));
+        };
+        let name = recorded;
+        let call_prover = &prover.info.prover.clone();
         let (exe, binary_hash, info) = (prover.exe.clone(), prover.binary_hash, prover.info.clone());
-        if replay.prover != name {
-            return no(&format!("the entry records {}, the legacy members name {name}", replay.prover));
-        }
         let Some(version) = prover.unpatched_version.clone() else {
             return no("the local solver binary is not an Unpatched_Solver of the Lock_File");
         };
@@ -340,6 +348,56 @@ impl Replay {
         }
     }
 
+    /// Replays a certified Verdict (R7.6 criterion 3): the stored
+    /// certificate is checked again, by the local pinned checker, against
+    /// this machine's own print of the Goal.
+    fn check_certificate(&mut self, gid: &str, entry: &DpEntry) -> Result<Outcome, ReplayError> {
+        let no = |reason: &str| Ok(Outcome::NotConfirmed(reason.to_string()));
+        let Some(content) = entry.certificate else { return no("the certified entry names no certificate") };
+        let certificate = match dp_cert::Certificate::load(&self.config.dir.join(".dp-certs"), content) {
+            Ok(certificate) => certificate,
+            Err(e) => return no(&e.to_string()),
+        };
+        let Some(checker) = self.config.checker.clone() else {
+            return no("no checker is configured (DP_ETHOS, DP_CPC_SIGNATURE)");
+        };
+        // The local checker is the pinned one, and the one that the entry
+        // was checked with.
+        let (binary, signature) = (checker.binary_hash()?, checker.signature_hash()?);
+        let pinned = |kind: Kind, hash: Hash| self.config.lock.pins(kind, &self.platform).any(|(_, pin)| pin == hash);
+        if !pinned(Kind::Checker, binary) || !pinned(Kind::CheckerSignature, signature) {
+            return no("the local checker or its signature files are not those of the Lock_File");
+        }
+        if certificate.checker_hash != binary || certificate.signature_hash != signature {
+            return no("the certificate was checked with another checker or other signature files");
+        }
+        // The Goal, as this machine prints it for the certificate's driver.
+        if !self.provers()?.contains_key(&certificate.prover) {
+            return no(&format!("the prover {} of the certificate is not configured here", certificate.prover));
+        }
+        let digest = self.provers()?[&certificate.prover].info.digest.clone();
+        let printed = self.bridge.print(gid, &certificate.prover, &[])?;
+        let task_hash = hash::task_hash(&printed.bytes, digest.as_bytes(), b"");
+        if printed.tasks != 1 || task_hash != certificate.task_hash || printed.bytes != certificate.goal {
+            return no("the certificate is not for the Goal as printed here");
+        }
+        if dp_cert::has_trusted_step(&certificate.proof) {
+            return no("the certificate has a step that is taken on trust");
+        }
+        let start = std::time::Instant::now();
+        let accepted = checker.check(
+            &printed.bytes,
+            &certificate.extension,
+            &certificate.proof,
+            Duration::from_secs(600),
+            &self.tmp,
+        )?;
+        if !accepted {
+            return no("the checker does not accept the certificate");
+        }
+        Ok(Outcome::Confirmed { prover: "certificate".to_string(), micros: start.elapsed().as_micros() as u64 })
+    }
+
     fn handle(&mut self, msg: FromWhy3find) -> Result<(), ReplayError> {
         match msg {
             FromWhy3find::Goal { gid, file, theory, name, path, .. } => {
@@ -355,8 +413,8 @@ impl Replay {
                 self.goals.insert(gid, Goal { file, key: (theory, name, steps) });
                 Ok(())
             }
-            FromWhy3find::Prove { rid, gid, prover, micros, .. } => {
-                let outcome = self.check(&gid, &prover)?;
+            FromWhy3find::Prove { rid, gid, micros, .. } => {
+                let outcome = self.check(&gid)?;
                 let result = match &outcome {
                     Outcome::Confirmed { micros, .. } => ProverResult::Valid { micros: *micros },
                     Outcome::NotConfirmed(reason) if reason.contains("time limit") => ProverResult::Timeout { micros },

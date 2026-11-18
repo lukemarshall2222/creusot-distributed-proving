@@ -25,6 +25,8 @@ fn config(local_jobs: u64, seeds: u64) -> Config {
     Config {
         local_jobs,
         seeds,
+        fast_remote: false,
+        certify: false,
         job_margin: 10,
         silence_limit: 0,
         beat_period: u64::MAX,
@@ -194,6 +196,8 @@ proptest! {
                         prop_assert!(open.contains(&rid));
                         prop_assert!(local.insert(rid));
                     }
+                    // Certification is off in these Sessions.
+                    Effect::Certify { .. } => prop_assert!(false, "certification is off"),
                     // Only a Session on the Cluster talks to the Coordinator.
                     Effect::Beat | Effect::LeaveCluster => prop_assert!(before.cluster),
                     Effect::CancelLocal { rid } => {
@@ -502,4 +506,131 @@ fn a_silent_coordinator_is_a_lost_cluster() {
     assert_eq!(all[7], vec![Effect::LeaveCluster, Effect::StartLocal { rid: 9 }]);
     assert_eq!(all[8], vec![]);
     assert!(!state.cluster);
+}
+
+// P-ID: P2.2.1
+#[test]
+fn the_first_pass_races_on_the_cluster_when_configured() {
+    let mut cfg = config(1, 3);
+    cfg.fast_remote = true;
+    let mut state = FrontEnd::init(&cfg);
+    let mut all = Vec::new();
+    for input in [
+        Input::SessionStart { now: 0, cluster: true },
+        Input::GoalAnnounced { now: 0, goal: 5 },
+        Input::ProverCall { now: 0, rid: 9, goal: 5, prover: 1, pass: Pass::Fast, micros: 4 },
+        Input::PrintFacts { now: 0, rid: 9, task_count: 1 },
+    ] {
+        let out = step(state, input);
+        state = out.state;
+        all.push(out.effects);
+    }
+    assert_eq!(
+        all[3],
+        vec![Effect::Submit { rid: 9, seed: 0 }, Effect::Submit { rid: 9, seed: 1 }, Effect::Submit { rid: 9, seed: 2 }]
+    );
+    // Without a Cluster the same configuration runs the pass locally.
+    let mut state = FrontEnd::init(&cfg);
+    let mut last = Vec::new();
+    for input in [
+        Input::SessionStart { now: 0, cluster: false },
+        Input::GoalAnnounced { now: 0, goal: 5 },
+        Input::ProverCall { now: 0, rid: 9, goal: 5, prover: 1, pass: Pass::Fast, micros: 4 },
+        Input::PrintFacts { now: 0, rid: 9, task_count: 1 },
+    ] {
+        let out = step(state, input);
+        state = out.state;
+        last = out.effects;
+    }
+    assert_eq!(last, vec![Effect::StartLocal { rid: 9 }]);
+}
+
+fn facts(all: bool) -> dp_core::verdict::CheckFacts {
+    dp_core::verdict::CheckFacts {
+        produced: all,
+        checker_pinned: all,
+        signature_pinned: all,
+        bound_to_local_print: all,
+        accepted: all,
+        complete: all,
+        stored: all,
+    }
+}
+
+/// A local run that reports a proof with a binary that is not an
+/// Unpatched_Solver: with certification on, the call waits for a certificate.
+fn certifying() -> State {
+    let mut cfg = config(1, 1);
+    cfg.certify = true;
+    let mut state = FrontEnd::init(&cfg);
+    let mut unpinned = good();
+    unpinned.fields.binary_hash = h(9);
+    let mut last = Vec::new();
+    for input in [
+        Input::SessionStart { now: 0, cluster: false },
+        Input::GoalAnnounced { now: 0, goal: 5 },
+        Input::ProverCall { now: 0, rid: 9, goal: 5, prover: 1, pass: Pass::Later, micros: 4 },
+        Input::PrintFacts { now: 0, rid: 9, task_count: 1 },
+        Input::LocalRun { now: 1, rid: 9, evidence: unpinned },
+    ] {
+        let out = step(state, input);
+        state = out.state;
+        last = out.effects;
+    }
+    assert_eq!(last, vec![Effect::Certify { rid: 9 }]);
+    state
+}
+
+// P-ID: P7.1.1 (b), P5.3.1
+#[test]
+fn a_checked_certificate_gives_the_label_certified() {
+    let out = step(certifying(), Input::Certificate { now: 2, rid: 9, facts: facts(true) });
+    assert_eq!(out.effects, vec![Effect::Answer { rid: 9, reply: Reply::Valid }]);
+    assert_eq!(out.state.verdicts.entries, vec![dp_core::verdict::Verdict { goal: 5, label: Label::Certified }]);
+}
+
+// P-ID: P5.3.1
+#[test]
+fn every_fact_is_needed_for_the_label_certified() {
+    use dp_core::verdict::label_from_checker_output;
+    for missing in 0..7 {
+        let mut f = facts(true);
+        match missing {
+            0 => f.produced = false,
+            1 => f.checker_pinned = false,
+            2 => f.signature_pinned = false,
+            3 => f.bound_to_local_print = false,
+            4 => f.accepted = false,
+            5 => f.complete = false,
+            _ => f.stored = false,
+        }
+        assert_ne!(label_from_checker_output(f), Label::Certified, "fact {missing}");
+        let out = step(certifying(), Input::Certificate { now: 2, rid: 9, facts: f });
+        assert_eq!(out.effects, vec![Effect::Answer { rid: 9, reply: Reply::Unknown }], "fact {missing}");
+        assert!(out.state.verdicts.entries.is_empty(), "fact {missing}");
+    }
+    // A certificate for a call that is not waiting for one changes nothing.
+    let out = step(certifying(), Input::Certificate { now: 2, rid: 8, facts: facts(true) });
+    assert!(out.effects.is_empty() && out.state.verdicts.entries.is_empty());
+}
+
+// P-ID: P5.1.1
+#[test]
+fn without_certification_an_unpinned_proof_is_unchecked() {
+    let mut state = FrontEnd::init(&config(1, 1));
+    let mut unpinned = good();
+    unpinned.fields.binary_hash = h(9);
+    let mut last = Vec::new();
+    for input in [
+        Input::SessionStart { now: 0, cluster: false },
+        Input::GoalAnnounced { now: 0, goal: 5 },
+        Input::ProverCall { now: 0, rid: 9, goal: 5, prover: 1, pass: Pass::Later, micros: 4 },
+        Input::PrintFacts { now: 0, rid: 9, task_count: 1 },
+        Input::LocalRun { now: 1, rid: 9, evidence: unpinned },
+    ] {
+        let out = step(state, input);
+        state = out.state;
+        last = out.effects;
+    }
+    assert_eq!(last, vec![Effect::Answer { rid: 9, reply: Reply::Unknown }]);
 }

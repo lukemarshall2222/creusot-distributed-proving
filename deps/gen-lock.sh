@@ -51,6 +51,38 @@ solver z3 z3 5.3.2 z3-5.3.2
 solver cvc5 cvc5 1.4.1 cvc5-1.4.1
 solver cvc4 cvc4 1.8 cvc4-1.8
 
+# The checker of certificates and its signature files (R5.3, TB-11). The
+# hash of the signature is the hash of the listing of its files:
+# `<sha256>  ./<path>` per file, in the order of the paths, as dp-cert
+# computes it.
+ethos=$(nix build .#ethos --no-link --print-out-paths)
+signature=$(nix build .#cpc-signature --no-link --print-out-paths)
+tree() {
+  (cd "$1" && find . -type f | LC_ALL=C sort | while read -r f; do printf '%s  %s\n' "$(sha "$f")" "$f"; done) > "${TMPDIR:-/tmp}/dp-tree.$$"
+  sha "${TMPDIR:-/tmp}/dp-tree.$$"
+  rm -f "${TMPDIR:-/tmp}/dp-tree.$$"
+}
+cat <<ENTRY
+
+[[tool]]
+name = "ethos"
+version = "c7d3db90"
+kind = "checker"
+
+[[tool.platform]]
+platform = "$platform"
+hash = "sha256:$(sha "$(real "$ethos/bin/ethos")")"
+
+[[tool]]
+name = "cpc-signature"
+version = "cvc5-1.4.1"
+kind = "checker-signature"
+
+[[tool.platform]]
+platform = "$platform"
+hash = "sha256:$(tree "$signature")"
+ENTRY
+
 why3find=$(nix build .#why3find-dispatch --no-link --print-out-paths)
 cat <<ENTRY
 

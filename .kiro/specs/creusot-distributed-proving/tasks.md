@@ -497,6 +497,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - Registry view: of the Worker registries with a valid operator signature that the Front_End holds, the one with the highest version supplies the registered identities and verification data, whatever channel delivered each and in whatever order (D-9)
     - Contracts for P1.3.1, P1.3.2, P1.3.4 to P1.3.7 and P1.3.9 to P1.3.11
     - As built: `accept_remote` with its contract (authentic, registered, not revoked, submitted and bound to the local print), proved by Creusot. Open: the remaining criteria this task names (Partition, import-set hash, Calibration limits)
+    - Operator commands and revocation (2026-11-18): the Coordinator machine takes `Drain`, `Remove` and `Revoke` only with the operator's signature and a serial number larger than the last one taken, reports its state on request, turns a revoked Worker away when it joins again, and has every Front_End told of a revocation as the operator signed it. The Front_End accepts a revocation only with the operator's signature and then refuses that Worker's Results, from the Cluster and from the Result_Cache, also when the Coordinator goes on using the Worker. `dp-coordinator status` and `dp-coordinator operate`; `Cluster.tla` has `Drain`. Tests: four in `tests/sim/faults.rs` and one with the real executables in `cluster.rs`. Trace validation found a fault of the first version: the shell kept the name of a Worker that it had dropped for silence, so a later command for that name went to the old connection. Open: revocations do not outlive a Coordinator restart or a Session, and a registry update is not part of the protocol
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.6, 3.7, 3.8, 3.9, 3.10, 3.11, 4.6, 4.7, 6.13, 7.6, 9.24, 30.7_
     - _Properties: 3_
 
@@ -606,7 +607,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
 - [ ] 19. Implement Solver_Configurations, Portfolios and Races
   - [-] 19.1 Implement the Solver_Configuration file and its validation (C3, C16)
     - Canonical TOML grammar and codec for Solver_Configurations and Portfolios, extending the `dp.toml` grammar and codec of task 3.2; Portfolio chosen by the portfolio option; `validate_config` for unknown prover-version pairs, parse errors, duplicate names, empty Portfolios, unknown names, duplicate entries and splitting transformations; warning when portfolio racing is on without the cluster option
-    - As built so far, as a slice: seeds only. Jobs and signed Results carry a seed; a Worker changes nothing of its command line but the solver's seed options; `DP_PORTFOLIO_SEEDS` races that many Jobs on each prover call on the Cluster, the first proof label wins, and otherwise the call gets the most informative non-proof outcome. Open: the Solver_Configuration file, option lists (OQ-N37), Hard_Goal classification, `race.rs` in dp-core, the replay fields
+    - As built: `dp.toml` has `[[solver]]` entries (name, prover, seed) and `[portfolio]` (`race`, the names that race on every prover call that goes to the Cluster, and `first_pass`, local or cluster); `validate_config` rejects unknown and duplicate names, an empty Portfolio, a Portfolio without the cluster option or together with the seeds option, and more than 64 members; a member whose prover the project does not have stops the Session before a solver starts. The seeds slice (`DP_PORTFOLIO_SEEDS`) stays. Open: option lists (OQ-N37; a Worker runs only its own command line and the Job's seed), Hard_Goal classification, the canonical TOML codec with its round-trip and fuzz tests
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.7, 9.15, 9.17, 9.27_
     - _Properties: 5, 34_
 
@@ -635,8 +636,9 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - `crates/dp-core/tests/prop_race.rs` with umbrella `property_7_first_proof_label_wins` and the P2.2 tests; Race scenarios in `tests/sim/faults/`
     - **Validates: Requirements 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7, 9.8, 9.9, 9.10, 9.11, 9.12, 9.13, 9.14, 9.15, 9.16, 9.18, 9.19, 9.20, 9.22, 9.23, 9.24, 9.25, 9.26, 9.27, 6.8**
 
-  - [ ] 19.7 Wire Races into the Front_End and `proof.json`
+  - [-] 19.7 Wire Races into the Front_End and `proof.json`
     - Hard_Goal classification at escalation; Race Jobs submitted with the Solver_Configuration exactly as parsed; conflict detection with accepted Invalid Results; late Results; replay fields of R2.3 for the recorded Result
+    - As built: the Front_End machine races the Portfolio's members on a prover call (the shell knows what each Job number stands for and gives dp-core the fact that a Result is for its Job's own Solver_Configuration); with `first_pass = "cluster"` the first sequential pass races on the Cluster too. A Result is checked against the Front_End's print for the prover that ran, the driver of that prover reads its answer, and the replay fields and the Invalid entries name it; an Invalid answer and a proof inside one race are a conflict. dp-replay reruns the recorded prover, which may be another than the legacy members name. Tests: `tests/sim/faults.rs` (race won by another prover, conflict inside a race, first pass on the Cluster) and `crates/dp-frontend/tests/cluster.rs` with real provers and replay. Open: the local machine as a member of a race, Result_Cache entries for members with another prover than the call's (not stored), `race.rs` as its own module with the P2.2 contracts, and unmodified why3find's own replay of an entry whose legacy prover is not the winner
     - _Requirements: 8.2, 8.6, 9.1, 9.12, 9.19, 10.1, 10.4, 10.7, 31.7, 31.11_
     - _Properties: 7, 30_
 
@@ -667,8 +669,9 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
 ### Stage 5: dp-certificates
 
 - [ ] 21. Implement the certification decisions and their metatheory
-  - [ ] 21.1 Implement `label_from_checker_output` and `certification.rs` with Creusot contracts (C4, C11)
+  - [-] 21.1 Implement `label_from_checker_output` and `certification.rs` with Creusot contracts (C4, C11)
     - `labels.rs` `label_from_checker_output` (certified exactly for accept with every binding check passing and storage complete by the deadline); `certification.rs` `needs_cert`, `import_closure`, `oblig`, `extended_problem`, `lemma_problem`, `cert_start`, `deadlines` (proof and certification deadlines from `<TBD-14>` and `<TBD-15>`), `leaf_select`; `label` routes Results that need certification through them
+    - As built: `label_from_checker_output` in `verdict.rs` with its Creusot contract (certified exactly when a certificate was produced, the checker and its signature files are the pinned ones, the reference was the Front_End's own print as one task, the checker accepted, no step is taken on trust, and the store entry is complete), and the Front_End machine's certification: a call whose outcome is a reported proof without a proof label waits in `Certifying` for the `Certificate` input, which is the only source of the label certified. Open: `certification.rs` with deadlines, local re-derivation, composition
     - _Requirements: 21.1, 21.3, 21.4, 21.5, 21.6, 21.7, 21.8, 21.9, 23.4, 23.5, 23.6, 23.11, 23.17, 23.18_
     - _Properties: 1, 17, 23, 27_
 
@@ -725,11 +728,12 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - **Validates: Requirements 22.1, 22.4, 22.5, 22.6, 22.7, 22.8, 22.9, 22.13, 22.14, 22.16, 22.17, 22.18, 22.19, 22.20**
 
 - [ ] 23. Implement checking, storage and certify-all, and wire certification end to end
-  - [ ] 23.1 Implement the Certificate_Checker driver `crates/dp-cert/src/check.rs` (A3, C13)
+  - [-] 23.1 Implement the Certificate_Checker driver `crates/dp-cert/src/check.rs` (A3, C13)
     - Ethos and Carcara command lines with the `docs/tcb.toml` option lists; binding facts (binary hash just before start, option list, signature-file hashes, recorded input Task_Hash against `print_local(B)`, independent assumption check, `fragment_ok`, Alethe hole check while the Carcara part of AS-6 is To check); banned options never passed; process group killed at the certification deadline; output classifier from the fixed table; logged checker identity
     - Codecs, round-trip cases, fuzz targets (`ci/fuzz-smoke`, `sched/fuzz-nightly`) and registry entries for the checker entries of `docs/tcb.toml` and the checker-output record that the Certificate_Store keeps
     - Switch row R7.5 to in scope with the switch step (Notes): `check.rs` is its last artifact, after `cache_on_off/` (9.6); `targets.toml` gains `encode_key`; registry entries for `encode_key`, `lookup_ok`, `validate_entry` (R7.11 criterion 12)
     - Ethos outcome from the exit status and standard output only; warnings on standard error (for example for `:pattern`) are not part of it
+    - As built: `crates/dp-cert/src/lib.rs`: cvc5 proves the Goal again with a CPC proof (`--no-proof-allow-trust`, `--dag-thresh=0`), the declarations are dropped, and Ethos checks the proof with the Front_End's print as `--reference` and `--require-proof-of-false`; accepted only on exit status 0 and the answer `correct`. The checker and the hash of its signature files are in the Lock_File (`deps/gen-lock.sh`, kinds checker and checker-signature). Open: Alethe and Carcara, the assumption check as a separate step, time limits from the configuration
     - _Requirements: 23.1, 23.2, 23.3, 23.6, 23.7, 23.8, 23.9, 23.10, 23.12, 23.13, 23.14, 23.15, 23.16, 23.19, 36.4, 37.3, 37.4, 39.7_
     - _Properties: 27, 34_
 
@@ -739,9 +743,10 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - Switch row R5.3 to in scope with the switch step (Notes): `tests/certs/tamper/` and `fuzz/checker_output/` are its last artifacts, after `check.rs` (23.1) and `tests/integration/certs/` (23.4); `targets.toml` gains `label_from_checker_output`, `fragment_ok`, `label`; registry entries for these three (R7.11 criterion 12)
     - **Validates: Requirements 23.1, 23.2, 23.3, 23.4, 23.5, 23.6, 23.7, 23.8, 23.9, 23.11, 23.12, 23.13, 23.14, 23.16, 23.17, 23.18, 37.3, 37.4**
 
-  - [ ] 23.3 Implement the Certificate_Store `crates/dp-cert/src/store.rs` (C14)
+  - [-] 23.3 Implement the Certificate_Store `crates/dp-cert/src/store.rs` (C14)
     - `.dp-certs/<content hash>/` written through a temporary directory with synced files and manifest, rename as the complete event, existing entries kept, storage failure reported; `proof.json` written only after the rename
     - Manifest codec with its grammar, round-trip cases in `crates/dp-formats/tests/roundtrip.rs`, `fuzz/cert_manifest/` (`ci/fuzz-smoke`, `sched/fuzz-nightly`) and its registry entry
+    - As built: `.dp-certs/<content hash>/` with the print, the proof and a canonical manifest; written and synced in a temporary directory, then renamed; an existing entry is kept; `load` checks the manifest against the content hash and the files against the manifest (unit tests in `dp-cert`)
     - _Requirements: 24.1, 24.2, 24.3, 24.4, 24.5, 24.6, 24.7, 39.7_
     - _Properties: 28, 34_
 
@@ -751,9 +756,10 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - Switch rows R5.4, R7.7 and R7.8 to in scope with the switch step (Notes): `store_faults.rs` creates `tests/integration/certs/`, the last artifact of R7.7 and R7.8 and, with `prop_store.rs`, of R5.4 (R7.11 criterion 12)
     - **Validates: Requirements 24.1, 24.2, 24.5, 24.7**
 
-  - [ ] 23.5 Wire certification and certify-all mode into the shells
+  - [-] 23.5 Wire certification and certify-all mode into the shells
     - Front_End: target proof request by a proof-producing cvc5 Solver_Configuration (D-6; the configured proof-producer list and its selection rule are task 23.16) as a proof Job on the Cluster or locally; Lemma proof requests in parallel once `oblig(r)` is known; cancellation at the proof deadline; compose, check, store, label; certify-all treats every proof-reporting Result as needing certification and certifies Local_Fast_Pass Results locally before escalation
     - Coordinator and Worker: proof Job kind with proof format and proof bytes in Results
+    - As built: `[certification] enabled` and `certify_all` in `dp.toml` (`DP_CERTIFY`, `DP_CERTIFY_ALL`), with `DP_ETHOS` and `DP_CPC_SIGNATURE` from the development shell; the proof file's `dp` member names the certificate by content hash. Tests with real cvc5 and Ethos in `crates/dp-frontend/tests/local_session.rs`: a proof of a solver that is not an Unpatched_Solver is certified, certify-all certifies proofs of Unpatched_Solvers too, and a checker that is not the pinned one certifies nothing. Open: certificates are produced on the Front_End's machine, one at a time, while the Session waits (not by Workers); a simulated certifier; certified entries in the Result_Cache
     - _Requirements: 21.1, 21.2, 21.4, 21.6, 21.7, 21.9, 2.4, 2.8, 2.9, 10.2, 24.3, 24.4, 24.6, 25.1, 25.2, 25.3_
     - _Properties: 1, 6, 23_
 
@@ -762,8 +768,9 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - `prop_verdict.rs` and `tests/sim/adversarial_coordinator.rs` with certification outcomes, delays and certify-all on and off
     - **Validates: Requirements 30.3, 30.4, 21.8, 23.4, 23.17, 25.1, 25.2, 25.3, 9.8, 9.10**
 
-  - [ ] 23.7 Implement the certified branch of the Replay_Tool
+  - [-] 23.7 Implement the certified branch of the Replay_Tool
     - Manifest and content-hash checks, stored Printed_Goal against the re-print and `proof.json`, checker run on the stored certificate against the re-print with the same binding checks and `label_from_checker_output`
+    - As built: dp-replay loads the certificate by its content hash, checks the entry, requires the local checker and signature files to be the pinned ones and those of the entry, compares its own print of the Goal with the stored one, and runs the checker again. `crates/dp-replay/tests/replay.rs`: confirmed from the store alone; not confirmed for a changed proof, a certificate under another Goal, and a missing store
     - _Requirements: 35.3, 35.4, 24.8, 24.9_
     - _Properties: 28, 31_
 

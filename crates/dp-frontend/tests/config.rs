@@ -30,6 +30,7 @@ fn prove(dir: &PathBuf, env: &[(&str, &str)]) -> Output {
     for name in [
         "DP_CLUSTER", "DP_REGISTRY", "DP_OPERATOR_KEY", "DP_PORTFOLIO_SEEDS", "DP_JOBS", "DP_SILENCE_SECONDS",
         "DP_BEAT_SECONDS", "DP_JOB_MARGIN_SECONDS", "DP_CERTIFY_ALL", "DP_TRACE", "DP_TRACE_RETENTION", "DP_TRACE_KEEP",
+        "DP_FIRST_PASS", "DP_CERTIFY", "DP_ETHOS", "DP_CPC_SIGNATURE",
     ] {
         command.env_remove(name);
     }
@@ -79,8 +80,23 @@ fn invalid_values_in_the_file_are_named_and_start_nothing() {
             "[cluster]\naddress = \"host:1\"\nregistry = \"r\"\noperator_key = \"k\"\nsilence_seconds = 3\nbeat_seconds = 2\n",
             "cluster.beat_seconds (dp.toml) = 2 with cluster.silence_seconds (dp.toml) = 3",
         ),
-        ("[certification]\ncertify_all = true\n", "certification.certify_all (dp.toml) = true"),
+        ("[certification]\ncertify_all = true\n", "certification.certify_all (dp.toml) = true: needs certification.enabled"),
+        ("[certification]\nenabled = true\n", "certification.enabled (dp.toml) = true: certification needs the checker"),
         ("[tracing]\nfile = \"t\"\nkeep = 0\n", "tracing.keep (dp.toml) = 0"),
+        // Portfolios
+        ("[portfolio]\nrace = [\"a\"]\n", "portfolio.race (dp.toml) = [\"a\"]: every member is the name of one [[solver]] entry"),
+        (
+            "[[solver]]\nname = \"a\"\nprover = \"z3\"\n[portfolio]\nrace = [\"a\", \"a\"]\n",
+            "no name is there twice",
+        ),
+        (
+            "[[solver]]\nname = \"a\"\nprover = \"z3\"\n[[solver]]\nname = \"a\"\nprover = \"cvc5\"\n[portfolio]\nrace = [\"a\"]\n",
+            "every member is the name of one [[solver]] entry",
+        ),
+        ("[[solver]]\nname = \"a\"\nprover = \"z3\"\n[portfolio]\nrace = [\"a\"]\n", "needs the cluster option"),
+        ("[portfolio]\nrace = []\n", "a Portfolio has at least one member"),
+        ("[portfolio]\nfirst_pass = \"cluster\"\n", "the first pass can go to the Cluster only with the cluster option"),
+        ("[[solver]]\nname = \"a\"\n", "dp.toml"),
         // not the format at all
         ("[cluster]\nadress = \"host:1\"\n", "adress"),
         ("[local]\njobs = \"many\"\n", "dp.toml"),
@@ -95,13 +111,14 @@ fn invalid_values_in_the_file_are_named_and_start_nothing() {
 
 #[test]
 fn invalid_values_in_the_environment_are_named_and_start_nothing() {
-    let cases: [(&[(&str, &str)], &str); 6] = [
+    let cases: [(&[(&str, &str)], &str); 7] = [
         (&[("DP_JOBS", "0")], "local.jobs (DP_JOBS) = 0"),
         (&[("DP_PORTFOLIO_SEEDS", "many")], "cluster.portfolio_seeds (DP_PORTFOLIO_SEEDS) = \"many\""),
         (&[("DP_CLUSTER", "tcp://host")], "cluster.address (DP_CLUSTER) = \"tcp://host\""),
         (&[("DP_BEAT_SECONDS", "-1")], "cluster.beat_seconds (DP_BEAT_SECONDS) = \"-1\""),
         (&[("DP_TRACE_RETENTION", "all")], "tracing.retention (DP_TRACE_RETENTION) = \"all\""),
         (&[("DP_CERTIFY_ALL", "true")], "certification.certify_all (DP_CERTIFY_ALL) = true"),
+        (&[("DP_CERTIFY", "true")], "certification.enabled (DP_CERTIFY) = true"),
     ];
     for (i, (env, expected)) in cases.iter().enumerate() {
         let dir = project(&format!("env{i}"), None);

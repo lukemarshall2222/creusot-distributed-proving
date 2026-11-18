@@ -6,6 +6,7 @@
       "vc_debug_struct_field2_finish": { "prover": "alt-ergo", "time": 0.01 },
       "vc_debug_struct_field3_finish": { "prover": "alt-ergo", "time": 0.01 },
       "vc_debug_struct_field4_finish": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Announce": { "prover": "alt-ergo", "time": 0.012 },
       "vc_elim_Assign": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_Beat": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_CancelAt": { "prover": "alt-ergo", "time": 0.01 },
@@ -13,6 +14,8 @@
       "vc_elim_Fail": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_Forget": { "prover": "alt-ergo", "time": 0.011 },
       "vc_elim_Forward": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_OperatorReply": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_Report": { "prover": "alt-ergo", "time": 0.014 },
       "vc_fmt_Effect": { "prover": "alt-ergo", "time": 0.087 }
     }
   }

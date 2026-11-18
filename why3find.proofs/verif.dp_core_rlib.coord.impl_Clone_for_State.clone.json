@@ -13,6 +13,7 @@
       "vc_clone_Vec_Offer_Global": { "prover": "alt-ergo", "time": 0.011 },
       "vc_clone_Vec_Worker_Global": { "prover": "alt-ergo", "time": 0.01 },
       "vc_clone_Worker": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_clone_bool": { "prover": "alt-ergo", "time": 0.014 },
       "vc_clone_u64": { "prover": "alt-ergo", "time": 0.01 }
     }
   }
