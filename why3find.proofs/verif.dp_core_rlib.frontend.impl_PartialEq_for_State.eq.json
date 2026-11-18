@@ -4,7 +4,7 @@
     "Coma": {
       "vc_eq_Config": { "prover": "alt-ergo", "time": 0.011 },
       "vc_eq_Phase": { "prover": "alt-ergo", "time": 0.01 },
-      "vc_eq_State": { "prover": "alt-ergo", "time": 0.178 },
+      "vc_eq_State": { "prover": "z3", "time": 0.018 },
       "vc_eq_Vec_Call_Global": { "prover": "alt-ergo", "time": 0.012 },
       "vc_eq_Vec_u64_Global": { "prover": "alt-ergo", "time": 0.011 },
       "vc_eq_Verdicts": { "prover": "alt-ergo", "time": 0.013 }

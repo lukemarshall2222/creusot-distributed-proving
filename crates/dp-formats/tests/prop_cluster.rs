@@ -35,6 +35,9 @@ fn fields() -> impl Strategy<Value = ResultFields> {
                 timed_out,
                 output,
                 elapsed_micros,
+                // every signed field is covered by `mutate` below
+                velocity: 1_000_000,
+                local_micros: 7,
             }
         })
 }
@@ -46,10 +49,13 @@ fn key() -> impl Strategy<Value = SigningKey> {
 fn message() -> impl Strategy<Value = Message> {
     prop_oneof![
         s().prop_map(|session| Message::FrontEndHello { session }),
-        (s(), proptest::collection::vec(s(), 0..4))
-            .prop_map(|(worker, provers)| Message::WorkerHello { worker, provers }),
+        (s(), proptest::collection::vec((s(), any::<u64>()), 0..4))
+            .prop_map(|(worker, offers)| Message::WorkerHello { worker, offers }),
+        Just(Message::Heartbeat),
+        Just(Message::Idle),
         job().prop_map(Message::Submit),
-        job().prop_map(Message::Assign),
+        (job(), any::<u64>(), any::<u64>())
+            .prop_map(|(job, local_micros, velocity)| Message::Assign { job, local_micros, velocity }),
         s().prop_map(|job_id| Message::Cancel { job_id }),
         (fields(), key()).prop_map(|(f, k)| Message::Result(SignedResult::sign(f, &k))),
         (s(), s()).prop_map(|(job_id, reason)| Message::Failed { job_id, reason }),
@@ -59,7 +65,9 @@ fn message() -> impl Strategy<Value = Message> {
 /// One changed field of a Result.
 fn mutate(f: &ResultFields, which: u8) -> ResultFields {
     let mut g = f.clone();
-    match which % 10 {
+    match which % 12 {
+        10 => g.velocity += 1,
+        11 => g.local_micros += 1,
         9 => g.seed = Some(g.seed.map_or(0, |s| s.wrapping_add(1))),
         0 => g.job_id.push('x'),
         1 => g.task_hash.0[0] ^= 1,

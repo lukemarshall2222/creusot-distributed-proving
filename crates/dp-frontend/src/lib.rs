@@ -2,5 +2,6 @@
 //! local acceptance facts and carries out the effects of the dp-core
 //! Front_End machine.
 
+pub mod config;
 pub mod proofs;
 pub mod session;

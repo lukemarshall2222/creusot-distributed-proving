@@ -296,6 +296,7 @@ dependencies = [
  "dp-core",
  "dp-formats",
  "dp-shell",
+ "serde_json",
 ]
 
 [[package]]
@@ -307,11 +308,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "dp-sim"
+version = "0.0.0"
+dependencies = [
+ "dp-coordinator",
+ "dp-core",
+ "dp-formats",
+ "dp-frontend",
+ "dp-shell",
+ "dp-testkit",
+ "dp-worker",
+ "ed25519-dalek",
+ "proptest",
+]
+
+[[package]]
 name = "dp-testkit"
 version = "0.0.0"
 dependencies = [
  "dp-core",
  "dp-formats",
+ "dp-shell",
 ]
 
 [[package]]

@@ -1,0 +1,17 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_clone_Input": { "prover": "alt-ergo", "time": 0.103 },
+      "vc_clone_u64": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_Assign": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Cancel": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Connected": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_Disconnected": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_Heartbeat": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_SolverExit": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_StartFailed": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_Tick": { "prover": "alt-ergo", "time": 0.01 }
+    }
+  }
+}

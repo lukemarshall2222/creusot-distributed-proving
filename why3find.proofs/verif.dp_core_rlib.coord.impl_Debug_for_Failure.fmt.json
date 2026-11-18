@@ -1,0 +1,9 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_fmt_Failure": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_write_str": { "prover": "alt-ergo", "time": 0.018 }
+    }
+  }
+}

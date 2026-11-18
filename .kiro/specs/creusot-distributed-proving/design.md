@@ -592,6 +592,7 @@ Entries live under `.dp-certs/<content hash>/` (R5.4 criteria 2 and 7). A write 
 ### C15 Result_Cache (`crates/dp-frontend/src/cache.rs`, dp-core `cache_key.rs`)
 
 - Entries live in `.dp-cache/` next to `.why3find`, which unmodified why3find does not read (AS-35). A Result labelled proved-standalone is also written to the legacy layout, by answering why3find's cache-write request with "store" (R7.5 criterion 7); every other cache-write request is answered "skip".
+- **Trust (as built).** A Worker entry carries the Worker's signature and is checked against the registry again at every lookup. A local entry carries no authentication: the project directory is trusted for a Session, as it is for why3find's own cache. Whoever can write `.dp-cache/` can therefore make a Session record a proof label. Such a label does not survive replay: the Replay_Tool reads neither cache and re-runs the solver (C17), so a proof file is to be trusted after replay, not because a Session wrote it.
 - Lookups read only `.dp-cache/`. Entries written by unmodified why3find have no lookup or validation fields and are misses (R7.12 criterion 3).
 - `encode_key` is the canonical S-expression of the lookup fields of R7.5 criterion 1 in a fixed order, with length-prefixed atoms, so the encoding is injective; Cache_Key = `H("dp/cache/v1", encode_key(d))`. A lookup compares the stored lookup fields, not only the key (R7.5 criterion 5), then the validation fields (R7.5 criterion 9), then re-applies R1.3 criteria 3, 4 and 7 to stored remote Results (R7.5 criterion 4), then labels the entry under R7.1 criterion 6, including a fresh checker run for certified entries (OQ-N53 draft kept).
 - **Verification.** A1, A2, A3 and A4 as in the Verification subsection of R7.5.
@@ -603,6 +604,8 @@ One module per exchanged format of R7.10, each with a grammar file in `docs/form
 - **Verification.** As in the Verification subsection of R7.10.
 
 ### C17 Replay_Tool (`crates/dp-replay/`)
+
+As built: `dp-replay` drives `why3find prove -r` in dispatch mode, so why3find walks the proof files and makes one prover call per entry that the legacy members say is proved; the tool answers each call from the `dp` member of that entry and its own re-run. It builds without the `cluster` feature of dp-shell, which holds all transport code.
 
 Implements flow (e) and R7.6, R2.3 criterion 8, R5.4 criteria 8 and 9 and R7.2 criterion 10. It links no networking code; in CI it runs in a container without a network (P7.6.3). It uses the why3find bridge for re-printing, the dp-cert checker driver with the same binding checks, and `label_from_checker_output` from dp-core, so the replay rule and the Session rule are one function (P7.6.4).
 

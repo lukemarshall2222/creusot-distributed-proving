@@ -26,6 +26,8 @@ fn config(local_jobs: u64, seeds: u64) -> Config {
         local_jobs,
         seeds,
         job_margin: 10,
+        silence_limit: 0,
+        beat_period: u64::MAX,
         certify_all: false,
         unpatched: vec![UnpatchedSolver { prover: 1, version: 1, binary_hash: h(1) }],
         empty_imports_hash: h(0),
@@ -95,7 +97,7 @@ fn input() -> impl Strategy<Value = Input> {
     prop_oneof![
         1 => (now.clone(), any::<bool>()).prop_map(|(now, cluster)| Input::SessionStart { now, cluster }),
         3 => (now.clone(), goal.clone()).prop_map(|(now, goal)| Input::GoalAnnounced { now, goal }),
-        6 => (now.clone(), rid.clone(), goal, 1u64..3, any::<bool>(), 1u64..20).prop_map(
+        6 => (now.clone(), rid.clone(), goal, 1u64..3, any::<bool>(), prop_oneof![Just(5u64), Just(10u64)]).prop_map(
             |(now, rid, goal, prover, fast, micros)| Input::ProverCall {
                 now, rid, goal, prover, pass: if fast { Pass::Fast } else { Pass::Later }, micros,
             }
@@ -104,9 +106,11 @@ fn input() -> impl Strategy<Value = Input> {
             .prop_map(|(now, rid, task_count)| Input::PrintFacts { now, rid, task_count }),
         6 => (now.clone(), rid.clone(), evidence()).prop_map(|(now, rid, evidence)| Input::LocalRun { now, rid, evidence }),
         8 => (now.clone(), rid.clone(), seed.clone(), 1u64..3, evidence(),
-              prop::bool::weighted(0.85), prop::bool::weighted(0.85), prop::bool::weighted(0.1))
-            .prop_map(|(now, rid, seed, prover, evidence, signature_valid, registered, revoked)| Input::RemoteResult {
-                now, rid, seed, prover, evidence, signature_valid, registered, revoked,
+              prop::bool::weighted(0.85), prop::bool::weighted(0.85), prop::bool::weighted(0.1),
+              prop_oneof![4 => Just(1_000_000u64), 1 => Just(2_000_000u64)],
+              prop_oneof![3 => Just(5u64), 3 => Just(10u64), 1 => Just(20u64)])
+            .prop_map(|(now, rid, seed, prover, evidence, signature_valid, registered, revoked, velocity, local_micros)| Input::RemoteResult {
+                now, rid, seed, prover, evidence, signature_valid, registered, revoked, velocity, local_micros,
             }),
         2 => (now.clone(), rid.clone(), seed).prop_map(|(now, rid, seed)| Input::JobNotRun { now, rid, seed }),
         2 => (now.clone(), rid).prop_map(|(now, rid)| Input::CancelCall { now, rid }),
@@ -190,6 +194,8 @@ proptest! {
                         prop_assert!(open.contains(&rid));
                         prop_assert!(local.insert(rid));
                     }
+                    // Only a Session on the Cluster talks to the Coordinator.
+                    Effect::Beat | Effect::LeaveCluster => prop_assert!(before.cluster),
                     Effect::CancelLocal { rid } => {
                         prop_assert!(local.contains(&rid));
                     }
@@ -214,13 +220,16 @@ proptest! {
                         prop_assert_eq!(r, rid);
                         prop_assert!(standalone(&evidence));
                     }
-                    Input::RemoteResult { rid: r, seed, prover, evidence, signature_valid, registered, revoked, .. } => {
+                    Input::RemoteResult { rid: r, seed, prover, evidence, signature_valid, registered, revoked, velocity, local_micros, .. } => {
                         prop_assert_eq!(r, rid);
                         prop_assert!(standalone(&evidence));
                         prop_assert!(signature_valid && registered && !revoked);
                         let call = before.calls.iter().find(|c| c.rid == rid).unwrap();
                         prop_assert!(call.jobs.contains(&seed));
                         prop_assert_eq!(call.prover, prover);
+                        // the limit that the Worker ran with is the one that
+                        // its Calibration gives (P1.4.6)
+                        prop_assert_eq!(u128::from(local_micros), u128::from(call.micros) * u128::from(velocity) / 1_000_000);
                     }
                     other => prop_assert!(false, "Valid reply on {other:?}"),
                 }
@@ -321,6 +330,7 @@ fn racing() -> State {
 fn result(seed: u64, evidence: Evidence, authentic: bool) -> Input {
     Input::RemoteResult {
         now: 1, rid: 9, seed, prover: 1, evidence, signature_valid: authentic, registered: true, revoked: false,
+        velocity: 1_000_000, local_micros: 4,
     }
 }
 
@@ -350,8 +360,8 @@ fn a_result_that_is_not_authentic_leaves_its_job_open() {
     let before = racing();
     for forged in [
         result(0, good(), false),
-        Input::RemoteResult { now: 1, rid: 9, seed: 0, prover: 1, evidence: good(), signature_valid: true, registered: false, revoked: false },
-        Input::RemoteResult { now: 1, rid: 9, seed: 0, prover: 1, evidence: good(), signature_valid: true, registered: true, revoked: true },
+        Input::RemoteResult { now: 1, rid: 9, seed: 0, prover: 1, evidence: good(), signature_valid: true, registered: false, revoked: false, velocity: 1_000_000, local_micros: 4 },
+        Input::RemoteResult { now: 1, rid: 9, seed: 0, prover: 1, evidence: good(), signature_valid: true, registered: true, revoked: true, velocity: 1_000_000, local_micros: 4 },
     ] {
         let out = step(before.clone(), forged);
         assert_eq!(out.action, TlaAction::Discard);
@@ -367,11 +377,18 @@ fn an_authentic_result_for_another_prover_or_task_proves_nothing() {
     // Signed and registered, but for a prover that the call did not submit.
     let wrong_prover = Input::RemoteResult {
         now: 1, rid: 9, seed: 0, prover: 2, evidence: good(), signature_valid: true, registered: true, revoked: false,
+        velocity: 1_000_000, local_micros: 4,
+    };
+    // Signed and registered, but run with a limit that the Worker's
+    // Calibration does not give for the call's reference limit.
+    let wrong_limit = Input::RemoteResult {
+        now: 1, rid: 9, seed: 0, prover: 1, evidence: good(), signature_valid: true, registered: true, revoked: false,
+        velocity: 2_000_000, local_micros: 4,
     };
     // Signed and registered, but run on another Printed_Goal.
     let mut other_task = good();
     other_task.fields.task_hash = h(8);
-    for input in [wrong_prover, result(0, other_task, true)] {
+    for input in [wrong_prover, wrong_limit, result(0, other_task, true)] {
         let (state, effects) = run(racing(), &[input, result(1, unknown(), true), result(2, unknown(), true)]);
         assert_eq!(effects, vec![Effect::Answer { rid: 9, reply: Reply::Unknown }]);
         assert!(state.verdicts.entries.is_empty());
@@ -451,4 +468,38 @@ fn local_solvers_are_limited_and_queued_calls_start_in_order() {
     );
     let (_, effects) = run(state, &[Input::LocalRun { now: 2, rid: 2, evidence: unknown() }]);
     assert_eq!(effects, vec![Effect::StartLocal { rid: 3 }, Effect::Answer { rid: 2, reply: Reply::Unknown }]);
+}
+
+// P-ID: P1.6.4
+#[test]
+fn a_silent_coordinator_is_a_lost_cluster() {
+    let mut cfg = config(1, 1);
+    cfg.silence_limit = 10;
+    cfg.beat_period = 4;
+    let mut state = FrontEnd::init(&cfg);
+    let mut all = Vec::new();
+    for input in [
+        Input::SessionStart { now: 0, cluster: true },
+        Input::GoalAnnounced { now: 0, goal: 5 },
+        Input::ProverCall { now: 0, rid: 9, goal: 5, prover: 1, pass: Pass::Later, micros: 100 },
+        Input::PrintFacts { now: 0, rid: 9, task_count: 1 },
+        // heartbeats go out while the Coordinator is heard from
+        Input::Tick { now: 4 },
+        Input::ClusterHeard { now: 8 },
+        Input::Tick { now: 18 },
+        // silence: the call moves home, the connection is closed
+        Input::Tick { now: 19 },
+        // and nothing more is sent to the Cluster
+        Input::Tick { now: 40 },
+    ] {
+        let out = step(state, input);
+        state = out.state;
+        all.push(out.effects);
+    }
+    assert_eq!(all[3], vec![Effect::Submit { rid: 9, seed: 0 }]);
+    assert_eq!(all[4], vec![Effect::Beat]);
+    assert_eq!(all[6], vec![Effect::Beat]);
+    assert_eq!(all[7], vec![Effect::LeaveCluster, Effect::StartLocal { rid: 9 }]);
+    assert_eq!(all[8], vec![]);
+    assert!(!state.cluster);
 }

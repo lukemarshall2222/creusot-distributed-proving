@@ -1,22 +1,18 @@
 //! `dp-coordinator --listen ADDRESS`: queues Jobs, assigns them to Workers
 //! and forwards Results (design C5, D-1). Untrusted.
 
-use std::{
-    collections::BTreeMap,
-    io::Write,
-    net::{TcpListener, TcpStream},
-    process::ExitCode,
-    sync::mpsc,
-    thread,
-    time::Duration,
+use std::{io::Write, process::ExitCode, time::Duration};
+
+use dp_coordinator::shell::Shell;
+use dp_core::coord::Config;
+use dp_shell::{
+    env::OsEnv,
+    trace::{Retention, TraceWriter},
 };
 
-use dp_coordinator::machine::{Input, Peer, State};
-use dp_formats::sexp;
-use dp_shell::net::{Connection, Event};
-
 const USAGE: &str = "usage:
-  dp-coordinator --listen HOST:PORT
+  dp-coordinator --listen HOST:PORT [--silence-seconds S] [--beat-seconds S] [--retries N] [--trace FILE]
+      [--with-parent yes]   stop when the process that started it is gone
   dp-coordinator operator-keygen KEY_FILE
       writes a new operator signing key and prints the verification key
   dp-coordinator sign-registry KEY_FILE VERSION WORKER=VERIFICATION_KEY...
@@ -66,69 +62,56 @@ fn main() -> ExitCode {
             }
         };
     }
-    let [_, address] = args.as_slice() else {
+    let mut options = std::collections::BTreeMap::new();
+    for pair in args.chunks(2) {
+        match pair {
+            [flag, value] if flag.starts_with("--") => options.insert(flag.as_str(), value.clone()),
+            _ => {
+                eprintln!("{USAGE}");
+                return ExitCode::from(2);
+            }
+        };
+    }
+    let seconds = |name: &str, default: f64| -> u64 {
+        let value = options.get(name).and_then(|v| v.parse::<f64>().ok()).unwrap_or(default);
+        (value * 1e6) as u64
+    };
+    // Working values, not proposals for <TBD-5>, <TBD-7> and <TBD-31>.
+    let config = Config {
+        silence_limit: seconds("--silence-seconds", 10.0),
+        beat_period: seconds("--beat-seconds", 2.0),
+        retries: options.get("--retries").and_then(|v| v.parse().ok()).unwrap_or(2),
+    };
+    let Some(address) = options.get("--listen") else {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
-    let listener = match TcpListener::bind(address) {
-        Ok(l) => l,
+    let started = OsEnv::new("dp-coordinator").and_then(|mut env| {
+        let bound = env.listen(address)?;
+        let trace = match options.get("--trace") {
+            Some(path) => TraceWriter::to_file("coordinator", path.into(), Retention::Complete)?,
+            None => TraceWriter::off("coordinator"),
+        };
+        Ok((Shell::new(env, config, trace), bound))
+    });
+    let (mut shell, bound) = match started {
+        Ok(started) => started,
         Err(e) => {
             eprintln!("dp-coordinator: {address}: {e}");
             return ExitCode::from(2);
         }
     };
-    eprintln!("dp-coordinator: listening on {}", listener.local_addr().expect("bound"));
-
-    // Every connection has a thread that turns what arrives into inputs; one
-    // loop owns the state and all writing ends.
-    let (tx, rx) = mpsc::channel::<(Input, Option<TcpStream>)>();
-    thread::spawn(move || {
-        let mut next: Peer = 0;
-        for stream in listener.incoming().flatten() {
-            next += 1;
-            let peer = next;
-            let tx = tx.clone();
-            let Ok(writer) = stream.try_clone() else { continue };
-            let Ok(mut connection) = Connection::new(stream) else { continue };
-            if tx.send((Input::Connected(peer), Some(writer))).is_err() {
-                return;
-            }
-            thread::spawn(move || loop {
-                let input = match connection.poll(Duration::from_secs(3600)) {
-                    Event::Message(msg) => Input::Message(peer, msg),
-                    Event::Idle => continue,
-                    Event::Closed(_) => {
-                        let _ = tx.send((Input::Disconnected(peer), None));
-                        return;
-                    }
-                };
-                if tx.send((input, None)).is_err() {
-                    return;
-                }
-            });
+    eprintln!("dp-coordinator: listening on {bound}");
+    // For tests and scripts: a Coordinator whose parent process is gone
+    // stops, so an aborted test leaves nothing running.
+    let with_parent = options.get("--with-parent").is_some_and(|v| v == "yes");
+    loop {
+        if with_parent && std::os::unix::process::parent_id() == 1 {
+            return ExitCode::SUCCESS;
         }
-    });
-
-    let mut state = State::default();
-    let mut writers: BTreeMap<Peer, TcpStream> = BTreeMap::new();
-    for (input, writer) in rx {
-        match (&input, writer) {
-            (Input::Connected(peer), Some(writer)) => {
-                writers.insert(*peer, writer);
-            }
-            (Input::Disconnected(peer), _) => {
-                writers.remove(peer);
-            }
-            _ => {}
-        }
-        let (next, effects) = state.step(input);
-        state = next;
-        for (peer, msg) in effects {
-            if let Some(writer) = writers.get_mut(&peer) {
-                // A failed write shows up as a disconnection of that peer.
-                let _ = writer.write_all(&sexp::print(&msg.encode()));
-            }
+        if let Err(e) = shell.turn(Duration::from_millis(50)) {
+            eprintln!("dp-coordinator: {e}");
+            return ExitCode::from(1);
         }
     }
-    ExitCode::SUCCESS
 }

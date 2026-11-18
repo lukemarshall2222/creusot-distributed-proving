@@ -1,0 +1,10 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_eq_Option_Job": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_eq_Vec_Offer_Global": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_eq_Worker": { "prover": "alt-ergo", "time": 0.026 }
+    }
+  }
+}

@@ -39,6 +39,8 @@ pub struct Report {
     /// Entries that why3find wrote as proved without a proof label of this
     /// Session; they were written as not proved.
     pub withdrawn: Vec<String>,
+    /// Goals with a proof label and an Invalid answer of another run.
+    pub conflicts: Vec<String>,
 }
 
 struct Walk<'a> {
@@ -67,6 +69,16 @@ impl Walk<'_> {
         let entry = found.map_or(self.unresolved, |g| &g.entry);
         let proof = found.is_some_and(|g| g.proof);
         *self.report.labels.entry(entry.label.clone()).or_insert(0) += 1;
+        if entry.conflict {
+            let path: Vec<_> = steps.iter().map(|(t, i)| format!("{t}.{i}")).collect();
+            let provers: Vec<_> = entry.invalid.iter().map(|i| i.prover.as_str()).collect();
+            self.report.conflicts.push(format!(
+                "{theory}.{name} {}: labelled {}, and {} answered Invalid",
+                path.join("/"),
+                entry.label,
+                provers.join(", ")
+            ));
+        }
         let member = Value::String(entry.to_member());
         match node {
             Value::Object(members) if proved_in_file && proof => {
@@ -129,29 +141,14 @@ pub fn rewrite(path: &Path, lock_hash: Hash, goals: &[GoalLabel], unresolved: &D
     Ok(report)
 }
 
-/// The proof file of a source file, as why3find names it: the path of the
-/// file below the project directory, without its extension and with dots
-/// between its parts, in `why3find.proofs`.
-pub fn proof_file(dir: &Path, file: &str) -> std::path::PathBuf {
-    let file = Path::new(file).with_extension("");
-    let absolute = if file.is_absolute() { file } else { dir.join(file) };
-    let relative = absolute.strip_prefix(dir).unwrap_or(&absolute).to_path_buf();
-    let parts: Vec<_> = relative
-        .components()
-        .filter_map(|c| match c {
-            std::path::Component::Normal(p) => Some(p.to_string_lossy().into_owned()),
-            _ => None,
-        })
-        .collect();
-    dir.join("why3find.proofs").join(format!("{}.json", parts.join(".")))
-}
+pub use dp_formats::proofjson::proof_file;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn entry(label: &str) -> DpEntry {
-        DpEntry { label: label.into(), replay: vec![], imports_hash: Hash([0; 32]) }
+        DpEntry { label: label.into(), replay: vec![], imports_hash: Hash([0; 32]), conflict: false, invalid: vec![] }
     }
 
     fn goal(name: &str, steps: &[(&str, u32)], label: &str) -> GoalLabel {
@@ -207,6 +204,7 @@ mod tests {
         assert_eq!(report.withdrawn, vec!["T.D ".to_string()]);
         assert_eq!(report.labels["proved-standalone"], 2);
         assert_eq!(report.labels["unknown"], 1);
+        assert!(report.conflicts.is_empty());
         // Writing again changes nothing.
         let (again, _) = extend(&out, Hash([7; 32]), &goals, &entry("unresolved")).unwrap();
         assert_eq!(again, out);
@@ -227,5 +225,47 @@ mod tests {
         assert_eq!(proof_file(dir, "arith.mlw"), Path::new("/p/why3find.proofs/arith.json"));
         assert_eq!(proof_file(dir, "./verif/a/b.coma"), Path::new("/p/why3find.proofs/verif.a.b.json"));
         assert_eq!(proof_file(dir, "/p/verif/a.coma"), Path::new("/p/why3find.proofs/verif.a.json"));
+    }
+}
+
+#[cfg(test)]
+mod conflict_tests {
+    use super::*;
+    use dp_formats::proofjson::{InvalidEntry, Place};
+
+    // P-ID: P7.2.7
+    #[test]
+    fn a_conflict_is_written_and_reported_and_the_proof_stays() {
+        let invalid = InvalidEntry {
+            prover: "cvc5".into(),
+            version: "1.4.1".into(),
+            binary_hash: Hash([3; 32]),
+            place: Place::Local,
+        };
+        let goal = GoalLabel {
+            theory: "T".into(),
+            name: "A".into(),
+            steps: vec![],
+            entry: DpEntry {
+                label: "proved-standalone".into(),
+                replay: vec![],
+                imports_hash: Hash([0; 32]),
+                conflict: true,
+                invalid: vec![invalid.clone()],
+            },
+            proof: true,
+        };
+        let text = r#"{ "profile": [], "proofs": { "T": { "A": { "prover": "z3", "time": 0.5 } } } }"#;
+        let unresolved =
+            DpEntry { label: "unresolved".into(), replay: vec![], imports_hash: Hash([0; 32]), conflict: false, invalid: vec![] };
+        let (out, report) = extend(text, Hash([7; 32]), &[goal], &unresolved).unwrap();
+        assert_eq!(report.conflicts.len(), 1);
+        assert!(report.conflicts[0].contains("cvc5 answered Invalid"), "{:?}", report.conflicts);
+        let file: Value = serde_json::from_str(&out).unwrap();
+        let node = &file["proofs"]["T"]["A"];
+        assert_eq!(node["prover"], "z3");
+        let entry = DpEntry::from_member(node["dp"].as_str().unwrap(), 1 << 20).unwrap();
+        assert!(entry.conflict);
+        assert_eq!(entry.invalid, vec![invalid]);
     }
 }

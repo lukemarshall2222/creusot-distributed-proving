@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 9ba97c57846e73bfc29ad6cb6debf86da77382558e948f3d7fabdb094b67c2a8 # shrinks to seed = 1243044924064875876, loss = 0, duplicate = 0, max_delay = 100, script = [Call { at: 1, goal: [117, 110, 115, 97, 116, 32, 51, 53, 54, 50, 55], micros: 20000 }], schedule = [], forging = true, seeds = 1
+cc d4bd9d850030cc5c7f4bc519a3e8fa725d960cf303b7072d11470c6378076b61 # shrinks to seed = 802238130154793418, loss = 1, duplicate = 0, max_delay = 3408, script = [Call { at: 53501, goal: [117, 110, 115, 97, 116, 32, 51, 48, 48, 48, 49], micros: 30001 }, Call { at: 85501, goal: [117, 110, 107, 110, 111, 119, 110, 32, 54, 54, 53, 48, 49], micros: 66501 }, Call { at: 118501, goal: [117, 110, 115, 97, 116, 32, 51, 54, 48, 48, 49], micros: 36001 }], schedule = [], forging = false, seeds = 2

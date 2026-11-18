@@ -46,7 +46,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - Tracing retention setting of each component (the `tracing_retention` option of `dp.toml` for the Front_End, the Coordinator's and each Worker's configuration): bounded, the default, keeps the most recent `<TBD-46>` trace records of the component and discards older ones; complete, which every CI job and every Experiment_Runner run sets, keeps every record; `<TBD-46>` is a named configuration parameter with no committed default
     - Production adapters: ZeroMQ TCP, OS clock, POSIX process groups, filesystem
     - `SimEnv`: one seeded discrete-event scheduler, virtual clocks, simulated network with the R1.6 fault model (crashes and restarts, partitions, delays up to D, duplicates, reordering, loss), scripted stub solvers, stub proof producers and stub checkers, exact seed replay and fault-schedule shrinking
-    - As built: `crates/dp-shell/src/` has the production pieces as plain modules: `net.rs` (TCP, D-12 as built), `solver.rs` (process groups, tree kill), `store.rs` (temporary file, sync, rename, directory sync) and `trace.rs` (trace writer with the bounded and the complete retention setting; 1000 records stand in for `<TBD-46>`). Open: the `Env` trait over them, `SimEnv`, and a trace that is on by default (the Front_End writes one only when `DP_TRACE` names a file)
+    - As built: `crates/dp-shell/src/env.rs` has the `Env` trait (clock, transport, solver processes, solver binary hashes) and the production adapter `OsEnv`; `why3find.rs` has the `Why3find` trait over the bridge. The shells of the Coordinator, the Worker and the Front_End (`dp-frontend`'s session) are written over them. `crates/dp-testkit/src/sim.rs` has `SimEnv`: one seeded world with a virtual clock, machines of different speeds, a network that delays, loses, duplicates and so reorders messages, partitions, crashes with and without notice, a forging relay, and scripted solvers; a run replays exactly from its seed. `tests/sim/` runs the three real shells in it with a scripted why3find (11 tests, among them 300 random fault schedules, unequal Calibrations and a conflict). Open: the file store and the trace writer as parts of `Env` (a simulated Session uses no file), a trace that is on by default, a simulated Result_Cache, crashes of the Front_End
     - _Requirements: 32.2, 5.10, 4.5, 5.5, 5.18, 5.19_
     - _Properties: 10, 11_
 
@@ -131,7 +131,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [-] 3.2 Implement the stage-1 format modules
     - `proof.json` extension in `crates/dp-formats/src/proofjson.rs` (`DpEntry` as a base64 member `dp`, `dp-lock`, conflict and Invalid fields, absent markers), Lock_File, Result_Cache entry, Result message, project configuration `dp.toml` (canonical TOML, holding the Solver_Configuration file grammar and the `tracing_retention` option), `dispatch` (the why3find bridge requests and replies, D-2, D-3), event trace record, canonical JSON (RFC 8785) helpers; grammars in `docs/formats/`
     - `decode_label` with its Creusot contract: any string outside the label set decodes to a non-proof outcome
-    - As built: `proofjson.rs` (`DpEntry` with the label, the replay fields and the absent markers, base64 member `dp`; the conflict field, the Invalid field, the certificate and the Partition tree hash are always absent), `cache.rs` (Result_Cache entry), `lockfile.rs`, `cluster.rs`, `dispatch.rs`. Open: conflict and Invalid fields, `dp.toml`, the event trace record as a format module, canonical JSON helpers, grammars in `docs/formats/`, and `decode_label` with its contract (an unknown label is rejected by the decoder instead)
+    - As built: `proofjson.rs` (`DpEntry` with the label, the replay fields, the Invalid field, the conflict field and the absent markers, base64 member `dp`; the certificate and the Partition tree hash are always absent), `cache.rs`, `lockfile.rs`, `cluster.rs` (with offers, heartbeats and the Calibration and local limit in the signed Result), `dispatch.rs`; `decode_label` in dp-core `verdict.rs` with its Creusot contract (a name that is not exactly a proof label is a non-proof outcome). Open: `dp.toml`, the event trace record as a format module, canonical JSON helpers, grammars in `docs/formats/`
     - _Requirements: 39.1, 39.4, 10.5, 31.1, 31.3, 31.7, 31.11, 34.3, 36.5_
     - _Properties: 30, 34_
 
@@ -149,7 +149,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [-] 3.5 Write property tests for `proof.json` encoding
     - **Property 30: proof.json and the Creusot_CLI report labels faithfully** (encoding part)
     - `crates/dp-formats/tests/prop_proofjson.rs`: label, conflict, Invalid, replay fields with absent markers and import fields survive write and read; unknown labels decode to non-proof
-    - As built: `prop_proofjson.rs` covers the label, the replay fields with absent markers, base64 with one text per value, and rejection of unknown labels. Open: conflict, Invalid and import fields, which the encoding does not carry yet
+    - As built: `prop_proofjson.rs` covers the label, the replay fields with absent markers, the conflict and Invalid fields, base64 with one text per value, and rejection of unknown labels. Open: import fields, which the encoding does not carry yet
     - **Validates: Requirements 31.1, 31.3, 31.7, 31.10, 31.11, 10.5, 10.7**
 
   - [ ] 3.6 Write snapshot tests for the pretty printer
@@ -181,8 +181,9 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - _Requirements: 34.1, 34.2, 34.5, 34.9, 34.10, 34.11_
     - _Properties: 29_
 
-  - [ ] 4.5 Implement `config.rs` `validate_config` for the project configuration
+  - [-] 4.5 Implement `config.rs` `validate_config` for the project configuration
     - Create `crates/dp-core/src/config.rs`; checks: the cluster option value (well-formedness through the address parser that task 4.11 adds, D-13), Local_Fast_Pass budget with default `<TBD-1>`, fallback option, invalid-answer policy, certify-all value, cross-goal without within-goal sharing; heartbeat margin `<TBD-31>` + D < min(`<TBD-5>`, `<TBD-7>`, `<TBD-32>`)
+    - As built: `crates/dp-core/src/config.rs`, proved by Creusot (`validate_config` accepts exactly the valid settings): the cluster address fact, registry and operator key with the cluster option, local jobs, seeds between 1 and 64 and only with the Cluster, the heartbeat period at most half of the silence limit, certify-all off (certification is not built), the bounded trace size. Open: the Local_Fast_Pass budget, the fallback option, the invalid-answer policy, the sharing options, and the heartbeat margin against D and `<TBD-5>`, `<TBD-7>`, `<TBD-32>`
     - _Requirements: 1.6, 2.5, 2.7, 6.7, 6.18, 9.15, 9.17, 18.8, 25.5_
     - _Properties: 5_
 
@@ -212,10 +213,11 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - In `prop_verdict.rs`: minimum in the information order, independent of input order; every other prover answer maps as why3find maps it; recorded labels never depend on labels read from `proof.json`
     - **Validates: Requirements 31.4, 31.5, 31.6**
 
-  - [ ] 4.11 Implement cluster option precedence and the Proof_Server address grammar (D-13)
+  - [-] 4.11 Implement cluster option precedence and the Proof_Server address grammar (D-13)
     - `docs/formats/cluster-address.abnf`: `tcp://<host>:<port>` with a DNS name, an IPv4 literal or a bracketed IPv6 literal as host and a decimal port from 1 to 65535; address parser in the dp-formats project-configuration module, wired into `validate_config` for the cluster option check of task 4.5
     - Precedence function over the command-line flag, `DP_CLUSTER` and `dp.toml`: the first one set wins, and the cluster option is not configured when none is set; the Session shell calls it (task 6.1)
     - Property tests in `crates/dp-formats/tests/prop_config.rs` over generated combinations of set and unset flag, `DP_CLUSTER` and `dp.toml` values (P1.1.8) and over generated strings for the address grammar, every rejected string falling under R1.1 criterion 6 (P1.1.9)
+    - As built: `crates/dp-formats/src/dptoml.rs` (`dp.toml` with unknown keys rejected, `cluster_address`) and `crates/dp-frontend/src/config.rs`: for each option the environment variable, then `dp.toml`, then the default; an error names the option, its source and its value, and the Session stops with status 2 before why3find or a solver starts (`crates/dp-frontend/tests/config.rs`). Open: command-line flags (the arguments go to why3find), the Solver_Configuration file grammar and Portfolios in `dp.toml`
     - _Requirements: 1.9, 1.10, 1.6_
     - _Properties: 5_
 
@@ -263,24 +265,27 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [-] 6.4 Implement the Result_Cache (`crates/dp-frontend/src/cache.rs`, C15)
     - Entries in `.dp-cache/`; legacy-layout writes only for proved-standalone (answer why3find's cache-write request with store or skip, AS-35); lookup compares stored lookup fields, then validation fields, then labels the entry under R7.1 criterion 6; entries written by unmodified why3find are misses
     - As built: in `session.rs` (not a separate `cache.rs`): entries in `.dp-cache/<Cache_Key>` written atomically for every labelled run except failed ones; a lookup after the print compares the stored lookup fields (`lookup_ok`), then the validation fields (`validate_entry`), checks a stored Worker Result against this Session's registry, and gives the entry to dp-core as a cache-hit input, which labels it under this Session's Lock_File; anything else is a miss. why3find's own cache lookups are always answered with a miss, and its cache writes are allowed only for proved-standalone Results. `crates/dp-frontend/tests/cache.rs` covers warm hits, entries under another key, non-canonical bytes, another binary hash, another local limit and re-labelling. Open: an end-to-end test of stored Worker Results (revoked or unregistered Worker), import-set entries, and the size limit `<TBD-22>`
+    - Trust: a local entry of `.dp-cache/` is not authenticated, so whoever can write the directory can make a Session label a Goal proved-standalone (`crates/dp-replay/tests/replay.rs` shows it). Replay does not use the cache and does not confirm such a label; the design now says so (C15)
     - _Requirements: 34.3, 34.4, 34.6, 34.7, 34.9, 34.10, 34.11, 30.6, 41.3_
     - _Properties: 29_
 
   - [-] 6.5 Implement the final `proof.json` write and the Creusot_CLI report
     - Atomic rewrite after why3find's legacy write with `dp` members and `dp-lock`; conflict and Invalid fields; absent markers; report of labels, counts per label and conflicts; non-zero exit for a conflict whose proof is proved-standalone
-    - As built: `proofs.rs` rewrites each proof file atomically after why3find's write: `dp` on every Goal entry (leaf of the proof tree), `dp-lock` with the Lock_File hash; an unproved Goal, which why3find writes as `null`, becomes an object with `dp` alone; an entry that why3find wrote as proved without a proof label of the Session is written as not proved. The Front_End prints the number of Goals by label. AS-19 holds for the pinned why3find: `local_session.rs` has unmodified why3find replay and re-prove from an extended file with the same Goals proved. Open: conflict and Invalid fields, the non-zero exit for conflicts, labels on tactic nodes, and the report inside Creusot_CLI's own output (it is on standard error of the backend)
+    - As built: `proofs.rs` rewrites each proof file atomically after why3find's write: `dp` on every Goal entry (leaf of the proof tree), `dp-lock` with the Lock_File hash; an unproved Goal becomes an object with `dp` alone; an entry that why3find wrote as proved without a proof label of the Session is written as not proved. A Goal with a proof label and an Invalid answer of another run gets the conflict field and the Invalid entries (`verdict::conflict`, with its contract), the Front_End reports it and the Session does not exit with status zero. The Front_End prints the number of Goals by label. AS-19 holds for the pinned why3find (`local_session.rs`). Open: an end-to-end test of a conflict (it needs a prover that answers Invalid where another proves), labels on tactic nodes, and the report inside Creusot_CLI's own output
     - _Requirements: 10.1, 10.4, 10.5, 10.7, 31.1, 31.2, 31.3, 31.7, 31.8, 31.9, 31.11, 31.12, 36.5, 5.2, 5.14_
     - _Properties: 30_
 
 - [ ] 7. Implement offline replay for proved-standalone Verdicts
-  - [ ] 7.1 Implement `crates/dp-replay/` without networking code (C17)
+  - [-] 7.1 Implement `crates/dp-replay/` without networking code (C17)
     - Canonical decode of `proof.json`; Lock_File hash comparison at the start of the report; re-print through the bridge and Task_Hash comparison; local Calibration and re-run with the recorded seed and options at the scaled limit times `<TBD-20>`; one entry per Goal_Version; exit status zero only when every proof-labelled Verdict is confirmed, reserved status for contradicted; absent markers and unknown labels fail; certified Verdicts are reported not confirmed until task 23.7
+    - As built: `dp-replay ARGS` runs `why3find prove -r ARGS` in dispatch mode and answers each prover call from the `dp` member of its entry: canonical decode, proof label through `decode_label`, `dp-lock` against the Lock_File in use, the recorded prover and binary hash against the local pinned Unpatched_Solver, the Task_Hash of its own print, local Calibration, and a re-run with the recorded seed at the scaled reference limit times 2 (a working value for `<TBD-20>`). One entry per Goal entry; exit status 0 only when every proof-labelled Verdict is confirmed, 3 for a contradicted one. It builds without the `cluster` feature of dp-shell, which holds the transport (`ci/jobs/test.sh` checks it). Open: certified Verdicts (reported not confirmed), the recorded option list (the local prover configuration's is used), replays in parallel, a machine-readable report, and the bridge request that addresses a Goal without a prover call (5.3)
     - _Requirements: 35.1, 35.2, 35.5, 35.6, 35.7, 35.8, 35.9, 10.8, 31.10_
     - _Properties: 31_
 
-  - [ ] 7.2 Write the replay and tamper tests for proved-standalone Sessions
+  - [-] 7.2 Write the replay and tamper tests for proved-standalone Sessions
     - **Property 31: Offline replay confirms exactly what the evidence supports** (proved-standalone part)
     - `tests/replay/` and `tests/replay/tamper/`, run by `ci/replay` in a container without network
+    - As built: `crates/dp-replay/tests/replay.rs`, eight cases with real provers: an honest Session is confirmed and nothing is changed, also without `.dp-cache/` and `.why3find`; not confirmed are a proof copied to another Goal, a legacy proof without a proof label, a damaged label, another Lock_File, another binary hash, a proof from a forged Result_Cache entry, and a file that unmodified why3find wrote. Open: `tests/replay/` as its own tree, the container without network, a contradicted case
     - **Validates: Requirements 35.1, 35.2, 35.5, 35.6, 35.7, 35.8, 35.9, 10.8, 31.10**
 
 - [ ] 8. Write the Lean foundations
@@ -418,6 +423,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [-] 14.1 Write `verification/tla/Coordinator.tla` with its safety invariants
     - **Property 8: Coordinator protocol safety**
     - Front_End, Coordinator, Workers, network as a bag, escalation, fallback, operator actions and the R1.6 fault actions; one action per `TlaAction` variant; invariants `AtMostOneVerdict`, `NonRaceProofRecorded`, eligibility, scaled limits, the reassignment bound, drain and revocation rules, first-wins (Property 4) and `NoEscalationAfterLocalProof`, `FastPassBeforeSubmission`, `CacheHitStaysLocal` (Property 6); TLC configuration with small test bounds (not proposals for `<TBD-4>`) and an Apalache configuration for `sched/apalache-nightly`
+    - As built: `Coordinator.tla` as before (label soundness against an adversarial Coordinator and network), and `Cluster.tla`: the model of the dp-core Coordinator machine with joining, queueing, assignment, cancellation, lost peers and reassignment up to the retry limit; TLC checks that a Job is in one place, that only connected Workers run Jobs, that no Job of a lost Front_End stays, and that a Job goes only to a Worker that offers its prover. Trace validation: the Coordinator's shell records every step with its effects, `verification/tla/trace_check.py` turns a trace into a behaviour and TLC checks it against `Cluster.tla`; `ci/jobs/tlc.sh` does this for eight simulated runs with faults and requires that a corrupted trace is rejected. Open: time and heartbeats in the model, the Front_End and Worker machines in it, action names generated from the specification (`actions.toml`), Apalache, traces of real Clusters
     - **Validates: Requirements 1.3, 1.4, 1.7, 4.1, 4.3, 4.4, 5.1, 5.2, 5.4, 5.7, 5.8, 5.13, 5.14, 5.15, 5.16, 6.1, 6.2, 6.3, 6.10, 6.16, 6.17, 7.1, 7.2, 7.3, 7.4, 7.5, 7.7, 7.8, 7.9, 2.1, 2.2, 2.4**
     - As built: a model of the first distributed slice with an adversarial Coordinator; TLC checks `VerdictSound`, `VerdictFinal` and `JobsEndOnce` at small test bounds, and finds a counterexample when the task binding or the signature check is removed. Open: the invariants this task names for heartbeats, Races, certification, fallback and operator actions
 
@@ -455,7 +461,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [-] 15.6 Implement the Coordinator machine `coord.rs` with a Kani harness (C5)
     - Create `crates/dp-core/src/coord.rs`: `eligible`, `assign`, `on_heartbeat_timeout`, `on_failed`, `cancel`, `orphan_cancel`, `drop_session`, `apply_operator`, `status`, incarnation identifier, message deduplication; `verification/kani/coordinator.rs` for P1.5.1 and P1.5.6 on single transitions
     - `assign` treats every per-platform solver binary hash that the Lock_File entry of a Solver_Configuration lists as listed (`lock(c)` is the set of those hashes, OQ-N21, D-13), so each Result carries the hash of the binary the Worker ran
-    - As built: a pure machine with unit tests in `crates/dp-coordinator/src/machine.rs` (queueing, assignment, cancellation, lost peers). Open: moving it into dp-core in the subset Creusot verifies, Calibration, heartbeats, retries, operator commands, the Kani harness
+    - As built: `crates/dp-core/src/coord.rs`, proved by Creusot: queueing, `pick` (the first idle Worker that offers the prover, with its Calibration), assignment with the local limit `scale(reference limit, Calibration)`, cancellation, lost Front_Ends, heartbeats, silent peers, reassignment of a lost Worker's Job up to a retry limit, and re-assignment when a Worker says it is idle. `crates/dp-coordinator/src/shell.rs` is its shell over `Env`. Open: operator commands and status, the incarnation identifier, registry and revocation traffic, the Kani harness; and only safety of single functions is proved (liveness is tested in `tests/sim/`)
     - _Requirements: 1.3, 1.4, 1.7, 1.11, 5.4, 5.7, 5.15, 6.1, 6.2, 6.3, 6.10, 6.11, 6.16, 6.17, 7.1, 7.2, 7.3, 7.4, 7.5, 7.7, 7.8, 7.9, 7.10, 7.11_
     - _Properties: 4, 8_
 
@@ -474,8 +480,9 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - `property_8_coordinator_safety` in `prop_assign.rs`
     - **Validates: Requirements 5.1, 5.2, 6.1, 6.2, 6.3**
 
-  - [ ] 15.10 Implement the Worker machine `worker.rs` for Unpatched_Solvers (C6)
+  - [-] 15.10 Implement the Worker machine `worker.rs` for Unpatched_Solvers (C6)
     - Create `crates/dp-core/src/worker.rs`: `on_assign`, `on_cancel`, `on_exit`, not-running report, deduplication (the sharing functions `on_export`, `on_pool_item` and `pending_release` follow in task 28.1)
+    - As built: `crates/dp-core/src/worker.rs`, proved by Creusot (a step stops a Job only if it ran, starts one only if it runs afterwards, and a disconnected Worker runs nothing): one Job at a time, a new assignment replaces the running one, cancellation, orphan stop and reconnection after the Coordinator's silence, heartbeats that say whether a Job runs. `crates/dp-worker/src/shell.rs` is its shell over `Env`; it computes the local limit from its own Calibration and signs both. `dp-worker run --why3find PATH` runs why3find's Calibration of every prover through the bridge at start; without it a Worker offers the reference speed. Open: the task blob fetch, Lemma traffic, hints
     - _Requirements: 4.5, 5.5, 5.6, 6.12, 6.14_
     - _Properties: 4, 11_
 

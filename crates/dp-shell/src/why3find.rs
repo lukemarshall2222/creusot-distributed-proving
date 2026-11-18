@@ -324,3 +324,35 @@ impl Bridge {
         Ok(self.child.wait()?)
     }
 }
+
+/// What a Front_End needs of why3find in dispatch mode. `Bridge` is the
+/// real one; the simulator has a scripted one.
+pub trait Why3find {
+    fn send(&mut self, msg: &ToWhy3find) -> Result<(), BridgeError>;
+    fn poll(&mut self, timeout: Duration) -> Result<Poll, BridgeError>;
+    fn print(&mut self, gid: &str, prover: &str, transformations: &[String]) -> Result<Printed, BridgeError>;
+    fn provers(&mut self) -> Result<Vec<ProverInfo>, BridgeError>;
+    fn calibration(&mut self, prover: &str) -> Result<u64, BridgeError>;
+    fn ask_answer(&mut self, prover: &str, status: u32, output: &[u8]) -> Result<String, BridgeError>;
+}
+
+impl Why3find for Bridge {
+    fn send(&mut self, msg: &ToWhy3find) -> Result<(), BridgeError> {
+        Bridge::send(self, msg)
+    }
+    fn poll(&mut self, timeout: Duration) -> Result<Poll, BridgeError> {
+        Bridge::poll(self, timeout)
+    }
+    fn print(&mut self, gid: &str, prover: &str, transformations: &[String]) -> Result<Printed, BridgeError> {
+        Bridge::print(self, gid, prover, transformations)
+    }
+    fn provers(&mut self) -> Result<Vec<ProverInfo>, BridgeError> {
+        Bridge::provers(self)
+    }
+    fn calibration(&mut self, prover: &str) -> Result<u64, BridgeError> {
+        Bridge::calibration(self, prover)
+    }
+    fn ask_answer(&mut self, prover: &str, status: u32, output: &[u8]) -> Result<String, BridgeError> {
+        Bridge::ask_answer(self, prover, status, output)
+    }
+}

@@ -1,0 +1,20 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_assign": { "prover": "alt-ergo", "time": 0.043 },
+      "vc_elim_Idle": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_index_Vec_Job_Global": { "prover": "alt-ergo", "time": 0.013 },
+      "vc_index_Vec_Worker_Global'0": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_index_mut_Vec_Worker_Global": {
+        "prover": "alt-ergo",
+        "time": 0.012
+      },
+      "vc_len_Job": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_local_limit": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_pick": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_push_Effect": { "prover": "alt-ergo", "time": 0.014 },
+      "vc_remove_Job": { "prover": "alt-ergo", "time": 0.013 }
+    }
+  }
+}

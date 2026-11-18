@@ -1,0 +1,12 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_elim_Some": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_insert_Job": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_lose_worker": { "prover": "z3", "time": 0.015 },
+      "vc_push_Effect": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_remove_Worker": { "prover": "alt-ergo", "time": 0.01 }
+    }
+  }
+}

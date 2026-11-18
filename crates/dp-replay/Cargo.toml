@@ -10,6 +10,10 @@ dp-core = { workspace = true }
 dp-formats = { workspace = true }
 dp-shell = { workspace = true }
 dp-cert = { workspace = true }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }
 
 [lints]
 workspace = true

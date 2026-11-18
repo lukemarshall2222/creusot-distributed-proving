@@ -383,3 +383,48 @@ pub fn final_label(recorded: Option<Label>, outcomes: &[Outcome]) -> Label {
         None => Label::NonProof(most_informative(outcomes)),
     }
 }
+
+#[ensures(result == (a@ == b@))]
+fn same_text(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    #[invariant(i@ <= a@.len())]
+    #[invariant(forall<j> 0 <= j && j < i@ ==> a[j] == b[j])]
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    proof_assert! { a@.ext_eq(b@) };
+    true
+}
+
+/// Reads a label name from `proof.json`. `proved` and `certified` are the
+/// names of the two proof labels. Any other name, a name of a later
+/// version or a damaged one included, is a non-proof outcome (R7.2
+/// criterion 10): a reader never takes an unknown label for a proof.
+#[ensures(result == Label::ProvedStandalone ==> name@ == proved@)]
+#[ensures(result == Label::Certified ==> name@ == certified@)]
+pub fn decode_label(name: &[u8], proved: &[u8], certified: &[u8]) -> Label {
+    if same_text(name, proved) {
+        Label::ProvedStandalone
+    } else if same_text(name, certified) {
+        Label::Certified
+    } else {
+        Label::NonProof(Outcome::Unresolved)
+    }
+}
+
+/// A Goal is in conflict when it has a proof label and some run on it
+/// answered Invalid (R7.2 criterion 7). A conflict never removes the
+/// Invalid answers from the record, and it is reported.
+#[ensures(result == (match label { Label::NonProof(_) => false, _ => true } && invalid_answers@ > 0))]
+pub fn conflict(label: Label, invalid_answers: u64) -> bool {
+    match label {
+        Label::NonProof(_) => false,
+        _ => invalid_answers > 0,
+    }
+}

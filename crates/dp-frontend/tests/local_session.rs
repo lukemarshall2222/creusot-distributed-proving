@@ -170,6 +170,24 @@ fn a_why3find_that_differs_from_the_lock_file_is_not_started() {
     fs::remove_dir_all(dir).unwrap();
 }
 
+/// Options come from `dp.toml`: here the trace file and its retention.
+#[test]
+fn the_project_configuration_file_sets_the_trace() {
+    let Some((why3find, lock)) = env() else { return };
+    let dir = project("dptoml", r#""alt-ergo""#);
+    fs::write(dir.join("dp.toml"), "[local]\njobs = 2\n[tracing]\nfile = \"session.trace\"\nretention = \"complete\"\n")
+        .unwrap();
+    let out = prove(&dir, &why3find, &lock);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("2 proved-standalone Verdicts"), "{stderr}");
+    let trace = fs::read_to_string(dir.join("session.trace")).unwrap();
+    // every step from the start of the Session to the final write
+    assert!(trace.lines().next().unwrap().contains("SessionStart"), "{trace}");
+    assert!(trace.lines().last().unwrap().contains("FinalWrite"), "{trace}");
+    assert!(trace.lines().count() > 10);
+    fs::remove_dir_all(dir).unwrap();
+}
+
 /// AS-19: unmodified why3find reads a proof file with the extension members
 /// as it reads the same file without them.
 // P-ID: P7.2.6 (legacy reader part)

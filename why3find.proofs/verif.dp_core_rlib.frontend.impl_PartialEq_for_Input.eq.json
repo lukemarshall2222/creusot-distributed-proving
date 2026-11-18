@@ -4,6 +4,7 @@
     "Coma": {
       "vc_elim_CacheHit": { "prover": "alt-ergo", "time": 0.011 },
       "vc_elim_CancelCall": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_ClusterHeard": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_ClusterLost": { "prover": "alt-ergo", "time": 0.011 },
       "vc_elim_GoalAnnounced": { "prover": "alt-ergo", "time": 0.01 },
       "vc_elim_JobNotRun": { "prover": "alt-ergo", "time": 0.011 },

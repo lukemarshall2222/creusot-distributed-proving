@@ -15,6 +15,7 @@ members = [
     "crates/dp-cert",
     "crates/dp-replay",
     "tests/diff",
+    "tests/sim",
 ]
 
 [workspace.package]

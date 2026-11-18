@@ -1,0 +1,16 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_elim_Some": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Some'0": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_find_worker": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_finish": { "prover": "alt-ergo", "time": 0.017 },
+      "vc_index_Vec_Worker_Global'0": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_index_mut_Vec_Worker_Global": {
+        "prover": "alt-ergo",
+        "time": 0.011
+      }
+    }
+  }
+}

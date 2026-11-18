@@ -1,0 +1,10 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_find_queued": { "prover": "alt-ergo", "time": 0.014 },
+      "vc_index_Vec_Job_Global": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_len_Job": { "prover": "alt-ergo", "time": 0.011 }
+    }
+  }
+}

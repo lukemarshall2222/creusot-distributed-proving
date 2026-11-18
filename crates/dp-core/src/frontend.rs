@@ -93,6 +93,11 @@ pub struct Config {
     pub seeds: u64,
     /// How long, beyond twice its time limit, the Front_End waits for a race.
     pub job_margin: Time,
+    /// Without a message from the Coordinator for longer than this, the
+    /// Front_End falls back to local proving (R1.6). Zero: no such check.
+    pub silence_limit: Time,
+    /// How often the Front_End sends a heartbeat to the Coordinator.
+    pub beat_period: Time,
     pub certify_all: bool,
     /// The Unpatched_Solver entries of the Lock_File.
     pub unpatched: Vec<UnpatchedSolver>,
@@ -113,6 +118,10 @@ pub struct State {
     /// Number of calls whose place is `Local`.
     pub local_running: u64,
     pub verdicts: Verdicts,
+    /// When the Coordinator was last heard from.
+    pub heard: Time,
+    /// When the last heartbeat was sent.
+    pub beat: Time,
 }
 
 /// What a finished run established, with the facts that the shell computed
@@ -158,6 +167,9 @@ pub enum Input {
         signature_valid: bool,
         registered: bool,
         revoked: bool,
+        /// The Calibration and the local time limit that the Worker signed.
+        velocity: u64,
+        local_micros: u64,
     },
     /// The Cluster reported that it did not run a Job.
     JobNotRun { now: Time, rid: CallId, seed: u64 },
@@ -165,6 +177,8 @@ pub enum Input {
     CancelCall { now: Time, rid: CallId },
     /// The connection to the Coordinator is gone.
     ClusterLost { now: Time },
+    /// A message arrived from the Coordinator.
+    ClusterHeard { now: Time },
     Tick { now: Time },
     /// why3find finished.
     Why3findDone { now: Time },
@@ -194,6 +208,10 @@ pub enum Effect {
     CancelLocal { rid: CallId },
     /// Cancel a Job on the Cluster.
     CancelJob { rid: CallId, seed: u64 },
+    /// Send a heartbeat to the Coordinator.
+    Beat,
+    /// Close the connection to the Coordinator.
+    LeaveCluster,
     /// Answer why3find. Each call is answered once.
     Answer { rid: CallId, reply: Reply },
 }
@@ -362,6 +380,26 @@ pub fn decide(evidence: Evidence, ctx: &Context, remote: Option<RemoteFacts>) ->
     }
 }
 
+/// Fallback to local proving (R1.6 criteria 4 and 5): the calls that the
+/// Cluster was answering run here.
+#[ensures((^s).goals == s.goals && (^s).verdicts == s.verdicts && (^s).phase == s.phase)]
+fn fall_back(s: &mut State, effects: &mut Vec<Effect>) {
+    s.cluster = false;
+    let _old = snapshot! { *s };
+    let mut k = 0;
+    #[invariant(k@ <= s.calls@.len())]
+    #[invariant(s.goals == _old.goals && s.verdicts == _old.verdicts && s.phase == _old.phase)]
+    while k < s.calls.len() {
+        if s.calls[k].place == Place::Remote {
+            s.calls[k].place = Place::Queued;
+            s.calls[k].jobs.clear();
+            s.calls[k].lost.clear();
+        }
+        k += 1;
+    }
+    start_queued(s, effects);
+}
+
 /// Moves queued calls to free local solver slots, oldest first.
 #[ensures((^s).goals == s.goals && (^s).verdicts == s.verdicts && (^s).phase == s.phase)]
 fn start_queued(s: &mut State, effects: &mut Vec<Effect>) {
@@ -504,9 +542,11 @@ pub fn step(mut s: State, i: Input) -> Step<State, Effect> {
         Phase::Finished => return discard(s),
         Phase::Idle => {
             return match i {
-                Input::SessionStart { cluster, .. } => {
+                Input::SessionStart { cluster, now } => {
                     s.phase = Phase::Running;
                     s.cluster = cluster;
+                    s.heard = now;
+                    s.beat = now;
                     done(s, Vec::new(), TlaAction::SessionStart)
                 }
                 _ => discard(s),
@@ -637,7 +677,7 @@ pub fn step(mut s: State, i: Input) -> Step<State, Effect> {
             conclude(s, k, evidence, None, TlaAction::LocalExit)
         }
         Input::RemoteResult {
-            rid, seed, prover, evidence, signature_valid, registered, revoked, ..
+            rid, seed, prover, evidence, signature_valid, registered, revoked, velocity, local_micros, ..
         } => {
             let k = match find_call(&s.calls, rid) {
                 Some(k) => k,
@@ -665,7 +705,10 @@ pub fn step(mut s: State, i: Input) -> Step<State, Effect> {
                 revoked,
                 // The Job as submitted: an open Job of the call, for the
                 // call's prover (R1.3 criterion 6).
-                submitted: prover == s.calls[k].prover,
+                // and with the local time limit that its reference limit
+                // and the Worker's Calibration give (R1.4 criterion 6).
+                submitted: prover == s.calls[k].prover
+                    && local_micros == crate::calibration::scale(s.calls[k].micros, velocity),
             };
             conclude(s, k, evidence, Some(facts), TlaAction::RemoteResult)
         }
@@ -709,25 +752,30 @@ pub fn step(mut s: State, i: Input) -> Step<State, Effect> {
             if !s.cluster {
                 return discard(s);
             }
-            // Fallback to local proving (R1.6 criteria 4 and 5): the calls
-            // that the Cluster was answering run here.
-            s.cluster = false;
-            let _old = snapshot! { s };
-            let mut k = 0;
-            #[invariant(k@ <= s.calls@.len())]
-            #[invariant(s.goals == _old.goals && s.verdicts == _old.verdicts)]
-            while k < s.calls.len() {
-                if s.calls[k].place == Place::Remote {
-                    s.calls[k].place = Place::Queued;
-                    s.calls[k].jobs.clear();
-                    s.calls[k].lost.clear();
-                }
-                k += 1;
-            }
-            start_queued(&mut s, &mut effects);
+            fall_back(&mut s, &mut effects);
             done(s, effects, TlaAction::ClusterLost)
         }
+        Input::ClusterHeard { now } => {
+            if !s.cluster {
+                return discard(s);
+            }
+            s.heard = now;
+            done(s, effects, TlaAction::Heartbeat)
+        }
         Input::Tick { now } => {
+            if s.cluster {
+                // A silent Coordinator is a lost Cluster (R1.6 criterion 4).
+                let limit = s.config.silence_limit;
+                if limit > 0 && now > s.heard && now - s.heard > limit {
+                    effects.push(Effect::LeaveCluster);
+                    fall_back(&mut s, &mut effects);
+                    return done(s, effects, TlaAction::ClusterLost);
+                }
+                if now >= s.beat && now - s.beat >= s.config.beat_period {
+                    s.beat = now;
+                    effects.push(Effect::Beat);
+                }
+            }
             // A race whose deadline has passed ends: its open Jobs count as
             // timed out (R1.5 criterion 9).
             let _old = snapshot! { s };
@@ -772,6 +820,8 @@ impl Machine for FrontEnd {
             calls: Vec::new(),
             local_running: 0,
             verdicts: Verdicts { entries: Vec::new() },
+            heard: 0,
+            beat: 0,
         }
     }
 

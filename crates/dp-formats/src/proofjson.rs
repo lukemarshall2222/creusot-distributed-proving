@@ -7,10 +7,14 @@
 //! criterion 8).
 //!
 //! As built: the label, the replay fields of the run that proved the Goal,
-//! and the import list, which is empty. The certificate reference, the
-//! Partition tree hash, the conflict field and the Invalid field are always
-//! the atom `absent` or the empty list; they are in the encoding so that
-//! adding them does not change its shape.
+//! the Invalid field (the runs on the Goal that answered Invalid, R7.2
+//! criterion 11), the conflict field (set when a Goal has a proof label and
+//! an Invalid answer, R7.2 criterion 7), and the import list, which is
+//! empty. The certificate reference and the Partition tree hash are always
+//! the atom `absent`; they are in the encoding so that adding them does not
+//! change its shape.
+
+use std::path::{Path, PathBuf};
 
 use crate::{
     hash::Hash,
@@ -60,12 +64,42 @@ pub struct ReplayFields {
     pub reference_micros: u64,
 }
 
+/// A run that answered Invalid on the Goal (R7.2 criterion 11).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InvalidEntry {
+    pub prover: String,
+    pub version: String,
+    pub binary_hash: Hash,
+    pub place: Place,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DpEntry {
     pub label: String,
     /// One entry for a proof label, none otherwise.
     pub replay: Vec<ReplayFields>,
     pub imports_hash: Hash,
+    /// The Goal has a proof label and an Invalid answer of another run
+    /// (R7.2 criterion 7); the runs are in `invalid`.
+    pub conflict: bool,
+    pub invalid: Vec<InvalidEntry>,
+}
+
+fn place_sexp(place: &Place) -> Sexp {
+    match place {
+        Place::Local => Sexp::list([Sexp::atom("local")]),
+        Place::Worker(name) => Sexp::list([Sexp::atom("worker"), Sexp::atom(name)]),
+        Place::Absent => Sexp::atom(ABSENT),
+    }
+}
+
+fn place_of(place: &Sexp) -> Result<Place, DecodeError> {
+    match place.as_list() {
+        Some([tag]) if tag.as_str() == Some("local") => Ok(Place::Local),
+        Some([tag, name]) if tag.as_str() == Some("worker") => Ok(Place::Worker(text(name)?)),
+        None if place.as_str() == Some(ABSENT) => Ok(Place::Absent),
+        _ => err("place"),
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -124,11 +158,7 @@ impl ReplayFields {
             Sexp::atom(&self.prover),
             Sexp::atom(&self.version),
             Sexp::atom(self.binary_hash.0),
-            match &self.place {
-                Place::Local => Sexp::list([Sexp::atom("local")]),
-                Place::Worker(name) => Sexp::list([Sexp::atom("worker"), Sexp::atom(name)]),
-                Place::Absent => Sexp::atom(ABSENT),
-            },
+            place_sexp(&self.place),
             opt_num(self.seed),
             opt_num(self.velocity),
             opt_num(self.local_micros),
@@ -142,12 +172,7 @@ impl ReplayFields {
         else {
             return err("replay fields");
         };
-        let place = match place.as_list() {
-            Some([tag]) if tag.as_str() == Some("local") => Place::Local,
-            Some([tag, name]) if tag.as_str() == Some("worker") => Place::Worker(text(name)?),
-            None if place.as_str() == Some(ABSENT) => Place::Absent,
-            _ => return err("place"),
-        };
+        let place = place_of(place)?;
         Ok(ReplayFields {
             task_hash: hash32(task_hash)?,
             driver: driver.as_atom().ok_or_else(|| DecodeError("driver".into()))?.to_vec(),
@@ -174,8 +199,15 @@ impl DpEntry {
             Sexp::atom(self.imports_hash.0),
             Sexp::atom(ABSENT), // certificate
             Sexp::atom(ABSENT), // Partition tree hash
-            Sexp::atom(ABSENT), // conflict
-            Sexp::list([]),     // Invalid field
+            if self.conflict { Sexp::list([Sexp::atom("conflict")]) } else { Sexp::atom(ABSENT) },
+            Sexp::list(self.invalid.iter().map(|i| {
+                Sexp::list([
+                    Sexp::atom(&i.prover),
+                    Sexp::atom(&i.version),
+                    Sexp::atom(i.binary_hash.0),
+                    place_sexp(&i.place),
+                ])
+            })),
         ]))
     }
 
@@ -197,16 +229,35 @@ impl DpEntry {
         // place is not an entry that it can read faithfully.
         let absent = |s: &Sexp| s.as_str() == Some(ABSENT);
         let empty = |s: &Sexp| s.as_list().is_some_and(<[Sexp]>::is_empty);
-        if !empty(imports) || !absent(certificate) || !absent(tree) || !absent(conflict) || !empty(invalid) {
+        if !empty(imports) || !absent(certificate) || !absent(tree) {
             return err("a member that this build does not read");
         }
+        let conflict = match conflict.as_list() {
+            Some([tag]) if tag.as_str() == Some("conflict") => true,
+            None if absent(conflict) => false,
+            _ => return err("conflict"),
+        };
+        let invalid = invalid
+            .as_list()
+            .ok_or_else(|| DecodeError("invalid".into()))?
+            .iter()
+            .map(|i| match i.as_list() {
+                Some([prover, version, binary_hash, place]) => Ok(InvalidEntry {
+                    prover: text(prover)?,
+                    version: text(version)?,
+                    binary_hash: hash32(binary_hash)?,
+                    place: place_of(place)?,
+                }),
+                _ => err("invalid entry"),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let replay = replay
             .as_list()
             .ok_or_else(|| DecodeError("replay".into()))?
             .iter()
             .map(ReplayFields::from_sexp)
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(DpEntry { label, replay, imports_hash: hash32(imports_hash)? })
+        Ok(DpEntry { label, replay, imports_hash: hash32(imports_hash)?, conflict, invalid })
     }
 
     /// The value of the member `"dp"`.
@@ -273,3 +324,21 @@ pub fn base64_decode(text: &str) -> Option<Vec<u8>> {
     }
     Some(out)
 }
+
+/// The proof file of a source file, as why3find names it: the path of the
+/// file below the project directory, without its extension and with dots
+/// between its parts, in `why3find.proofs`.
+pub fn proof_file(dir: &Path, file: &str) -> PathBuf {
+    let file = Path::new(file).with_extension("");
+    let absolute = if file.is_absolute() { file } else { dir.join(file) };
+    let relative = absolute.strip_prefix(dir).unwrap_or(&absolute).to_path_buf();
+    let parts: Vec<_> = relative
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(p) => Some(p.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect();
+    dir.join("why3find.proofs").join(format!("{}.json", parts.join(".")))
+}
+

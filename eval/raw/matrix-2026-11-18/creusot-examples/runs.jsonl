@@ -1,0 +1,25 @@
+{"file": "examples/all_zero.coma", "status": 0, "wall_seconds": 3.1, "goals": 6, "proved": 6}
+{"file": "examples/bdd.coma", "status": 0, "wall_seconds": 86.6, "goals": 72, "proved": 72}
+{"file": "examples/binary_search.coma", "status": 0, "wall_seconds": 5.0, "goals": 3, "proved": 3}
+{"file": "examples/binary_search_generic.coma", "status": 0, "wall_seconds": 6.4, "goals": 5, "proved": 5}
+{"file": "examples/doubly_linked_list.coma", "status": 0, "wall_seconds": 105.5, "goals": 239, "proved": 239}
+{"file": "examples/gnome_sort.coma", "status": 0, "wall_seconds": 18.3, "goals": 6, "proved": 6}
+{"file": "examples/haystack.coma", "status": 0, "wall_seconds": 6.9, "goals": 9, "proved": 9}
+{"file": "examples/heapsort_generic.coma", "status": 0, "wall_seconds": 32.7, "goals": 12, "proved": 12}
+{"file": "examples/hillel.coma", "status": 0, "wall_seconds": 29.5, "goals": 34, "proved": 34}
+{"file": "examples/inplace_list_reversal.coma", "status": 0, "wall_seconds": 5.5, "goals": 3, "proved": 3}
+{"file": "examples/insertion_sort.coma", "status": 0, "wall_seconds": 20.6, "goals": 6, "proved": 6}
+{"file": "examples/ite_normalize.coma", "status": 0, "wall_seconds": 7.3, "goals": 29, "proved": 29}
+{"file": "examples/knapsack.coma", "status": 0, "wall_seconds": 14.5, "goals": 14, "proved": 14}
+{"file": "examples/knapsack_full.coma", "status": 0, "wall_seconds": 29.4, "goals": 23, "proved": 23}
+{"file": "examples/knuth_shuffle.coma", "status": 0, "wall_seconds": 6.8, "goals": 8, "proved": 8}
+{"file": "examples/linked_list.coma", "status": 0, "wall_seconds": 21.8, "goals": 35, "proved": 35}
+{"file": "examples/logically_atomic_faa.coma", "status": 0, "wall_seconds": 6.9, "goals": 18, "proved": 18}
+{"file": "examples/persistent_array.coma", "status": 2, "wall_seconds": 8.8, "goals": 0, "proved": 0}
+{"file": "examples/red_black_tree.coma", "status": 0, "wall_seconds": 317.4, "goals": 145, "proved": 145}
+{"file": "examples/selection_sort_generic.coma", "status": 0, "wall_seconds": 22.3, "goals": 9, "proved": 9}
+{"file": "examples/sparse_array.coma", "status": 0, "wall_seconds": 7.7, "goals": 16, "proved": 16}
+{"file": "examples/sum_first_n.coma", "status": 0, "wall_seconds": 7.4, "goals": 5, "proved": 5}
+{"file": "examples/sum_first_n_iter.coma", "status": 0, "wall_seconds": 30.7, "goals": 7, "proved": 7}
+{"file": "examples/sum_of_odds.coma", "status": 0, "wall_seconds": 7.1, "goals": 8, "proved": 8}
+{"file": "examples/persistent_array.coma", "status": 0, "error": null, "wall_seconds": 26.1, "goals": 124, "proved": 124}

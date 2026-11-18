@@ -2,7 +2,7 @@
 //! Results and the operator-signed Worker registry (design: Data Models).
 //!
 //! This is the message set of the first distributed slice: one Job per
-//! prover call, Unpatched_Solvers only, no Lemma traffic, no heartbeats.
+//! prover call, Unpatched_Solvers only, no Lemma traffic.
 //! A Result carries the solver's output and exit status, not an answer: the
 //! Front_End reads the answer with its own pinned driver.
 
@@ -150,6 +150,10 @@ pub struct ResultFields {
     /// The start of the solver's output.
     pub output: Vec<u8>,
     pub elapsed_micros: u64,
+    /// The Worker's Calibration of the prover, in millionths, and the local
+    /// time limit that the run had (R1.4 criterion 2).
+    pub velocity: u64,
+    pub local_micros: u64,
 }
 
 impl ResultFields {
@@ -168,12 +172,14 @@ impl ResultFields {
             a(if self.timed_out { "timed-out" } else { "exited" }),
             Sexp::atom(&self.output),
             n(self.elapsed_micros),
+            n(self.velocity),
+            n(self.local_micros),
         ])
     }
 
     fn decode(s: &Sexp) -> Result<ResultFields, DecodeError> {
         match items(s)? {
-            [job_id, task_hash, prover, seed, binary_hash, worker, status, end, output, elapsed] => {
+            [job_id, task_hash, prover, seed, binary_hash, worker, status, end, output, elapsed, velocity, local] => {
                 Ok(ResultFields {
                     job_id: text(job_id)?,
                     task_hash: hash(task_hash)?,
@@ -193,6 +199,8 @@ impl ResultFields {
                     },
                     output: bytes(output)?,
                     elapsed_micros: number(elapsed)?,
+                    velocity: number(velocity)?,
+                    local_micros: number(local)?,
                 })
             }
             _ => err("result fields"),
@@ -244,12 +252,18 @@ impl SignedResult {
 pub enum Message {
     /// First message of a Front_End.
     FrontEndHello { session: String },
-    /// First message of a Worker: its identity and the provers it offers.
-    WorkerHello { worker: String, provers: Vec<String> },
+    /// First message of a Worker: its identity and its offer, the provers
+    /// with their Calibrations in millionths (R1.1 criterion 3).
+    WorkerHello { worker: String, offers: Vec<(String, u64)> },
     /// Front_End to Coordinator.
     Submit(Job),
-    /// Coordinator to Worker.
-    Assign(Job),
+    /// Coordinator to Worker: the Job, the local time limit and the
+    /// Calibration that the limit was scaled with.
+    Assign { job: Job, local_micros: u64, velocity: u64 },
+    /// Any direction: the sender is alive (R1.6).
+    Heartbeat,
+    /// Worker to Coordinator: alive, and running no Job.
+    Idle,
     /// Front_End to Coordinator, and Coordinator to Worker.
     Cancel { job_id: String },
     /// Worker to Coordinator, and Coordinator to Front_End, unchanged.
@@ -262,11 +276,16 @@ impl Message {
     pub fn encode(&self) -> Sexp {
         let (tag, fields) = match self {
             Message::FrontEndHello { session } => ("frontend-hello", vec![a(session)]),
-            Message::WorkerHello { worker, provers } => {
-                ("worker-hello", vec![a(worker), Sexp::list(provers.iter().map(|p| a(p)))])
-            }
+            Message::WorkerHello { worker, offers } => (
+                "worker-hello",
+                vec![a(worker), Sexp::list(offers.iter().map(|(p, v)| Sexp::list([a(p), n(*v)])))],
+            ),
             Message::Submit(job) => ("submit", job.encode()),
-            Message::Assign(job) => ("assign", job.encode()),
+            Message::Assign { job, local_micros, velocity } => {
+                ("assign", vec![Sexp::List(job.encode()), n(*local_micros), n(*velocity)])
+            }
+            Message::Heartbeat => ("heartbeat", vec![]),
+            Message::Idle => ("idle", vec![]),
             Message::Cancel { job_id } => ("cancel", vec![a(job_id)]),
             Message::Result(r) => ("result", r.encode()),
             Message::Failed { job_id, reason } => ("failed", vec![a(job_id), a(reason)]),
@@ -281,12 +300,24 @@ impl Message {
         };
         match (tag, &l[1..]) {
             ("frontend-hello", [session]) => Ok(Message::FrontEndHello { session: text(session)? }),
-            ("worker-hello", [worker, provers]) => Ok(Message::WorkerHello {
+            ("worker-hello", [worker, offers]) => Ok(Message::WorkerHello {
                 worker: text(worker)?,
-                provers: items(provers)?.iter().map(text).collect::<Result<_, _>>()?,
+                offers: items(offers)?
+                    .iter()
+                    .map(|o| match items(o)? {
+                        [prover, velocity] => Ok((text(prover)?, number(velocity)?)),
+                        _ => err("offer"),
+                    })
+                    .collect::<Result<_, _>>()?,
             }),
             ("submit", fields) => Ok(Message::Submit(Job::decode(fields)?)),
-            ("assign", fields) => Ok(Message::Assign(Job::decode(fields)?)),
+            ("assign", [job, local, velocity]) => Ok(Message::Assign {
+                job: Job::decode(items(job)?)?,
+                local_micros: number(local)?,
+                velocity: number(velocity)?,
+            }),
+            ("heartbeat", []) => Ok(Message::Heartbeat),
+            ("idle", []) => Ok(Message::Idle),
             ("cancel", [job_id]) => Ok(Message::Cancel { job_id: text(job_id)? }),
             ("result", fields) => Ok(Message::Result(SignedResult::decode(fields)?)),
             ("failed", [job_id, reason]) => {

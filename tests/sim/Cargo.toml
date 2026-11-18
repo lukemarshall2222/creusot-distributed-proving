@@ -1,0 +1,33 @@
+[package]
+name = "dp-sim"
+description = "Simulation tests: the shells and machines on a simulated network with faults (design: Testing Strategy)"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+ed25519-dalek = "2"
+dp-core = { workspace = true }
+dp-formats = { workspace = true }
+dp-shell = { workspace = true, features = ["cluster"] }
+dp-testkit = { workspace = true }
+dp-coordinator = { path = "../../crates/dp-coordinator" }
+dp-worker = { path = "../../crates/dp-worker" }
+dp-frontend = { path = "../../crates/dp-frontend" }
+
+[dev-dependencies]
+proptest = "1"
+
+[[example]]
+name = "trace"
+path = "examples/trace.rs"
+
+[[test]]
+name = "faults"
+path = "faults.rs"
+
+[lints]
+workspace = true

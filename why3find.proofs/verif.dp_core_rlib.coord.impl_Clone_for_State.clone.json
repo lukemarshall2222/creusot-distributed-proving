@@ -1,0 +1,19 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_clone_Config": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_clone_FrontEnd": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_clone_Job": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_clone_Offer": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_clone_Option_Job": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_clone_State": { "prover": "alt-ergo", "time": 0.018 },
+      "vc_clone_Vec_FrontEnd_Global": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_clone_Vec_Job_Global": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_clone_Vec_Offer_Global": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_clone_Vec_Worker_Global": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_clone_Worker": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_clone_u64": { "prover": "alt-ergo", "time": 0.01 }
+    }
+  }
+}

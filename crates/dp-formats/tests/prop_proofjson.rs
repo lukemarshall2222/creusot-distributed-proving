@@ -2,7 +2,7 @@
 // P-ID: P7.2.6 (encoding part), P7.10.1 (proof.json extension)
 
 use dp_formats::hash::Hash;
-use dp_formats::proofjson::{base64_decode, base64_encode, DpEntry, Place, ReplayFields, LABELS};
+use dp_formats::proofjson::{base64_decode, base64_encode, DpEntry, InvalidEntry, Place, ReplayFields, LABELS};
 use proptest::prelude::*;
 
 fn place() -> impl Strategy<Value = Place> {
@@ -39,11 +39,22 @@ fn replay() -> impl Strategy<Value = ReplayFields> {
 }
 
 fn entry() -> impl Strategy<Value = DpEntry> {
-    (proptest::sample::select(LABELS.to_vec()), proptest::collection::vec(replay(), 0..3), any::<[u8; 32]>())
-        .prop_map(|(label, replay, imports)| DpEntry {
+    let invalid = ("[a-z-]{0,8}", "[0-9.]{0,6}", any::<[u8; 32]>(), place()).prop_map(
+        |(prover, version, binary, place)| InvalidEntry { prover, version, binary_hash: Hash(binary), place },
+    );
+    (
+        proptest::sample::select(LABELS.to_vec()),
+        proptest::collection::vec(replay(), 0..3),
+        any::<[u8; 32]>(),
+        any::<bool>(),
+        proptest::collection::vec(invalid, 0..3),
+    )
+        .prop_map(|(label, replay, imports, conflict, invalid)| DpEntry {
             label: label.to_string(),
             replay,
             imports_hash: Hash(imports),
+            conflict,
+            invalid,
         })
 }
 
@@ -99,6 +110,6 @@ fn known_base64_values() {
 
 #[test]
 fn an_unknown_label_is_rejected() {
-    let e = DpEntry { label: "proved".into(), replay: vec![], imports_hash: Hash([0; 32]) };
+    let e = DpEntry { label: "proved".into(), replay: vec![], imports_hash: Hash([0; 32]), conflict: false, invalid: vec![] };
     assert!(DpEntry::from_member(&e.to_member(), 1 << 20).is_err());
 }

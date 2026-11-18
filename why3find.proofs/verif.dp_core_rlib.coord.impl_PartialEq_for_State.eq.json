@@ -1,0 +1,12 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_eq_Config": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_eq_State": { "prover": "alt-ergo", "time": 0.028 },
+      "vc_eq_Vec_FrontEnd_Global": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_eq_Vec_Job_Global": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_eq_Vec_Worker_Global": { "prover": "alt-ergo", "time": 0.011 }
+    }
+  }
+}

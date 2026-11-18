@@ -56,6 +56,12 @@ impl TraceWriter {
 
     /// Writes the record of one step, before its effects are carried out.
     pub fn record(&mut self, action: &str, now: u64, input: &str) -> io::Result<()> {
+        self.record_step(action, now, input, "")
+    }
+
+    /// Writes the record of one step with the effects that it returned,
+    /// which trace validation needs (R1.5 criterion 10).
+    pub fn record_step(&mut self, action: &str, now: u64, input: &str, effects: &str) -> io::Result<()> {
         self.seq += 1;
         if matches!(self.sink, Sink::None) {
             return Ok(());
@@ -67,6 +73,7 @@ impl TraceWriter {
             Sexp::atom(action),
             Sexp::atom(now.to_string()),
             Sexp::atom(input),
+            Sexp::atom(effects),
         ]));
         line.push(b'\n');
         match &mut self.sink {

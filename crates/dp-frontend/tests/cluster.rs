@@ -11,14 +11,16 @@ use std::{
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
     process::{Child, Command, Output, Stdio},
-    sync::mpsc,
     thread,
     time::Duration,
 };
 
-use dp_coordinator::machine::{Input, Peer, State};
-use dp_formats::{cluster::Message, sexp};
-use dp_shell::net::{Connection, Event};
+use dp_coordinator::shell::Shell;
+use dp_formats::cluster::Message;
+use dp_shell::{
+    env::{Env as EnvTrait, NetEvent, OsEnv, Peer},
+    trace::TraceWriter,
+};
 
 const ARITH: &str = r#"module Arith
   use int.Int
@@ -130,11 +132,24 @@ fn sign_registry(e: &Env, s: &Setup, workers: &[(&str, &str)]) {
 
 /// Starts the Workers `w1` and `w2` and waits until both have connected.
 fn start_workers(e: &Env, s: &Setup, port: u16) -> Guard {
+    start_workers_with(e, s, port, false).0
+}
+
+/// With `calibrate`, each Worker first runs why3find's Calibration. Returns
+/// the Workers and the lines in which they state their offers.
+fn start_workers_with(e: &Env, s: &Setup, port: u16, calibrate: bool) -> (Guard, Vec<String>) {
     use std::io::{BufRead, BufReader};
     let mut workers = Vec::new();
+    let mut lines = Vec::new();
     for w in ["w1", "w2"] {
-        let mut child = Command::new(e.bin.join("dp-worker"))
-            .args(["run", "--coordinator", &format!("127.0.0.1:{port}"), "--id", w])
+        let mut command = Command::new(e.bin.join("dp-worker"));
+        if calibrate {
+            command.arg("run").arg("--why3find").arg(&e.why3find).env("WHY3CONFIG", &e.why3_conf);
+        } else {
+            command.arg("run");
+        }
+        let mut child = command
+            .args(["--coordinator", &format!("127.0.0.1:{port}"), "--id", w, "--with-parent", "yes"])
             .arg("--key")
             .arg(s.dir.join(format!("{w}.key")))
             .arg("--why3-conf")
@@ -148,11 +163,12 @@ fn start_workers(e: &Env, s: &Setup, port: u16) -> Guard {
         let mut line = String::new();
         BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
         assert!(line.contains("connected"), "{line:?}");
+        lines.push(line);
         workers.push(child);
     }
     // The Coordinator reads the Workers' first messages a moment later.
     thread::sleep(Duration::from_millis(500));
-    Guard(workers)
+    (Guard(workers), lines)
 }
 
 fn prove(e: &Env, s: &Setup, port: u16) -> Output {
@@ -175,6 +191,25 @@ fn prove_with_seeds(e: &Env, s: &Setup, port: u16, seeds: u32) -> Output {
         .unwrap()
 }
 
+/// The summary line says that the Session has `verdicts` proof-labelled
+/// Verdicts, that every proof came from a Worker's Result, and that none
+/// came from the Result_Cache. Two provers may both prove a Goal before
+/// the cancellation of the slower one arrives, so there can be more proofs
+/// from Workers than Verdicts.
+fn all_from_workers(stderr: &str, verdicts: u64) -> bool {
+    let Some(line) = stderr.lines().find(|l| l.contains("proved-standalone Verdicts (")) else { return false };
+    let number = |before: &str| -> Option<u64> {
+        let end = line.find(before)?;
+        line[..end].trim_end().rsplit(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
+    };
+    let proved_runs: Option<u64> =
+        line.split("prover results: ").nth(1)?.split(", ").find(|p| p.ends_with("proved-standalone")).and_then(|p| p.split(' ').next()?.parse().ok());
+    number(" proved-standalone Verdicts (") == Some(verdicts)
+        && number(" Result_Cache hits") == Some(0)
+        && number(" from Workers") >= Some(verdicts)
+        && number(" from Workers") == proved_runs
+}
+
 fn proofs(s: &Setup) -> String {
     fs::read_to_string(s.dir.join("why3find.proofs/arith.json")).unwrap_or_default()
 }
@@ -186,7 +221,7 @@ fn workers_prove_what_the_provers_prove() {
     sign_registry(&e, &s, &[("w1", &s.worker_keys[0]), ("w2", &s.worker_keys[1])]);
     let port = free_port();
     let coordinator = Command::new(e.bin.join("dp-coordinator"))
-        .args(["--listen", &format!("127.0.0.1:{port}")])
+        .args(["--listen", &format!("127.0.0.1:{port}"), "--with-parent", "yes"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -201,7 +236,7 @@ fn workers_prove_what_the_provers_prove() {
     assert!(stderr.contains("Theory arith.Arith: ✘ (2/3)"), "{stderr}");
     assert!(stderr.contains("Goal Arith.Wrong"), "{stderr}");
     // every proof came from a Worker's signed Result
-    assert!(stderr.contains("2 proved-standalone Verdicts (2 from Workers, 0 Result_Cache hits)"), "{stderr}");
+    assert!(all_from_workers(&stderr, 2), "{stderr}");
     assert!(!stderr.contains("discarded"), "{stderr}");
     let proofs = proofs(&s);
     // Easy and Split are proved, Wrong is not.
@@ -217,7 +252,7 @@ fn a_race_of_seeds_proves_the_same_goals() {
     sign_registry(&e, &s, &[("w1", &s.worker_keys[0]), ("w2", &s.worker_keys[1])]);
     let port = free_port();
     let coordinator = Command::new(e.bin.join("dp-coordinator"))
-        .args(["--listen", &format!("127.0.0.1:{port}")])
+        .args(["--listen", &format!("127.0.0.1:{port}"), "--with-parent", "yes"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -231,7 +266,7 @@ fn a_race_of_seeds_proves_the_same_goals() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(1), "{stderr}");
     assert!(stderr.contains("Theory arith.Arith: ✘ (2/3)"), "{stderr}");
-    assert!(stderr.contains("2 proved-standalone Verdicts (2 from Workers, 0 Result_Cache hits)"), "{stderr}");
+    assert!(all_from_workers(&stderr, 2), "{stderr}");
     let proofs = proofs(&s);
     // Easy and Split are proved, Wrong is not.
     assert_eq!(proofs.matches("\"prover\"").count(), 2, "{proofs}");
@@ -249,7 +284,7 @@ fn results_of_an_unregistered_worker_prove_nothing() {
     sign_registry(&e, &s, &[("w1", &other), ("w2", &other)]);
     let port = free_port();
     let coordinator = Command::new(e.bin.join("dp-coordinator"))
-        .args(["--listen", &format!("127.0.0.1:{port}")])
+        .args(["--listen", &format!("127.0.0.1:{port}"), "--with-parent", "yes"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -270,64 +305,57 @@ fn results_of_an_unregistered_worker_prove_nothing() {
 /// A Coordinator that runs the real assignment logic but rewrites every
 /// Result on its way to the Front_End: the solver output becomes `unsat`,
 /// the tag stays. It also delivers each Result twice.
-fn tampering_coordinator(listener: TcpListener) {
-    let (tx, rx) = mpsc::channel::<(Input, Option<TcpStream>)>();
-    thread::spawn(move || {
-        let mut next: Peer = 0;
-        for stream in listener.incoming().flatten() {
-            next += 1;
-            let peer = next;
-            let tx = tx.clone();
-            let writer = stream.try_clone().unwrap();
-            let mut connection = Connection::new(stream).unwrap();
-            let _ = tx.send((Input::Connected(peer), Some(writer)));
-            thread::spawn(move || loop {
-                match connection.poll(Duration::from_secs(60)) {
-                    Event::Message(msg) => {
-                        if tx.send((Input::Message(peer, msg), None)).is_err() {
-                            return;
-                        }
-                    }
-                    Event::Idle => {}
-                    Event::Closed(_) => {
-                        let _ = tx.send((Input::Disconnected(peer), None));
-                        return;
-                    }
-                }
-            });
+fn tampering_coordinator() -> u16 {
+    /// The real environment, except that what it sends is tampered with.
+    struct Tampering(OsEnv);
+    impl EnvTrait for Tampering {
+        fn now(&self) -> u64 {
+            self.0.now()
         }
-    });
-    thread::spawn(move || {
-        use std::io::Write;
-        let mut state = State::default();
-        let mut writers = std::collections::BTreeMap::new();
-        for (input, writer) in rx {
-            if let (Input::Connected(peer), Some(writer)) = (&input, writer) {
-                writers.insert(*peer, writer);
-            }
-            let (next, effects) = state.step(input);
-            state = next;
-            for (peer, msg) in effects {
-                let msg = match msg {
-                    Message::Result(mut signed) => {
-                        signed.fields.output = b"unsat\n".to_vec();
-                        signed.fields.status = Some(0);
-                        signed.fields.timed_out = false;
-                        Message::Result(signed)
-                    }
-                    other => other,
-                };
-                let twice = matches!(msg, Message::Result(_));
-                if let Some(w) = writers.get_mut(&peer) {
-                    let bytes = sexp::print(&msg.encode());
-                    let _ = w.write_all(&bytes);
-                    if twice {
-                        let _ = w.write_all(&bytes);
-                    }
+        fn poll(&mut self, wait: Duration) -> Option<NetEvent> {
+            self.0.poll(wait)
+        }
+        fn send(&mut self, peer: Peer, msg: &Message) {
+            match msg {
+                Message::Result(signed) => {
+                    let mut signed = signed.clone();
+                    signed.fields.output = b"unsat\n".to_vec();
+                    signed.fields.status = Some(0);
+                    signed.fields.timed_out = false;
+                    let forged = Message::Result(signed);
+                    self.0.send(peer, &forged);
+                    self.0.send(peer, &forged);
                 }
+                other => self.0.send(peer, other),
             }
         }
+        fn close(&mut self, peer: Peer) {
+            self.0.close(peer)
+        }
+        fn connect(&mut self, address: &str) -> std::io::Result<Peer> {
+            self.0.connect(address)
+        }
+        fn solver_binary(&mut self, program: &str) -> std::io::Result<(PathBuf, dp_formats::hash::Hash)> {
+            self.0.solver_binary(program)
+        }
+        fn start(&mut self, run: u64, exe: &Path, spec: &dp_shell::env::RunSpec) -> std::io::Result<()> {
+            self.0.start(run, exe, spec)
+        }
+        fn kill(&mut self, run: u64) {
+            self.0.kill(run)
+        }
+        fn finished(&mut self) -> std::io::Result<Vec<(u64, dp_shell::env::RunEnd)>> {
+            self.0.finished()
+        }
+    }
+    let mut env = OsEnv::new("dp-tampering-coordinator").unwrap();
+    let port = env.listen("127.0.0.1:0").unwrap().port();
+    let config = dp_core::coord::Config { silence_limit: 10_000_000, beat_period: 2_000_000, retries: 2 };
+    let mut shell = Shell::new(Tampering(env), config, TraceWriter::off("coordinator"));
+    thread::spawn(move || loop {
+        shell.turn(Duration::from_millis(20)).unwrap();
     });
+    port
 }
 
 #[test]
@@ -335,9 +363,7 @@ fn a_coordinator_that_forges_answers_proves_nothing() {
     let Some(e) = env() else { return };
     let s = setup(&e, "forging");
     sign_registry(&e, &s, &[("w1", &s.worker_keys[0]), ("w2", &s.worker_keys[1])]);
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    tampering_coordinator(listener);
+    let port = tampering_coordinator();
     let _workers = start_workers(&e, &s, port);
     thread::sleep(Duration::from_millis(300));
     let out = prove_with_seeds(&e, &s, port, 2);
@@ -380,4 +406,49 @@ fn a_registry_that_the_operator_did_not_sign_stops_the_session() {
     assert!(proofs(&s).is_empty());
     fs::remove_dir_all(&s.dir).unwrap();
     fs::remove_dir_all(&other.dir).unwrap();
+}
+
+/// R1.4: a calibrated Worker runs with the limit that its own Calibration
+/// gives, and signs both; the Front_End recomputes the limit.
+#[test]
+fn calibrated_workers_run_with_scaled_limits() {
+    use dp_formats::proofjson::{DpEntry, Place};
+    let Some(e) = env() else { return };
+    let s = setup(&e, "calibrated");
+    sign_registry(&e, &s, &[("w1", &s.worker_keys[0]), ("w2", &s.worker_keys[1])]);
+    let port = free_port();
+    let coordinator = Command::new(e.bin.join("dp-coordinator"))
+        .args(["--listen", &format!("127.0.0.1:{port}"), "--with-parent", "yes"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let _guard = Guard(vec![coordinator]);
+    wait_for_port(port);
+    let (_workers, offers) = start_workers_with(&e, &s, port, true);
+    // Both provers were calibrated: the offer states a speed for each.
+    for line in &offers {
+        assert!(line.contains("alt-ergo@") && line.contains("z3@") && line.contains(" x"), "{line}");
+    }
+    let out = prove(&e, &s, port);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(all_from_workers(&stderr, 2), "{stderr}");
+    assert!(!stderr.contains("discarded"), "{stderr}");
+    // The replay fields of each proof carry the Worker's Calibration and a
+    // local limit that is the reference limit scaled by it.
+    let proofs = proofs(&s);
+    let mut seen = 0;
+    for line in proofs.lines().filter(|l| l.contains("\"dp\"")) {
+        let member = line.split('"').nth(3).unwrap();
+        let entry = DpEntry::from_member(member, 1 << 20).unwrap();
+        for replay in &entry.replay {
+            assert!(matches!(replay.place, Place::Worker(_)), "{replay:?}");
+            let velocity = replay.velocity.unwrap();
+            let expected = u128::from(replay.reference_micros) * u128::from(velocity) / 1_000_000;
+            assert_eq!(u128::from(replay.local_micros.unwrap()), expected, "{replay:?}");
+            seen += 1;
+        }
+    }
+    assert_eq!(seen, 2, "{proofs}");
+    fs::remove_dir_all(&s.dir).unwrap();
 }

@@ -9,7 +9,7 @@ publish.workspace = true
 ed25519-dalek = "2"
 dp-core = { workspace = true }
 dp-formats = { workspace = true }
-dp-shell = { workspace = true }
+dp-shell = { workspace = true, features = ["cluster"] }
 
 [lints]
 workspace = true

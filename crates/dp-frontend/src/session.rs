@@ -46,15 +46,15 @@ use dp_formats::{
     dispatch::{DriverAnswer, FromWhy3find, ProverInfo, ProverResult, StrategyStep, ToWhy3find},
     hash::{self, Hash},
     lockfile::{current_platform, Kind, LockFile},
-    proofjson::{DpEntry, Place, ReplayFields},
+    proofjson::{DpEntry, InvalidEntry, Place, ReplayFields},
 };
 use crate::proofs::{self, GoalLabel};
 use dp_shell::{
-    net::{Connection, Event},
-    solver::{self, Run},
+    env::{Env, NetEvent, OsEnv, Peer, RunSpec},
+    solver,
     store,
     trace::{Retention, TraceWriter},
-    why3find::{Bridge, BridgeError, Poll, Printed},
+    why3find::{Bridge, BridgeError, Poll, Printed, Why3find},
 };
 
 /// Size limit of one `dispatch` message and of one cache entry. Working
@@ -84,6 +84,11 @@ pub struct Config {
     /// Jobs of a prover call on the Cluster. A placeholder for the per-goal
     /// deadline `<TBD-3>`.
     pub job_margin: Duration,
+    /// Without a message from the Coordinator for longer than this, the
+    /// Session falls back to local proving; and how often it sends its own
+    /// heartbeat. Working values, not proposals for `<TBD-5>`.
+    pub silence_limit: Duration,
+    pub beat_period: Duration,
     /// When set, one JSON line per labelled run is appended to this file:
     /// raw measurements for the evaluation (R6.3).
     pub record: Option<PathBuf>,
@@ -99,6 +104,11 @@ pub struct Config {
     /// The hash of the Lock_File, for the member `dp-lock` of the proof
     /// files (R7.7 criterion 5).
     pub lock_hash: Hash,
+    /// Measurement for the corpus (R6.1): when set, every prover of the
+    /// project is also run on every Goal that gets a prover call, with this
+    /// reference time limit, and the outcome goes to the record file. These
+    /// runs never reach the machine and decide nothing.
+    pub matrix: Option<Duration>,
 }
 
 #[derive(Debug)]
@@ -182,23 +192,11 @@ fn json_string(text: &str) -> String {
     out
 }
 
-/// What identifies the contents of a file between two looks at it without
-/// reading it again: device, inode, size and the modification and status
-/// change times.
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct FileStamp(u64, u64, u64, i64, i64, i64, i64);
-
-fn file_stamp(path: &Path) -> std::io::Result<FileStamp> {
-    use std::os::unix::fs::MetadataExt;
-    let m = fs::metadata(path)?;
-    Ok(FileStamp(m.dev(), m.ino(), m.size(), m.mtime(), m.mtime_nsec(), m.ctime(), m.ctime_nsec()))
-}
-
 struct Prover {
     info: ProverInfo,
     exe: PathBuf,
-    /// The file's stamp when `pinned` was computed.
-    stamp: FileStamp,
+    /// The first word of its command line.
+    program: String,
     /// Hash of the executable at Session start, equal to its Lock_File entry.
     pinned: Hash,
     /// The pinned version of the Lock_File entry.
@@ -223,6 +221,8 @@ struct Goal {
     outcomes: Vec<Outcome>,
     /// The replay fields of the run that proved the Goal.
     replay: Option<ReplayFields>,
+    /// The runs on the Goal that answered Invalid.
+    invalid: Vec<InvalidEntry>,
 }
 
 /// A prover call of why3find that has not been answered.
@@ -236,7 +236,6 @@ struct Call {
 }
 
 struct LocalRun {
-    run: Run,
     task_hash: Hash,
     binary_hash: Hash,
     mismatch: bool,
@@ -270,14 +269,15 @@ struct Awaiting {
     asked: Instant,
 }
 
-struct Session {
-    bridge: Bridge,
+/// One Session, over the environment `E` and the why3find `W`.
+pub struct Session<E: Env, W: Why3find> {
+    pub env: E,
+    pub bridge: W,
     lock: LockFile,
     platform: String,
-    tmp: PathBuf,
     dir: PathBuf,
-    start: Instant,
-    cluster: Option<(Connection, Registry)>,
+    lock_hash: Hash,
+    cluster: Option<(Peer, Registry)>,
     session_id: String,
     /// The state of the Front_End machine; `None` only inside a step.
     state: Option<State>,
@@ -306,12 +306,45 @@ struct Session {
     counts: BTreeMap<String, u64>,
     cache_hits: u64,
     remote_proofs: u64,
-    last_tick: Instant,
+    /// When the machine last got a tick, and how often it gets one.
+    last_tick: u64,
+    tick_period: u64,
+    started: bool,
+    matrix: Matrix,
 }
 
-impl Session {
+/// Identifiers of measurement runs start here; calls are numbered from 0.
+const MEASURE_BASE: u64 = 1 << 40;
+
+/// One measurement run.
+struct Measure {
+    gid: String,
+    prover: String,
+    task_hash: Hash,
+    velocity: u64,
+}
+
+/// The measurement runs of the corpus mode.
+#[derive(Default)]
+struct Matrix {
+    /// The reference limit in microseconds; `None`: no measurement.
+    limit: Option<u64>,
+    jobs: usize,
+    measured: BTreeSet<String>,
+    queue: VecDeque<(String, String)>,
+    running: BTreeMap<u64, Measure>,
+    reading: BTreeMap<String, (Measure, u64)>,
+    next: u64,
+    /// Number of measurement runs of each Goal that have not ended.
+    open: BTreeMap<String, usize>,
+    /// Answers to why3find that wait for the measurement of their Goal:
+    /// why3find must stay until the driver has read every run.
+    held: Vec<(String, ToWhy3find)>,
+}
+
+impl<E: Env, W: Why3find> Session<E, W> {
     fn now(&self) -> u64 {
-        self.start.elapsed().as_micros() as u64
+        self.env.now()
     }
 
     fn intern(&mut self, text: &str) -> u64 {
@@ -331,10 +364,10 @@ impl Session {
                 .into_iter()
                 .next()
                 .ok_or_else(|| SessionError::Unsupported("empty prover command".into()))?;
-            let exe = solver::find_executable(&program)
+            let (exe, actual) = self
+                .env
+                .solver_binary(&program)
                 .map_err(|e| SessionError::Pin(format!("{}: {program}: {e}", info.prover)))?;
-            let stamp = file_stamp(&exe)?;
-            let actual = file_hash(&exe)?;
             let (name, reported) = info.prover.split_once('@').unwrap_or((&info.prover, ""));
             let entries: Vec<_> = self
                 .lock
@@ -370,7 +403,7 @@ impl Session {
             let name = name.to_string();
             let prover = Prover {
                 exe,
-                stamp,
+                program,
                 pinned: actual,
                 name_id: self.intern(&format!("prover:{name}")),
                 version_id: self.intern(&format!("version:{version}")),
@@ -612,8 +645,8 @@ impl Session {
                     binary_hash: entry.binary_hash,
                     place: Place::Worker(signed.fields.worker.clone()),
                     seed: signed.fields.seed,
-                    velocity: None,
-                    local_micros: None,
+                    velocity: Some(signed.fields.velocity),
+                    local_micros: Some(signed.fields.local_micros),
                 },
             },
             task_hash,
@@ -639,12 +672,13 @@ impl Session {
                 }
                 (*binary_hash, *velocity, *local_micros, Origin::Local)
             }
-            // Workers are not calibrated yet: their local limit is the
-            // reference limit.
-            Source::Worker { signed, .. } => {
-                let micros = self.calls.get(&finished.call).map_or(0, |c| c.micros);
-                (signed.fields.binary_hash, 1_000_000, micros, Origin::Worker(signed.clone()))
-            }
+            // The Calibration and the local limit that the Worker signed.
+            Source::Worker { signed, .. } => (
+                signed.fields.binary_hash,
+                signed.fields.velocity,
+                signed.fields.local_micros,
+                Origin::Worker(signed.clone()),
+            ),
         };
         if !self.calls.contains_key(&finished.call) {
             return Ok(());
@@ -674,30 +708,27 @@ impl Session {
         let (printed, task_hash) = self.print_local(&gid, &prover_name)?;
         let velocity = self.velocity(&prover_name)?;
         let prover = self.prover(&prover_name)?;
-        // R7.7 criterion 7: check the solver binary just before starting it.
-        // The binary is read and hashed again only if the file's stamp is
-        // not the one seen when it was hashed at Session start; with an
-        // unchanged stamp its contents are the pinned ones (TB-17).
-        let binary_hash =
-            if file_stamp(&prover.exe)? == prover.stamp { prover.pinned } else { file_hash(&prover.exe)? };
-        let mismatch = binary_hash != prover.pinned;
+        let (exe, program, pinned) = (prover.exe.clone(), prover.program.clone(), prover.pinned);
+        let spec = RunSpec {
+            command: prover.info.command.clone(),
+            input: printed.bytes.clone(),
+            extension: prover.info.extension.clone(),
+            micros: calibration::scale(micros, velocity).max(1),
+        };
+        // R7.7 criterion 7: the solver binary is checked just before it
+        // starts (the environment reads it again only if the file changed).
+        let (_, binary_hash) = self.env.solver_binary(&program)?;
+        let mismatch = binary_hash != pinned;
         let local_micros = calibration::scale(micros, velocity);
-        let run = solver::start(
-            &prover.exe,
-            &prover.info.command,
-            &printed.bytes,
-            &prover.info.extension,
-            local_micros.max(1),
-            &self.tmp,
-            &format!("job{call}"),
-        )?;
+        self.env.start(call, &exe, &spec)?;
+        let prover = self.prover(&prover_name)?;
         if let Some(dir) = &self.export {
             let file = dir.join(format!("{}{}", task_hash.to_hex(), prover.info.extension));
             if !file.exists() {
                 fs::write(file, &printed.bytes)?;
             }
         }
-        self.local.insert(call, LocalRun { run, task_hash, binary_hash, mismatch, velocity, local_micros });
+        self.local.insert(call, LocalRun { task_hash, binary_hash, mismatch, velocity, local_micros });
         Ok(())
     }
 
@@ -719,20 +750,17 @@ impl Session {
             goal: printed.bytes,
         };
         let job_id = job.job_id.clone();
-        let sent = match self.cluster.as_mut() {
-            Some((connection, _)) => connection.send(&Message::Submit(job)).is_ok(),
-            None => false,
-        };
-        if sent {
+        // A failed send shows up as a closed connection.
+        if let Some((peer, _)) = &self.cluster {
+            self.env.send(*peer, &Message::Submit(job));
             self.jobs.insert(job_id, (call, seed));
-        } else {
-            self.cluster_lost("the connection to the Coordinator failed");
         }
         Ok(())
     }
 
     fn cluster_lost(&mut self, reason: &str) {
-        if self.cluster.take().is_some() {
+        if let Some((peer, _)) = self.cluster.take() {
+            self.env.close(peer);
             eprintln!("dp-frontend: {reason}; falling back to local proving");
             self.jobs.clear();
             let now = self.now();
@@ -771,17 +799,32 @@ impl Session {
             Effect::StartLocal { rid } => self.start_local(rid),
             Effect::Submit { rid, seed } => self.submit(rid, seed),
             Effect::CancelLocal { rid } => {
-                if let Some(local) = self.local.remove(&rid) {
-                    local.run.cancel();
+                if self.local.remove(&rid).is_some() {
+                    self.env.kill(rid);
                 }
                 Ok(())
             }
             Effect::CancelJob { rid, seed } => {
                 let job_id = format!("{}/{rid}/{seed}", self.session_id);
                 if self.jobs.remove(&job_id).is_some() {
-                    if let Some((connection, _)) = self.cluster.as_mut() {
-                        let _ = connection.send(&Message::Cancel { job_id });
+                    if let Some((peer, _)) = &self.cluster {
+                        self.env.send(*peer, &Message::Cancel { job_id });
                     }
+                }
+                Ok(())
+            }
+            Effect::Beat => {
+                if let Some((peer, _)) = &self.cluster {
+                    self.env.send(*peer, &Message::Heartbeat);
+                }
+                Ok(())
+            }
+            // The machine has already moved the calls home.
+            Effect::LeaveCluster => {
+                if let Some((peer, _)) = self.cluster.take() {
+                    self.env.close(peer);
+                    eprintln!("dp-frontend: the Coordinator is silent; falling back to local proving");
+                    self.jobs.clear();
                 }
                 Ok(())
             }
@@ -798,9 +841,108 @@ impl Session {
                     Reply::Failed => ProverResult::Failed,
                     Reply::NoResult => ProverResult::NoResult,
                 };
-                Ok(self.bridge.send(&ToWhy3find::Answer { rid: call.rid, result })?)
+                let answer = ToWhy3find::Answer { rid: call.rid, result };
+                if self.matrix.open.get(&call.gid).is_some_and(|n| *n > 0) {
+                    self.matrix.held.push((call.gid, answer));
+                    return Ok(());
+                }
+                Ok(self.bridge.send(&answer)?)
             }
         }
+    }
+
+    // ---- Measurement runs (corpus mode) --------------------------------------
+
+    /// Queues one run of every prover on a Goal that gets its first call.
+    fn measure(&mut self, gid: &str) -> Result<(), SessionError> {
+        if self.matrix.limit.is_none() || !self.matrix.measured.insert(gid.to_string()) {
+            return Ok(());
+        }
+        self.load_provers()?;
+        let provers: Vec<String> = self.provers.as_ref().expect("loaded").keys().cloned().collect();
+        // Calibrate before any run starts: a Calibration blocks the loop
+        // that reaps runs, which would count as time of those runs.
+        for prover in &provers {
+            self.velocity(prover)?;
+        }
+        self.matrix.open.insert(gid.to_string(), provers.len());
+        for prover in provers {
+            self.matrix.queue.push_back((gid.to_string(), prover));
+        }
+        Ok(())
+    }
+
+    fn measure_start(&mut self) -> Result<(), SessionError> {
+        let Some(limit) = self.matrix.limit else { return Ok(()) };
+        while self.matrix.running.len() < self.matrix.jobs {
+            let Some((gid, prover_name)) = self.matrix.queue.pop_front() else { return Ok(()) };
+            let (printed, task_hash) = self.print_local(&gid, &prover_name)?;
+            let velocity = self.velocity(&prover_name)?;
+            let measure = Measure { gid, prover: prover_name.clone(), task_hash, velocity };
+            if printed.tasks != 1 {
+                self.measure_done(measure, "not-one-task", 0)?;
+                continue;
+            }
+            let prover = self.prover(&prover_name)?;
+            let exe = prover.exe.clone();
+            let spec = RunSpec {
+                command: prover.info.command.clone(),
+                input: printed.bytes,
+                extension: prover.info.extension.clone(),
+                micros: calibration::scale(limit, velocity).max(1),
+            };
+            self.matrix.next += 1;
+            let id = MEASURE_BASE + self.matrix.next;
+            self.env.start(id, &exe, &spec)?;
+            self.matrix.running.insert(id, measure);
+        }
+        Ok(())
+    }
+
+    /// A measurement run has its outcome: one line of the record file.
+    fn measure_done(&mut self, measure: Measure, outcome: &str, micros: u64) -> Result<(), SessionError> {
+        if let Some(record) = &mut self.record {
+            use std::io::Write;
+            let goal = &self.goals[&measure.gid];
+            writeln!(
+                record,
+                "{{\"file\":{},\"theory\":{},\"goal\":{},\"path\":{},\"prover\":{},\"seed\":null,\"step\":\"matrix\",\"limit_us\":{},\"time_us\":{},\"where\":\"matrix\",\"label\":{},\"task_hash\":{}}}",
+                json_string(&goal.file),
+                json_string(&goal.theory),
+                json_string(&goal.name),
+                json_string(&goal.path),
+                json_string(&measure.prover),
+                self.matrix.limit.unwrap_or(0),
+                micros,
+                json_string(outcome),
+                json_string(&measure.task_hash.to_hex()),
+            )?;
+        }
+        let open = self.matrix.open.entry(measure.gid.clone()).or_insert(1);
+        *open -= 1;
+        if *open == 0 {
+            let held = std::mem::take(&mut self.matrix.held);
+            for (gid, answer) in held {
+                if gid == measure.gid {
+                    self.bridge.send(&answer)?;
+                } else {
+                    self.matrix.held.push((gid, answer));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// A measurement run ended: the driver reads its answer.
+    fn measure_ended(&mut self, id: u64, done: dp_shell::env::RunEnd) -> Result<(), SessionError> {
+        let Some(measure) = self.matrix.running.remove(&id) else { return Ok(()) };
+        let micros = (u128::from(done.elapsed_micros) * 1_000_000 / u128::from(measure.velocity.max(1))) as u64;
+        if done.timed_out {
+            return self.measure_done(measure, "timeout", micros);
+        }
+        let qid = self.bridge.ask_answer(&measure.prover, done.status.unwrap_or(1), &done.output)?;
+        self.matrix.reading.insert(qid, (measure, micros));
+        Ok(())
     }
 
     /// One step of the machine: trace, new state, then the effects.
@@ -868,9 +1010,12 @@ impl Session {
                     Source::Local { binary_hash, velocity, local_micros, .. } => {
                         (*binary_hash, Place::Local, Some(*velocity), Some(*local_micros))
                     }
-                    Source::Worker { signed, .. } => {
-                        (signed.fields.binary_hash, Place::Worker(signed.fields.worker.clone()), None, None)
-                    }
+                    Source::Worker { signed, .. } => (
+                        signed.fields.binary_hash,
+                        Place::Worker(signed.fields.worker.clone()),
+                        Some(signed.fields.velocity),
+                        Some(signed.fields.local_micros),
+                    ),
                     Source::Cache { binary_hash, place, velocity, local_micros, .. } => {
                         (*binary_hash, place.clone(), *velocity, *local_micros)
                     }
@@ -900,8 +1045,27 @@ impl Session {
                 if matches!(finished.source, Source::Cache { .. }) {
                     self.cache_hits += 1;
                 }
+                let invalid = if matches!(outcome, Outcome::StandaloneInvalid | Outcome::DependentInvalid) {
+                    let p = self.prover(&prover)?;
+                    Some(InvalidEntry {
+                        prover: p.info.prover.split_once('@').map_or(p.info.prover.as_str(), |(n, _)| n).to_string(),
+                        version: p.version.clone(),
+                        binary_hash: match &finished.source {
+                            Source::Local { binary_hash, .. } | Source::Cache { binary_hash, .. } => *binary_hash,
+                            Source::Worker { signed, .. } => signed.fields.binary_hash,
+                        },
+                        place: match &finished.source {
+                            Source::Local { .. } => Place::Local,
+                            Source::Worker { signed, .. } => Place::Worker(signed.fields.worker.clone()),
+                            Source::Cache { place, .. } => place.clone(),
+                        },
+                    })
+                } else {
+                    None
+                };
                 if let Some(goal) = self.goals.get_mut(&gid) {
                     goal.outcomes.push(outcome);
+                    goal.invalid.extend(invalid);
                 }
                 if outcome == Outcome::Unchecked {
                     eprintln!(
@@ -1001,6 +1165,8 @@ impl Session {
                     signature_valid: facts.signature_valid,
                     registered: facts.registered,
                     revoked: facts.revoked,
+                    velocity: signed.fields.velocity,
+                    local_micros: signed.fields.local_micros,
                 }
             }
             Source::Cache { .. } => return Ok(()),
@@ -1064,28 +1230,28 @@ impl Session {
     }
 
     fn reap(&mut self) -> Result<(), SessionError> {
-        let ids: Vec<CallId> = self.local.keys().copied().collect();
-        for call in ids {
-            let done = self.local.get_mut(&call).expect("listed").run.poll()?;
-            if let Some(done) = done {
-                let local = self.local.remove(&call).expect("listed");
-                // Report the time in reference units, as why3find does.
-                let micros = (done.elapsed.as_micros() * 1_000_000 / u128::from(local.velocity.max(1))) as u64;
-                self.finished(Finished {
-                    call,
-                    source: Source::Local {
-                        binary_hash: local.binary_hash,
-                        mismatch: local.mismatch,
-                        velocity: local.velocity,
-                        local_micros: local.local_micros,
-                    },
-                    task_hash: local.task_hash,
-                    status: done.status,
-                    timed_out: done.timed_out,
-                    output: done.output,
-                    micros,
-                })?;
+        for (call, done) in self.env.finished()? {
+            if call >= MEASURE_BASE {
+                self.measure_ended(call, done)?;
+                continue;
             }
+            let Some(local) = self.local.remove(&call) else { continue };
+            // Report the time in reference units, as why3find does.
+            let micros = (u128::from(done.elapsed_micros) * 1_000_000 / u128::from(local.velocity.max(1))) as u64;
+            self.finished(Finished {
+                call,
+                source: Source::Local {
+                    binary_hash: local.binary_hash,
+                    mismatch: local.mismatch,
+                    velocity: local.velocity,
+                    local_micros: local.local_micros,
+                },
+                task_hash: local.task_hash,
+                status: done.status,
+                timed_out: done.timed_out,
+                output: done.output,
+                micros,
+            })?;
         }
         Ok(())
     }
@@ -1103,7 +1269,17 @@ impl Session {
                 let path = path.iter().map(|p| format!("{}.{}", p.tactic, p.index)).collect::<Vec<_>>().join("/");
                 self.goals.insert(
                     gid,
-                    Goal { id, file, theory, name, path, steps, outcomes: Vec::new(), replay: None },
+                    Goal {
+                        id,
+                        file,
+                        theory,
+                        name,
+                        path,
+                        steps,
+                        outcomes: Vec::new(),
+                        replay: None,
+                        invalid: Vec::new(),
+                    },
                 );
                 self.inputs.push_back((Input::GoalAnnounced { now, goal: id }, None));
                 Ok(())
@@ -1117,6 +1293,7 @@ impl Session {
                 let call = self.intern(&format!("call:{rid}:{now}:{}", self.calls.len()));
                 let prover_id = self.intern(&format!("call-prover:{prover}"));
                 self.call_ids.insert(rid.clone(), call);
+                self.measure(&gid)?;
                 self.calls.insert(call, Call { rid, gid, prover, step, micros });
                 let pass = if step == StrategyStep::Fast { Pass::Fast } else { Pass::Later };
                 self.inputs.push_back((
@@ -1132,7 +1309,9 @@ impl Session {
                 Ok(())
             }
             FromWhy3find::AnswerRead { qid, answer } => self.driver_answered(&qid, Some(answer)),
-            FromWhy3find::Error { qid, .. } if self.awaiting.contains_key(&qid) => {
+            FromWhy3find::Error { qid, .. }
+                if self.awaiting.contains_key(&qid) || self.matrix.reading.contains_key(&qid) =>
+            {
                 self.driver_answered(&qid, None)
             }
             FromWhy3find::Done => Ok(()),
@@ -1143,6 +1322,9 @@ impl Session {
     }
 
     fn driver_answered(&mut self, qid: &str, answer: Option<DriverAnswer>) -> Result<(), SessionError> {
+        if let Some((measure, micros)) = self.matrix.reading.remove(qid) {
+            return self.measure_done(measure, answer.map_or("failure", DriverAnswer::name), micros);
+        }
         let Some(Awaiting { finished, asked }) = self.awaiting.remove(qid) else {
             return Err(SessionError::Bridge(BridgeError::Protocol(format!("unexpected reply {qid}"))));
         };
@@ -1152,26 +1334,28 @@ impl Session {
 
     fn cluster_events(&mut self) -> Result<(), SessionError> {
         loop {
-            let Some((connection, _)) = self.cluster.as_mut() else { return Ok(()) };
-            match connection.poll(Duration::ZERO) {
-                Event::Idle => return Ok(()),
-                Event::Closed(reason) => {
-                    self.cluster_lost(&format!(
-                        "the Coordinator is gone{}",
-                        reason.map(|r| format!(" ({r})")).unwrap_or_default()
-                    ));
-                    return Ok(());
-                }
-                Event::Message(Message::Result(signed)) => self.result(signed)?,
-                Event::Message(Message::Failed { job_id, reason }) => {
-                    if let Some((call, seed)) = self.jobs.remove(&job_id) {
-                        eprintln!("dp-frontend: {job_id} was not run on the Cluster ({reason})");
-                        let now = self.now();
-                        self.inputs.push_back((Input::JobNotRun { now, rid: call, seed }, None));
+            let Some(event) = self.env.poll(Duration::ZERO) else { return Ok(()) };
+            // What arrives after the Session left the Cluster is dropped.
+            let Some(peer) = self.cluster.as_ref().map(|(peer, _)| *peer) else { continue };
+            match event {
+                NetEvent::Disconnected(p) if p == peer => self.cluster_lost("the Coordinator is gone"),
+                NetEvent::Message(p, message) if p == peer => {
+                    let now = self.now();
+                    self.inputs.push_back((Input::ClusterHeard { now }, None));
+                    match message {
+                        Message::Result(signed) => self.result(signed)?,
+                        Message::Failed { job_id, reason } => {
+                            if let Some((call, seed)) = self.jobs.remove(&job_id) {
+                                eprintln!("dp-frontend: {job_id} was not run on the Cluster ({reason})");
+                                self.inputs.push_back((Input::JobNotRun { now, rid: call, seed }, None));
+                            }
+                        }
+                        // Nothing else is part of the protocol towards a Front_End.
+                        _ => {}
                     }
                 }
-                // Nothing else is part of the protocol towards a Front_End.
-                Event::Message(_) => {}
+                // Not from the Coordinator of this Session.
+                _ => {}
             }
         }
     }
@@ -1183,31 +1367,139 @@ impl Session {
         Ok(())
     }
 
-    fn run(&mut self) -> Result<(), SessionError> {
-        let now = self.now();
-        let cluster = self.cluster.is_some();
-        self.inputs.push_back((Input::SessionStart { now, cluster }, None));
-        loop {
-            self.drain()?;
-            match self.bridge.poll(Duration::from_millis(5))? {
-                Poll::Message(msg) => self.handle(msg)?,
-                Poll::Idle => {}
-                Poll::Closed => {
-                    let now = self.now();
-                    self.inputs.push_back((Input::Why3findDone { now }, None));
-                    return self.drain();
-                }
-            }
-            self.cluster_events()?;
-            self.reap()?;
-            // Deadlines of races are checked a few times a second, while
-            // there are Jobs on the Cluster.
-            if !self.jobs.is_empty() && self.last_tick.elapsed() >= Duration::from_millis(200) {
-                self.last_tick = Instant::now();
+    /// One turn of the Session: at most one message of why3find, what
+    /// arrived from the Cluster, the solvers that ended, and a tick when
+    /// one is due. Returns whether the Session has ended.
+    pub fn turn(&mut self, wait: Duration) -> Result<bool, SessionError> {
+        if !self.started {
+            self.started = true;
+            let now = self.now();
+            let cluster = self.cluster.is_some();
+            self.inputs.push_back((Input::SessionStart { now, cluster }, None));
+        }
+        self.drain()?;
+        match self.bridge.poll(wait)? {
+            Poll::Message(msg) => self.handle(msg)?,
+            Poll::Idle => {}
+            Poll::Closed => {
                 let now = self.now();
-                self.inputs.push_back((Input::Tick { now }, None));
+                self.inputs.push_back((Input::Why3findDone { now }, None));
+                self.drain()?;
+                return Ok(true);
             }
         }
+        self.cluster_events()?;
+        self.reap()?;
+        self.measure_start()?;
+        // Deadlines of races, heartbeats and the Coordinator's silence are
+        // checked regularly, while there is a Cluster.
+        let now = self.now();
+        if self.cluster.is_some() && now - self.last_tick >= self.tick_period {
+            self.last_tick = now;
+            self.inputs.push_back((Input::Tick { now }, None));
+        }
+        self.drain()?;
+        Ok(false)
+    }
+
+    pub fn state(&self) -> &State {
+        self.state.as_ref().expect("the state is present between steps")
+    }
+
+    /// The label of every Goal that was announced, by source file, as the
+    /// final write records them.
+    pub fn labels(&self) -> BTreeMap<String, Vec<GoalLabel>> {
+        goal_labels(self.state(), &self.goals)
+    }
+
+    /// Starts a Session: connects to the Cluster if one is configured
+    /// (R1.1 criterion 5: without a connection, the address is named and
+    /// the Session proves locally).
+    pub fn start(
+        mut env: E,
+        bridge: W,
+        config: Config,
+        standalone: Rc<RefCell<BTreeSet<(String, String)>>>,
+    ) -> Result<Session<E, W>, SessionError> {
+        let session_id = format!(
+            "{:x}-{:x}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos())
+        );
+        let cluster = config.cluster.and_then(|c| match env.connect(&c.address) {
+            Ok(peer) => {
+                env.send(peer, &Message::FrontEndHello { session: session_id.clone() });
+                Some((peer, c.registry))
+            }
+            Err(e) => {
+                eprintln!(
+                    "dp-frontend: no connection to the Coordinator at {}: {e}; proving locally",
+                    c.address
+                );
+                None
+            }
+        });
+        let trace = match &config.trace {
+            Some((path, retention)) => TraceWriter::to_file("front-end", path.clone(), *retention)?,
+            None => TraceWriter::off("front-end"),
+        };
+        let silence = config.silence_limit.as_micros() as u64;
+        let beat = config.beat_period.as_micros() as u64;
+        let now = env.now();
+        let mut session = Session {
+            env,
+            bridge,
+            platform: current_platform(),
+            dir: config.dir.clone(),
+            lock_hash: config.lock_hash,
+            cluster,
+            session_id,
+            state: None,
+            inputs: VecDeque::new(),
+            trace,
+            provers: None,
+            names: BTreeMap::new(),
+            goals: BTreeMap::new(),
+            call_ids: BTreeMap::new(),
+            calls: BTreeMap::new(),
+            prints: BTreeMap::new(),
+            local: BTreeMap::new(),
+            jobs: BTreeMap::new(),
+            awaiting: BTreeMap::new(),
+            standalone,
+            use_cache: !config.args.iter().any(|a| a == "--no-cache"),
+            record: match &config.record {
+                Some(path) => Some(fs::OpenOptions::new().create(true).append(true).open(path)?),
+                None => None,
+            },
+            export: config.export.clone(),
+            spent: BTreeMap::new(),
+            counts: BTreeMap::new(),
+            cache_hits: 0,
+            remote_proofs: 0,
+            last_tick: now,
+            // Often enough to see a silence or a due heartbeat in time.
+            tick_period: if silence == 0 { 200_000 } else { (beat.min(silence) / 4).clamp(1, 200_000) },
+            started: false,
+            matrix: Matrix {
+                limit: config.matrix.map(|d| d.as_micros() as u64),
+                jobs: config.jobs.max(1),
+                ..Matrix::default()
+            },
+            lock: config.lock,
+        };
+        let unpatched = session.pins(&[Kind::UnpatchedSolver]);
+        session.state = Some(frontend::FrontEnd::init(&frontend::Config {
+            local_jobs: config.jobs.max(1) as u64,
+            seeds: config.portfolio_seeds.max(1),
+            job_margin: config.job_margin.as_micros() as u64,
+            silence_limit: silence,
+            beat_period: beat,
+            certify_all: false,
+            unpatched,
+            empty_imports_hash: core_hash(hash::imports_hash(&[])),
+        }));
+        Ok(session)
     }
 }
 
@@ -1223,17 +1515,10 @@ fn outcome_name(outcome: Outcome) -> &'static str {
     }
 }
 
-/// The final write (R1.5 criterion 14): every proof file that why3find
-/// wrote gets the label of each of its Goals and the Lock_File hash.
-/// Returns the number of Goals by label.
-fn final_write(
-    dir: &Path,
-    lock_hash: Hash,
-    state: &State,
-    goals: &BTreeMap<String, Goal>,
-) -> Result<BTreeMap<String, u64>, SessionError> {
+/// The label of every announced Goal, by source file.
+fn goal_labels(state: &State, goals: &BTreeMap<String, Goal>) -> BTreeMap<String, Vec<GoalLabel>> {
     let imports_hash = hash::imports_hash(&[]);
-    let mut files: BTreeMap<&str, Vec<GoalLabel>> = BTreeMap::new();
+    let mut files: BTreeMap<String, Vec<GoalLabel>> = BTreeMap::new();
     for goal in goals.values() {
         let recorded = frontend::verdict_of(&state.verdicts, goal.id).map(|v| v.label);
         let label = verdict::final_label(recorded, &goal.outcomes);
@@ -1242,7 +1527,7 @@ fn final_write(
             Label::Certified => ("certified", true),
             Label::NonProof(outcome) => (outcome_name(outcome), false),
         };
-        files.entry(&goal.file).or_default().push(GoalLabel {
+        files.entry(goal.file.clone()).or_default().push(GoalLabel {
             theory: goal.theory.clone(),
             name: goal.name.clone(),
             steps: goal.steps.clone(),
@@ -1250,17 +1535,41 @@ fn final_write(
                 label: name.to_string(),
                 replay: if proof { goal.replay.clone().into_iter().collect() } else { Vec::new() },
                 imports_hash,
+                conflict: verdict::conflict(label, goal.invalid.len() as u64),
+                invalid: goal.invalid.clone(),
             },
             proof,
         });
     }
-    let unresolved = DpEntry { label: "unresolved".to_string(), replay: Vec::new(), imports_hash };
+    files
+}
+
+/// The final write (R1.5 criterion 14): every proof file that why3find
+/// wrote gets the label of each of its Goals and the Lock_File hash.
+/// Returns the number of Goals by label and the number of conflicts.
+fn final_write(
+    dir: &Path,
+    lock_hash: Hash,
+    files: BTreeMap<String, Vec<GoalLabel>>,
+) -> Result<(BTreeMap<String, u64>, u64), SessionError> {
+    let unresolved = DpEntry {
+        label: "unresolved".to_string(),
+        replay: Vec::new(),
+        imports_hash: hash::imports_hash(&[]),
+        conflict: false,
+        invalid: Vec::new(),
+    };
     let mut labels = BTreeMap::new();
+    let mut conflicts = 0;
     for (file, goals) in files {
-        let path = proofs::proof_file(dir, file);
+        let path = proofs::proof_file(dir, &file);
         let report = proofs::rewrite(&path, lock_hash, &goals, &unresolved)?;
         for (label, n) in report.labels {
             *labels.entry(label).or_insert(0) += n;
+        }
+        for conflict in &report.conflicts {
+            conflicts += 1;
+            eprintln!("dp-frontend: conflict: {}: {conflict}", path.display());
         }
         for goal in report.withdrawn {
             eprintln!(
@@ -1269,7 +1578,7 @@ fn final_write(
             );
         }
     }
-    Ok(labels)
+    Ok((labels, conflicts))
 }
 
 fn formats_atoms(atoms: &[cache_key::Atom]) -> Vec<cache::Atom> {
@@ -1306,32 +1615,6 @@ pub fn run(config: Config) -> Result<i32, SessionError> {
             why3find.display()
         )));
     }
-    let session_id = format!(
-        "{:x}-{:x}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_nanos())
-    );
-    // R1.1 criterion 5: without a connection, name the address and prove locally.
-    let cluster = config.cluster.and_then(|c| {
-        let connected = Connection::connect(&c.address).and_then(|mut connection| {
-            connection.send(&Message::FrontEndHello { session: session_id.clone() })?;
-            Ok(connection)
-        });
-        match connected {
-            Ok(connection) => Some((connection, c.registry)),
-            Err(e) => {
-                eprintln!(
-                    "dp-frontend: no connection to the Coordinator at {}: {e}; proving locally",
-                    c.address
-                );
-                None
-            }
-        }
-    });
-    let tmp = std::env::temp_dir().join(format!("dp-frontend-{}", std::process::id()));
-    fs::create_dir_all(&tmp)?;
     let standalone = Rc::new(RefCell::new(BTreeSet::new()));
     let proved = Rc::clone(&standalone);
     // why3find blocks on its cache messages, so the bridge answers them
@@ -1350,69 +1633,28 @@ pub fn run(config: Config) -> Result<i32, SessionError> {
         }),
         _ => None,
     };
-    let use_cache = !config.args.iter().any(|a| a == "--no-cache");
-    let bridge =
-        Bridge::start(&why3find, &config.args, &config.dir, MESSAGE_LIMIT, Box::new(responder))?;
-    let trace = match &config.trace {
-        Some((path, retention)) => TraceWriter::to_file("front-end", path.clone(), *retention)?,
-        None => TraceWriter::off("front-end"),
+    let bridge = Bridge::start(&why3find, &config.args, &config.dir, MESSAGE_LIMIT, Box::new(responder))?;
+    let env = OsEnv::new("dp-frontend")?;
+    let mut session = Session::start(env, bridge, config, standalone)?;
+    let result = loop {
+        match session.turn(Duration::from_millis(5)) {
+            Ok(false) => {}
+            Ok(true) => break Ok(()),
+            Err(e) => break Err(e),
+        }
     };
-    let mut session = Session {
-        bridge,
-        platform,
-        tmp: tmp.clone(),
-        dir: config.dir.clone(),
-        start: Instant::now(),
-        cluster,
-        session_id,
-        state: None,
-        inputs: VecDeque::new(),
-        trace,
-        provers: None,
-        names: BTreeMap::new(),
-        goals: BTreeMap::new(),
-        call_ids: BTreeMap::new(),
-        calls: BTreeMap::new(),
-        prints: BTreeMap::new(),
-        local: BTreeMap::new(),
-        jobs: BTreeMap::new(),
-        awaiting: BTreeMap::new(),
-        standalone,
-        use_cache,
-        record: match &config.record {
-            Some(path) => Some(fs::OpenOptions::new().create(true).append(true).open(path)?),
-            None => None,
-        },
-        export: config.export.clone(),
-        spent: BTreeMap::new(),
-        counts: BTreeMap::new(),
-        cache_hits: 0,
-        remote_proofs: 0,
-        last_tick: Instant::now(),
-        lock: config.lock,
-    };
-    let unpatched = session.pins(&[Kind::UnpatchedSolver]);
-    session.state = Some(frontend::FrontEnd::init(&frontend::Config {
-        local_jobs: config.jobs.max(1) as u64,
-        seeds: config.portfolio_seeds.max(1),
-        job_margin: config.job_margin.as_micros() as u64,
-        certify_all: false,
-        unpatched,
-        empty_imports_hash: core_hash(hash::imports_hash(&[])),
-    }));
-    let result = session.run();
-    for (_, local) in std::mem::take(&mut session.local) {
-        local.run.cancel();
+    for call in std::mem::take(&mut session.local).into_keys() {
+        session.env.kill(call);
     }
-    let _ = fs::remove_dir_all(&tmp);
     session.trace.finish()?;
-    let Session { bridge, state, counts, cache_hits, remote_proofs, spent, goals, dir, .. } = session;
+    let files = goal_labels(session.state(), &session.goals);
+    let Session { bridge, state, counts, cache_hits, remote_proofs, spent, dir, lock_hash, .. } = session;
     match result {
         Ok(()) => {
             let status = bridge.wait()?;
             let state = state.expect("the state is present between steps");
             // why3find has written its proof files; now the final write.
-            let labels = final_write(&dir, config.lock_hash, &state, &goals)?;
+            let (labels, conflicts) = final_write(&dir, lock_hash, files)?;
             let verdicts =
                 state.verdicts.entries.iter().filter(|v| v.label == Label::ProvedStandalone).count();
             let summary: Vec<_> = counts.iter().map(|(label, n)| format!("{n} {label}")).collect();
@@ -1430,6 +1672,12 @@ pub fn run(config: Config) -> Result<i32, SessionError> {
             if std::env::var_os("DP_PROFILE").is_some() {
                 let parts: Vec<_> = spent.iter().map(|(k, d)| format!("{k} {:.2}s", d.as_secs_f64())).collect();
                 eprintln!("dp-frontend: time in {}", parts.join(", "));
+            }
+            // A proof and an Invalid answer for one Goal: the Session does
+            // not end as a success (R7.2 criterion 8).
+            if conflicts > 0 {
+                eprintln!("dp-frontend: {conflicts} Goals have a proof label and an Invalid answer");
+                return Ok(status.code().filter(|c| *c != 0).unwrap_or(1));
             }
             Ok(status.code().unwrap_or(1))
         }

@@ -1,3 +1,3 @@
-//! Coordinator shell (design C5, D-1). Untrusted: it affects liveness only.
+//! The Coordinator: the shell of the dp-core Coordinator machine (design C5).
 
-pub mod machine;
+pub mod shell;

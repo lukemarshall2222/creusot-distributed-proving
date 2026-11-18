@@ -2,3 +2,4 @@
 //! own process group.
 
 pub mod provers;
+pub mod shell;

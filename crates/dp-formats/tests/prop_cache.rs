@@ -35,6 +35,8 @@ fn origin() -> impl Strategy<Value = Origin> {
                     timed_out: false,
                     output,
                     elapsed_micros: 5,
+                    velocity: 1_000_000,
+                    local_micros: 9,
                 };
                 Origin::Worker(SignedResult::sign(fields, &SigningKey::from_bytes(&key)))
             }),

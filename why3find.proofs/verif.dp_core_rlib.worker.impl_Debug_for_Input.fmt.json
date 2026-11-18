@@ -1,0 +1,21 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_debug_struct_field1_finish": {
+        "prover": "alt-ergo",
+        "time": 0.011
+      },
+      "vc_debug_struct_field2_finish": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Assign": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Cancel": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_Connected": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Disconnected": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_Heartbeat": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_SolverExit": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_StartFailed": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Tick": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_fmt_Input": { "prover": "alt-ergo", "time": 0.063 }
+    }
+  }
+}

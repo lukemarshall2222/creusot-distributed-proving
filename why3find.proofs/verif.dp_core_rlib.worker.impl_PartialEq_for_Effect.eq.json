@@ -1,0 +1,13 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_elim_Beat": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Kill": { "prover": "alt-ergo", "time": 0.014 },
+      "vc_elim_SendFailed": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_SendResult": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Start": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_eq_Effect": { "prover": "alt-ergo", "time": 0.091 }
+    }
+  }
+}

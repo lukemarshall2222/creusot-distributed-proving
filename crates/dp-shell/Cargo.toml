@@ -9,5 +9,10 @@ publish.workspace = true
 dp-core = { workspace = true }
 dp-formats = { workspace = true }
 
+[features]
+# The network transport and the `Env` of the Cluster components. dp-replay
+# builds without it, so it has no networking code (R7.6 criterion 1).
+cluster = []
+
 [lints]
 workspace = true

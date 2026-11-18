@@ -8,3 +8,4 @@ pub mod lockfile;
 pub mod cluster;
 pub mod cache;
 pub mod proofjson;
+pub mod dptoml;

@@ -22,13 +22,21 @@ pub enum TlaAction {
     ClusterLost,
     Tick,
     FinalWrite,
+    // Coordinator and Worker actions.
+    FrontEndJoined,
+    WorkerJoined,
+    Submit,
+    Assign,
+    Forward,
+    Heartbeat,
+    PeerLost,
     /// The input changed nothing.
     Discard,
 }
 
 impl TlaAction {
     /// Every action, in the order of `verification/tla/actions.toml`.
-    pub const ALL: [TlaAction; 13] = [
+    pub const ALL: [TlaAction; 20] = [
         TlaAction::SessionStart,
         TlaAction::GoalAnnounced,
         TlaAction::ProverCall,
@@ -41,6 +49,13 @@ impl TlaAction {
         TlaAction::ClusterLost,
         TlaAction::Tick,
         TlaAction::FinalWrite,
+        TlaAction::FrontEndJoined,
+        TlaAction::WorkerJoined,
+        TlaAction::Submit,
+        TlaAction::Assign,
+        TlaAction::Forward,
+        TlaAction::Heartbeat,
+        TlaAction::PeerLost,
         TlaAction::Discard,
     ];
 
@@ -59,6 +74,13 @@ impl TlaAction {
             TlaAction::ClusterLost => "ClusterLost",
             TlaAction::Tick => "Tick",
             TlaAction::FinalWrite => "FinalWrite",
+            TlaAction::FrontEndJoined => "FrontEndJoined",
+            TlaAction::WorkerJoined => "WorkerJoined",
+            TlaAction::Submit => "Submit",
+            TlaAction::Assign => "Assign",
+            TlaAction::Forward => "Forward",
+            TlaAction::Heartbeat => "Heartbeat",
+            TlaAction::PeerLost => "PeerLost",
             TlaAction::Discard => "Discard",
         }
     }

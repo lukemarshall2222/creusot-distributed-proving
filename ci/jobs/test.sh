@@ -22,3 +22,11 @@ export DP_REQUIRE_TOOLS=1
 # The end-to-end tests start the workspace executables.
 cargo build --workspace
 cargo test --workspace
+
+# dp-replay has no networking code (R7.6 criterion 1): it builds on its own
+# without the `cluster` feature of dp-shell, which holds the transport.
+if cargo tree -p dp-replay -e features --prefix none | grep -q 'dp-shell feature "cluster"'; then
+  echo "ci/test: dp-replay depends on the cluster feature of dp-shell" >&2
+  exit 1
+fi
+cargo check -p dp-replay

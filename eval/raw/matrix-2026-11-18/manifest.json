@@ -1,0 +1,16 @@
+{
+ "status": "exploratory: not pre-registered, one repetition, not evidence for a research question (R6.2, R6.3)",
+ "date": "2026-11-18",
+ "repository_commit": "3b28640 plus the changes of the commit that adds this file",
+ "machine": { "system": "aarch64-darwin", "cores": 14 },
+ "method": "eval/scripts/corpus_hardness.py with DP_MATRIX_SECONDS=5: dp-frontend (release) proves every file from scratch with the project's why3find.json and, for every goal that gets a prover call, also runs every prover alone at a reference limit of 5 s; eval/scripts/prover_matrix.py classifies the goals",
+ "runs": {
+  "creusot-examples": "the 27 Coma files of examples/ of Creusot v0.15.0 (fd4d85b2); summary in creusot-examples/matrix/summary.json, the goals that the first prover does not prove in creusot-examples/matrix/hard.jsonl"
+ },
+ "caveats": [
+  "tests, Creusot proofs and model checking ran on the machine during the measurement, so times are noisy and some outcomes near the 5 s limit may be timeouts that a quiet machine would not have",
+  "a goal is every node of a proof tree that got a prover call: leaves and the goals that a tactic then split",
+  "the order of the provers is the order of the project's why3find.json; the order in which why3find calls them was not checked against it",
+  "examples/persistent_array.coma ended with status 2 once in the batch and was measured again; the cause is not known (runs.jsonl keeps both lines)"
+ ]
+}

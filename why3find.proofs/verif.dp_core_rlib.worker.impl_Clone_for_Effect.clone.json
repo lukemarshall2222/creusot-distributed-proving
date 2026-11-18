@@ -1,0 +1,15 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_clone_Effect": { "prover": "alt-ergo", "time": 0.028 },
+      "vc_clone_bool": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_clone_u64": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Beat": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Kill": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_SendFailed": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_SendResult": { "prover": "alt-ergo", "time": 0.01 },
+      "vc_elim_Start": { "prover": "alt-ergo", "time": 0.01 }
+    }
+  }
+}

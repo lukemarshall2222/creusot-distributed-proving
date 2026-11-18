@@ -110,8 +110,11 @@ def main():
                     [args.prover, "prove", "-f", "--summary", "--no-autodetect", "--no-autoload", file],
                     cwd=work, env=env, capture_output=True, timeout=args.file_timeout)
                 status = p.returncode
+                # What the prover said last, when it did not end normally.
+                error = p.stderr.decode(errors="replace")[-600:] if status not in (0, 1) else None
             except subprocess.TimeoutExpired:
                 status = None
+                error = "file timeout"
                 subprocess.run(["pkill", "-f", work], capture_output=True)
             wall = time.time() - start
             calls = []
@@ -146,7 +149,7 @@ def main():
                     "timeouts": sum(c["label"] == "timeout" for c in mine),
                 }) + "\n")
             goals_out.flush()
-            runs_out.write(json.dumps({"file": file, "status": status, "wall_seconds": round(wall, 1),
+            runs_out.write(json.dumps({"file": file, "status": status, "error": error, "wall_seconds": round(wall, 1),
                                        "goals": len(names), "proved": sum(complete(p) for p in proofs.values())}) + "\n")
             runs_out.flush()
             print("%s: status %s, %.1fs, %d goals, %d proved" % (

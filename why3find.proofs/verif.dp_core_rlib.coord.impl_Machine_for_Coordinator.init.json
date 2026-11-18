@@ -1,0 +1,11 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_init_Coordinator": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_new_FrontEnd": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_new_Job": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_new_Worker": { "prover": "alt-ergo", "time": 0.01 }
+    }
+  }
+}
