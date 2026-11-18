@@ -1,0 +1,13 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_clone_Effect": { "prover": "alt-ergo", "time": 0.035 },
+      "vc_clone_u64": { "prover": "alt-ergo", "time": 0.015 },
+      "vc_elim_CacheLookup": { "prover": "alt-ergo", "time": 0.016 },
+      "vc_elim_LocalStart": { "prover": "alt-ergo", "time": 0.017 },
+      "vc_elim_PrintRequest": { "prover": "alt-ergo", "time": 0.017 },
+      "vc_elim_ReplyToWhy3find": { "prover": "alt-ergo", "time": 0.015 }
+    }
+  }
+}

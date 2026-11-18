@@ -1,0 +1,7 @@
+/target
+__pycache__/
+
+# Creusot: generated Coma files, erasure data and the why3find cache
+_creusot_erasure
+*.coma
+.why3find

@@ -1,0 +1,16 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_clone_Input": { "prover": "alt-ergo", "time": 0.092 },
+      "vc_clone_u64": { "prover": "alt-ergo", "time": 0.017 },
+      "vc_elim_CacheFacts": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_elim_FinalWrite": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_elim_GoalAnnounced": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_elim_LocalExit": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_elim_PrintFacts": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_elim_ProverCall": { "prover": "alt-ergo", "time": 0.017 },
+      "vc_elim_SessionStart": { "prover": "alt-ergo", "time": 0.015 }
+    }
+  }
+}

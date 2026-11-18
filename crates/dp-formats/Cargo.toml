@@ -1,0 +1,11 @@
+[package]
+name = "dp-formats"
+description = "Format_Codec: strict parsers and canonical printers for every exchanged format"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

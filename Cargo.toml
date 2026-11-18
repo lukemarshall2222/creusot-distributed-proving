@@ -1,0 +1,33 @@
+# Distributed proving backend for Creusot.
+# Spec: .kiro/specs/creusot-distributed-proving/ (requirements.md, design.md, tasks.md).
+[workspace]
+resolver = "2"
+members = [
+    "crates/dp-core",
+    "crates/dp-formats",
+    "crates/dp-shell",
+    "crates/dp-testkit",
+    "crates/dp-frontend",
+    "crates/dp-coordinator",
+    "crates/dp-worker",
+    "crates/dp-pool",
+    "crates/dp-canon",
+    "crates/dp-cert",
+    "crates/dp-replay",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace.dependencies]
+dp-core = { path = "crates/dp-core" }
+dp-formats = { path = "crates/dp-formats" }
+dp-shell = { path = "crates/dp-shell" }
+dp-testkit = { path = "crates/dp-testkit" }
+dp-canon = { path = "crates/dp-canon" }
+dp-cert = { path = "crates/dp-cert" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"

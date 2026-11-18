@@ -1,0 +1,12 @@
+[package]
+name = "dp-canon"
+description = "Canonicalizer: Canonical_Names for the declarations and Assertions of a Printed_Goal"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dp-formats = { workspace = true }
+
+[lints]
+workspace = true

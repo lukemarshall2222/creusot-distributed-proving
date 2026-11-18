@@ -1,0 +1,16 @@
+[package]
+name = "dp-core"
+description = "Pure decision core: the Front_End, Coordinator, Worker and Lemma_Pool machines"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+# R7.3: dp-core may depend only on crates of the pure-dependency allow-list in
+# tools/purity-check/ (task 2.6). Its only dependency is creusot-std, which
+# provides the contract attributes and the logic types of the Creusot proofs.
+[dependencies]
+creusot-std = "0.15.0"
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(creusot)'] }

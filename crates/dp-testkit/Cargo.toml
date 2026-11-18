@@ -1,0 +1,13 @@
+[package]
+name = "dp-testkit"
+description = "Test-only crate: shared property-test configuration and generators"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dp-core = { workspace = true }
+dp-formats = { workspace = true }
+
+[lints]
+workspace = true

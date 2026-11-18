@@ -1,0 +1,15 @@
+[package]
+name = "dp-replay"
+description = "Replay_Tool: offline re-check of proof-labelled Verdicts"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dp-core = { workspace = true }
+dp-formats = { workspace = true }
+dp-shell = { workspace = true }
+dp-cert = { workspace = true }
+
+[lints]
+workspace = true

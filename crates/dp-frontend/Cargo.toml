@@ -1,0 +1,14 @@
+[package]
+name = "dp-frontend"
+description = "Front_End: I/O shell on the developer machine around the dp-core Front_End machine"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dp-core = { workspace = true }
+dp-formats = { workspace = true }
+dp-shell = { workspace = true }
+
+[lints]
+workspace = true

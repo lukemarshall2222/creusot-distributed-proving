@@ -1,0 +1,13 @@
+[package]
+name = "dp-cert"
+description = "Proof parsing and printing, certificate assembly, checker drivers and the Certificate_Store"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dp-core = { workspace = true }
+dp-formats = { workspace = true }
+
+[lints]
+workspace = true
