@@ -202,8 +202,12 @@ fn all_from_workers(stderr: &str, verdicts: u64) -> bool {
         let end = line.find(before)?;
         line[..end].trim_end().rsplit(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
     };
-    let proved_runs: Option<u64> =
-        line.split("prover results: ").nth(1)?.split(", ").find(|p| p.ends_with("proved-standalone")).and_then(|p| p.split(' ').next()?.parse().ok());
+    let proved_runs: Option<u64> = line
+        .split("prover results: ")
+        .nth(1)
+        .and_then(|results| results.split(", ").find(|p| p.ends_with("proved-standalone")))
+        .and_then(|p| p.split(' ').next())
+        .and_then(|n| n.parse().ok());
     number(" proved-standalone Verdicts (") == Some(verdicts)
         && number(" Result_Cache hits") == Some(0)
         && number(" from Workers") >= Some(verdicts)
