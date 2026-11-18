@@ -118,9 +118,10 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - **Validates: Requirements 42.1, 42.2, 42.3, 42.4**
 
 - [ ] 3. Implement dp-formats for the stage-1 formats
-  - [ ] 3.1 Implement the canonical S-expression codec and hashing (C16, D-7, TB-1)
+  - [-] 3.1 Implement the canonical S-expression codec and hashing (C16, D-7, TB-1)
     - Length-prefixed atoms, strict parser with the size limit `<TBD-22>` checked before parsing, duplicate-field and trailing-byte rejection, errors naming the format and a byte offset; canonical printer; pretty printer
     - `H(tag, x…)` with the domain tags of Data Models; `docs/formats/index.toml` registry with grammar file, codec module, round-trip test, fuzz target and size limit per format; each format's entry is added by the sub-task that adds the last of its four artifacts (R7.10 criterion 7, see Notes)
+    - As built: `sexp.rs` (strict parser, canonical and pretty printers, stream prefix parser), `hash.rs`, `docs/formats/canonical-sexp.abnf`, property tests. Open: the fuzz target, `docs/formats/index.toml`, and `<TBD-22>`, which callers pass as a parameter
     - _Requirements: 39.1, 39.2, 39.3, 39.5, 39.6_
     - _Properties: 34_
 
@@ -163,8 +164,9 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - _Requirements: 31.5, 31.6_
     - _Properties: 30_
 
-  - [ ] 4.3 Implement `verdict.rs` for the proved-standalone path with Creusot contracts (C4)
+  - [x] 4.3 Implement `verdict.rs` for the proved-standalone path with Creusot contracts (C4)
     - `accept_result` for local Results, `label` with the fail-safe rule (proved-standalone only under every condition of R7.1 criterion 2; every Result that needs certification is unchecked until stage 5), `record_verdict` (at most one Verdict, never changed), `cache_label`, `final_verdicts`; contracts state P7.1.1, P7.1.3, P7.1.5, P7.1.6
+    - As built: `final_verdicts` is `final_label`, the end-of-Session label of one Goal; four planted weakenings of `label` and `record_verdict` were each rejected by Creusot
     - _Requirements: 30.1, 30.2, 30.4, 30.5, 30.6, 31.4, 5.1, 5.8, 5.13, 41.2_
     - _Properties: 1_
 
@@ -218,30 +220,35 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - _Requirements: 3.3, 3.10, 10.5, 31.3, 34.7, 41.1, 38.1_
     - _Properties: 30, 33_
 
-  - [ ] 5.2 Write the Creusot_CLI backend patch (`patches/creusot/`, C1, D-4, AS-2)
+  - [x] 5.2 Write the Creusot_CLI backend patch (`patches/creusot/`, C1, D-4, AS-2)
     - Backend option of `cargo creusot prove` that runs `dp-frontend prove` with the arguments of `why3find prove`, forwards labels, summary and conflicts, and returns dp-frontend's exit status; without the option Creusot_CLI runs unmodified why3find
+    - As built: the option is `cargo creusot --backend PROGRAM` (Creusot 0.15 has no `prove` sub-command); Creusot proves dp-core through dp-frontend with it
     - _Requirements: 31.2, 31.9, 31.12, 38.1_
     - _Properties: 30_
 
-  - [ ] 5.3 Add the patched builds to the Lock_File and implement the bridge client
+  - [-] 5.3 Add the patched builds to the Lock_File and implement the bridge client
     - Lock_File entries for patched why3find and Creusot (never Unpatched_Solver kinds); `crates/dp-shell/src/why3find.rs`: client of the `dispatch` format over a pipe to the why3find child process, with no FFI (D-2), used by dp-frontend, dp-worker and dp-replay
     - Bridge request that addresses a Goal by its goal path without a proving run, for dp-replay (7.1); dp-frontend starts the patched why3find by its explicit path (`DP_WHY3FIND` in the development shell), because Creusot's wrapper puts the unpatched one on `PATH`
+    - As built: `dp-formats/src/dispatch.rs`, `dp-shell/src/why3find.rs` with tests against the patched why3find, and a Lock_File entry for patched why3find. Open: the Lock_File entry for patched Creusot, the goal-by-path request, and use by dp-worker and dp-replay
     - _Requirements: 38.2, 38.4, 36.1_
     - _Properties: 36_
 
 - [ ] 6. Implement dp-frontend in local mode
-  - [ ] 6.1 Implement the Session shell with configuration loading and pin checks (C3)
+  - [-] 6.1 Implement the Session shell with configuration loading and pin checks (C3)
     - Cluster option precedence through the function of task 4.11 (flag, `DP_CLUSTER`, `dp.toml`; D-13), `validate_config`, tracing retention setting from `tracing_retention`, Lock_File hash check of every local executable at Session start and before each start, TCB_Document and registry loading, start of `why3find prove --dispatch` and the dispatch loop driving the Front_End machine; errors stop the Session before any solver starts and leave `proof.json` and `.why3find` unchanged
+    - As built: a thin `dp-frontend prove` with the Lock_File checks at Session start and before each solver start, configured by `DP_WHY3FIND` and `DP_LOCK`. Open: `dp.toml`, `validate_config`, the cluster option, tracing, the TCB_Document and registry, and the loop over the dp-core Front_End machine
     - _Requirements: 36.3, 36.7, 1.6, 1.2, 1.8, 1.9, 5.18_
     - _Properties: 5_
 
-  - [ ] 6.2 Implement local solver runs and dispatch answers
+  - [-] 6.2 Implement local solver runs and dispatch answers
     - Solvers started directly in process groups with Why3's prover command lines and why3find's Calibration (D-16, AS-39); answer Valid only for proof-labelled Verdicts and the classified answer otherwise
+    - As built: solvers run in process groups with Why3's command lines; Valid is answered only for proved-standalone. The version of a Solver_Configuration is the one the Lock_File pins for the binary, because Creusot's Why3 configuration states none. Open: why3find's Calibration (reference limits are used as local ones); answer patterns and input file extensions are restated from the pinned drivers for cvc5, cvc4, Z3 and Alt-Ergo 2.6 and should come from the bridge
     - _Requirements: 41.1, 41.2, 36.7_
     - _Properties: 1, 33_
 
-  - [ ] 6.3 Implement `crates/dp-frontend/src/accept.rs` facts for local Results (A3)
+  - [-] 6.3 Implement `crates/dp-frontend/src/accept.rs` facts for local Results (A3)
     - `print_local` through the bridge, Task_Hash, task count, canonical-form check, solver binary hash against `unpatched(Lock_File)`
+    - As built, inside `session.rs`: `print_local` through the bridge, Task_Hash, task count and the solver binary hash. Open: the separate `accept.rs` module and the canonical-form check
     - _Requirements: 3.3, 3.5, 3.10, 39.8, 30.5_
     - _Properties: 3_
 
