@@ -1,0 +1,56 @@
+Subject: Add a backend option to `cargo creusot prove`
+
+Purpose: `cargo creusot prove --backend PROGRAM` runs PROGRAM in place of
+  Why3find, with the arguments and the environment that `why3find prove`
+  would get, and exits with PROGRAM's status when it fails. Without the
+  option, behaviour is unchanged. The distributed proving backend is used
+  with `--backend dp-frontend`.
+Requirements: R7.2, R7.9
+Upstream: not yet submitted
+Base: https://github.com/creusot-rs/creusot commit fd4d85b2c237ef93147e99f6a0c04acfc89a6a17 (v0.15.0)
+---
+ cargo-creusot/src/why3find_wrapper.rs | 17 +++++++++++++++--
+ 1 file changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/cargo-creusot/src/why3find_wrapper.rs b/cargo-creusot/src/why3find_wrapper.rs
+index 927d085..a76f2fd 100644
+--- a/cargo-creusot/src/why3find_wrapper.rs
++++ b/cargo-creusot/src/why3find_wrapper.rs
+@@ -36,6 +36,10 @@ pub struct ProveArgs {
+     /// Max parallel provers
+     #[clap(short = 'j')]
+     pub jobs: Option<usize>,
++    /// Run this program in place of Why3find, with the arguments and the
++    /// environment of `why3find prove`, and exit with its status.
++    #[clap(long, value_name = "PROGRAM")]
++    pub backend: Option<PathBuf>,
+     /// Run why3find on files that match one of the patterns.
+     /// Examples: `name`, `name::*`, `m/*/f`, or whole paths `verif/a/b.coma`.
+     pub patterns: Vec<String>,
+@@ -68,7 +72,10 @@ fn check_why3find_json_exists(root: &Path) -> Result<()> {
+ }
+ 
+ fn raw_prove(args: ProveArgs, paths: &CreusotPaths, files: &[PathBuf]) -> Result<()> {
+-    let mut why3find = Command::new(&paths.why3find());
++    let mut why3find = match &args.backend {
++        Some(backend) => Command::new(backend),
++        None => Command::new(&paths.why3find()),
++    };
+     why3find.arg("prove");
+     let jobs = args.jobs.unwrap_or_else(creusot_setup::default_provers_parallelism);
+     why3find.args(["-j", &format!("{}", jobs)]);
+@@ -104,7 +111,13 @@ fn raw_prove(args: ProveArgs, paths: &CreusotPaths, files: &[PathBuf]) -> Result
+             .status()
+             .map_err(|e| anyhow::Error::new(e).context("'why3find prove' failed to launch"))
+             .and_then(|status| {
+-                if status.success() { Ok(()) } else { Err(anyhow!("'why3find prove' failed")) }
++                if status.success() {
++                    Ok(())
++                } else if args.backend.is_some() {
++                    std::process::exit(status.code().unwrap_or(1))
++                } else {
++                    Err(anyhow!("'why3find prove' failed"))
++                }
+             })
+     }
+ }

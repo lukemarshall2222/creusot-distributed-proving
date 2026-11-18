@@ -31,17 +31,28 @@ let
     strictDeps = true;
   };
 
-  # Patches under patches/why3find/, in file-name order (R7.9).
-  why3findPatchDir = ../patches/why3find;
-  why3findPatches = lib.optionals (builtins.pathExists why3findPatchDir) (
-    map (name: why3findPatchDir + "/${name}") (
-      lib.sort lib.lessThan (
-        lib.filter (lib.hasSuffix ".patch") (lib.attrNames (builtins.readDir why3findPatchDir))
+  # Patches under patches/<dependency>/, in file-name order (R7.9).
+  patchesOf =
+    dir:
+    lib.optionals (builtins.pathExists dir) (
+      map (name: dir + "/${name}") (
+        lib.sort lib.lessThan (
+          lib.filter (lib.hasSuffix ".patch") (lib.attrNames (builtins.readDir dir))
+        )
       )
-    )
-  );
+    );
+  why3findPatches = patchesOf ../patches/why3find;
+  creusotPatches = patchesOf ../patches/creusot;
 in
 {
+  # Creusot_CLI with the backend option (design decision D-4). Creusot's
+  # wrapper below is built from this attribute.
+  creusot = prev.creusot // {
+    creusot = prev.creusot.creusot.overrideAttrs (old: {
+      patches = (old.patches or [ ]) ++ creusotPatches;
+    });
+  };
+
   dp = {
     inherit rust-toolchain workspace;
 

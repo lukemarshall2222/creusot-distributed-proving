@@ -129,6 +129,9 @@
             # program name, so it is reached through this variable.
             DP_WHY3FIND = "${pkgs.dp.why3find-dispatch}/bin/why3find";
 
+            # The Lock_File that dp-frontend checks local executables against.
+            DP_LOCK = "${./deps/lock.toml}";
+
             # Signature files that Ethos loads for CPC proofs (TB-11).
             DP_CPC_SIGNATURE = "${pkgs.dp.cpc-signature}";
           };
