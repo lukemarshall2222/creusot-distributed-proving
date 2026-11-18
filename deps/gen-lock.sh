@@ -5,9 +5,15 @@
 #   deps/gen-lock.sh > deps/lock.toml      (from the repository root)
 #
 # This is the part of task 1.3 that dp-frontend needs so far. Still missing:
-# the other tools of R7.7 criterion 1, the other platforms, and the two
-# rebuild hashes of each Unpatched_Solver entry (R7.7 criterion 9), which is
-# why `rebuild_hashes` is empty.
+# the other tools of R7.7 criterion 1, the other platforms, and the evidence
+# of R7.7 criterion 9 for each Unpatched_Solver entry, which is why
+# `rebuild_hashes` is empty.
+#
+# Finding (2026-11-17, aarch64-darwin): `nix build --rebuild` reports that the
+# builds of alt-ergo, z3, cvc5 and ethos are not bit-for-bit reproducible on
+# macOS, so two rebuilds do not give equal hashes there. On this platform the
+# evidence has to be an upstream-published checksum, or the check has to run
+# on Linux.
 set -eu
 
 platform=$(nix eval --raw --impure --expr builtins.currentSystem)

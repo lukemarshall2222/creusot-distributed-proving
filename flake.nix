@@ -132,6 +132,11 @@
             # The Lock_File that dp-frontend checks local executables against.
             DP_LOCK = "${./deps/lock.toml}";
 
+            # Creusot's Why3 prover configuration and its files, for Workers
+            # and for tests that run why3find as Creusot_CLI does.
+            DP_CREUSOT_HOME = "${pkgs.dp.creusot}";
+            DP_CREUSOT_EXAMPLES = "${creusot}/examples";
+
             # Signature files that Ethos loads for CPC proofs (TB-11).
             DP_CPC_SIGNATURE = "${pkgs.dp.cpc-signature}";
           };

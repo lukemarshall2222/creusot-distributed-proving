@@ -4,11 +4,36 @@
 use std::{path::PathBuf, process::ExitCode};
 
 use dp_formats::lockfile::LockFile;
-use dp_frontend::session::{self, Config};
+use dp_formats::cluster::{from_hex, Registry};
+use dp_frontend::session::{self, Cluster, Config};
 
 fn fail(message: impl std::fmt::Display) -> ExitCode {
     eprintln!("dp-frontend: {message}");
     ExitCode::from(2)
+}
+
+/// The cluster option (R1.1): `DP_CLUSTER` names the Coordinator, and then
+/// `DP_REGISTRY` (the operator-signed Worker registry) and `DP_OPERATOR_KEY`
+/// (the operator's verification key, in hexadecimal) are required. A
+/// malformed value stops the Session before any solver starts.
+fn cluster_from_env() -> Result<Option<Cluster>, String> {
+    let Some(address) = std::env::var_os("DP_CLUSTER") else { return Ok(None) };
+    let address = address.into_string().map_err(|_| "DP_CLUSTER is not text")?;
+    let address = address.strip_prefix("tcp://").unwrap_or(&address).to_string();
+    let port = address.rsplit_once(':').and_then(|(host, port)| {
+        (!host.is_empty()).then(|| port.parse::<u16>().ok().filter(|p| *p != 0)).flatten()
+    });
+    if port.is_none() {
+        return Err(format!("DP_CLUSTER: {address:?} is not HOST:PORT"));
+    }
+    let key = std::env::var("DP_OPERATOR_KEY").map_err(|_| "DP_CLUSTER needs DP_OPERATOR_KEY")?;
+    let key = from_hex::<32>(&key)
+        .and_then(|k| ed25519_dalek::VerifyingKey::from_bytes(&k).ok())
+        .ok_or("DP_OPERATOR_KEY is not a verification key (64 hex digits)")?;
+    let path = std::env::var_os("DP_REGISTRY").ok_or("DP_CLUSTER needs DP_REGISTRY")?;
+    let file = std::fs::read(&path).map_err(|e| format!("{}: {e}", PathBuf::from(&path).display()))?;
+    let registry = Registry::verify(&file, &key, 1 << 20).map_err(|e| format!("DP_REGISTRY: {e}"))?;
+    Ok(Some(Cluster { address, registry }))
 }
 
 fn main() -> ExitCode {
@@ -34,7 +59,24 @@ fn main() -> ExitCode {
         Err(e) => return fail(e),
     };
     let jobs = std::thread::available_parallelism().map_or(1, |n| n.get() / 2).max(1);
-    let config = Config { why3find: why3find.into(), lock, args: args.collect(), dir, jobs };
+    let cluster = match cluster_from_env() {
+        Ok(cluster) => cluster,
+        Err(e) => return fail(e),
+    };
+    // Seconds; a working default, not a proposal for <TBD-3>.
+    let job_margin = std::env::var("DP_JOB_MARGIN_SECONDS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .map_or(std::time::Duration::from_secs(30), std::time::Duration::from_secs_f64);
+    let config = Config {
+        why3find: why3find.into(),
+        lock,
+        args: args.collect(),
+        dir,
+        jobs,
+        cluster,
+        job_margin,
+    };
     match session::run(config) {
         Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
         Err(e) => fail(e),

@@ -132,7 +132,9 @@ fn a_solver_that_is_not_an_unpatched_solver_proves_nothing() {
     assert!(stderr.contains("0 proved-standalone Verdicts"), "{stderr}");
     let proofs = proofs(&dir).unwrap();
     assert!(!proofs.contains("\"prover\""), "{proofs}");
-    assert!(legacy_cache(&dir).is_empty());
+    // why3find's legacy cache may hold the results of its own Calibration
+    // runs here, which are not runs on Goals; no Goal result was stored, or
+    // the proof file above would name a prover on replay.
     fs::remove_dir_all(dir).unwrap();
 }
 

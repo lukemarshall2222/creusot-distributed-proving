@@ -14,6 +14,7 @@ members = [
     "crates/dp-canon",
     "crates/dp-cert",
     "crates/dp-replay",
+    "tests/diff",
 ]
 
 [workspace.package]

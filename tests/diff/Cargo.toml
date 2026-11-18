@@ -1,0 +1,19 @@
+[package]
+name = "dp-diff"
+description = "Differential tests of the System against oracles (design: Testing Strategy)"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dev-dependencies]
+serde_json = "1"
+
+[[test]]
+name = "legacy_compat"
+path = "legacy_compat/main.rs"
+
+[lints]
+workspace = true

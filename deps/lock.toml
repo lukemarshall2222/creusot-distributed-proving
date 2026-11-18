@@ -53,4 +53,4 @@ patches = ["patches/why3find/0001-dispatch-mode.patch"]
 
 [[tool.platform]]
 platform = "aarch64-darwin"
-hash = "sha256:04ddb248863e6e330ba283668b4ab866442f8751cadc51c1da28bb7aa8f8d914"
+hash = "sha256:983a0ccc18b5f7d47b2ed908517ca3c9dbd7ff717e0e83c41dd6634a68ccc9cf"
