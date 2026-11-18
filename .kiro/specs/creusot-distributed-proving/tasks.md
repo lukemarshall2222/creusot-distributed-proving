@@ -26,9 +26,10 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - _Requirements: 36.1, 36.2, 36.9_
     - _Properties: 36_
 
-  - [ ] 1.3 Generate the Lock_File and implement the `ci/repro-build` checks
+  - [-] 1.3 Generate the Lock_File and implement the `ci/repro-build` checks
     - `deps/lock.toml` with the schema of Data Models (tool kinds, per-platform hashes, upstream checksum or tag with two rebuild hashes), generated from the Nix build
     - `ci/jobs/repro-build.sh`: two clean builds with equal hashes; schema and completeness against the tool list of R7.7 criterion 1; upstream checksum or double rebuild of every Unpatched_Solver and Certificate_Checker entry
+    - As built: `deps/gen-lock.sh` and a partial `deps/lock.toml` (four solvers and patched why3find, aarch64-darwin). Finding: the Nix builds of the solvers and checkers are not bit-for-bit reproducible on macOS, so the two-rebuild evidence of R7.7 criterion 9 has to come from Linux or from upstream checksums. Open: the other tools and platforms, `ci/jobs/repro-build.sh`
     - _Requirements: 36.1, 36.2, 36.6, 36.9_
     - _Properties: 36_
 
@@ -217,6 +218,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [x] 5.1 Write the why3find dispatch patch (`patches/why3find/`, C2, D-3, AS-37, TB-23)
     - `why3find prove --dispatch`: Goal announcements with goal path and Goal_Hash input, prover calls tagged with the strategy step, cache reads and writes, legacy `proof.json` written only from dp-frontend's answers; bridge requests for printing with a Driver and Transformation_Pipeline with task count, deterministic untransformed task print, detected provers with command lines, Calibration; a closed pipe is fatal
     - As built: Calibration runs stay inside why3find and use its own cache; the bridge answers only for Goals announced in the current run
+    - Since extended: the prover list carries the input file extension, and `read-answer` has Why3 read the answer of a recorded run with the prover's driver
     - _Requirements: 3.3, 3.10, 10.5, 31.3, 34.7, 41.1, 38.1_
     - _Properties: 30, 33_
 
@@ -243,6 +245,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [-] 6.2 Implement local solver runs and dispatch answers
     - Solvers started directly in process groups with Why3's prover command lines and why3find's Calibration (D-16, AS-39); answer Valid only for proof-labelled Verdicts and the classified answer otherwise
     - As built: solvers run in process groups with Why3's command lines; Valid is answered only for proved-standalone. The version of a Solver_Configuration is the one the Lock_File pins for the binary, because Creusot's Why3 configuration states none. Open: why3find's Calibration (reference limits are used as local ones); answer patterns and input file extensions are restated from the pinned drivers for cvc5, cvc4, Z3 and Alt-Ergo 2.6 and should come from the bridge
+    - Since changed: answers are read by Why3 through `read-answer`, and why3find's Calibration scales local time limits; the restated answer patterns are gone
     - _Requirements: 41.1, 41.2, 36.7_
     - _Properties: 1, 33_
 
@@ -310,11 +313,12 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - Every Canary_Goal in every implemented mode with `<TBD-40>` seeds; cache canaries through `.dp-cache/`; unmodified pinned why3find after each Session (R7.5 criterion 8); failure on any proof label, on an enabled mode that did not run, on a missing required mode, and on fewer than `<TBD-44>` quantified Canary_Goals per mode; per-mode report of quantified goals and exclusion shares
     - **Validates: Requirements 33.5, 33.6, 33.7, 33.15, 33.16, 33.17, 34.8**
 
-  - [ ] 9.4 Write the legacy-compatibility differential test
+  - [-] 9.4 Write the legacy-compatibility differential test
     - **Property 33: Turning a feature on or off never flips a proof against a counter-model** (legacy part)
     - `tests/diff/legacy_compat/`: legacy configuration against unmodified pinned why3find within the `<TBD-26>` band, also from files that unmodified why3find wrote; runs on fixture projects from Creusot's test suite until task 12.7 provides the CI corpus
     - Switch row R7.12 to in scope with the switch step (Notes): `tests/diff/legacy_compat/` is its only artifact (R7.11 criterion 12)
     - **Validates: Requirements 41.1, 41.3**
+    - As built: `tests/diff/legacy_compat/` compares the goals proved by dp-frontend and by unmodified why3find on Creusot's example files; all 24 files and 836 goals agree. Open: the CI corpus selection, the tolerance band `<TBD-26>`, cache and `proof.json` comparisons, and the row switch
 
   - [ ] 9.5 Write the legacy-reader differential test
     - **Property 30: proof.json and the Creusot_CLI report labels faithfully** (legacy reader part)
@@ -403,10 +407,11 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
 ### Stage 3: dp-distribution
 
 - [ ] 14. Model the Coordinator protocol in TLA+
-  - [ ] 14.1 Write `verification/tla/Coordinator.tla` with its safety invariants
+  - [-] 14.1 Write `verification/tla/Coordinator.tla` with its safety invariants
     - **Property 8: Coordinator protocol safety**
     - Front_End, Coordinator, Workers, network as a bag, escalation, fallback, operator actions and the R1.6 fault actions; one action per `TlaAction` variant; invariants `AtMostOneVerdict`, `NonRaceProofRecorded`, eligibility, scaled limits, the reassignment bound, drain and revocation rules, first-wins (Property 4) and `NoEscalationAfterLocalProof`, `FastPassBeforeSubmission`, `CacheHitStaysLocal` (Property 6); TLC configuration with small test bounds (not proposals for `<TBD-4>`) and an Apalache configuration for `sched/apalache-nightly`
     - **Validates: Requirements 1.3, 1.4, 1.7, 4.1, 4.3, 4.4, 5.1, 5.2, 5.4, 5.7, 5.8, 5.13, 5.14, 5.15, 5.16, 6.1, 6.2, 6.3, 6.10, 6.16, 6.17, 7.1, 7.2, 7.3, 7.4, 7.5, 7.7, 7.8, 7.9, 2.1, 2.2, 2.4**
+    - As built: a model of the first distributed slice with an adversarial Coordinator; TLC checks `VerdictSound`, `VerdictFinal` and `JobsEndOnce` at small test bounds, and finds a counterexample when the task binding or the signature check is removed. Open: the invariants this task names for heartbeats, Races, certification, fallback and operator actions
 
   - [ ] 14.2 Add the liveness properties to `Coordinator.tla`
     - **Property 9: Every Escalated_Goal gets a Verdict in bounded time**
@@ -439,9 +444,10 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - `crates/dp-core/tests/prop_calibration.rs`; fills `arb_coordinator_ops`
     - **Validates: Requirements 4.1, 4.3, 4.4**
 
-  - [ ] 15.6 Implement the Coordinator machine `coord.rs` with a Kani harness (C5)
+  - [-] 15.6 Implement the Coordinator machine `coord.rs` with a Kani harness (C5)
     - Create `crates/dp-core/src/coord.rs`: `eligible`, `assign`, `on_heartbeat_timeout`, `on_failed`, `cancel`, `orphan_cancel`, `drop_session`, `apply_operator`, `status`, incarnation identifier, message deduplication; `verification/kani/coordinator.rs` for P1.5.1 and P1.5.6 on single transitions
     - `assign` treats every per-platform solver binary hash that the Lock_File entry of a Solver_Configuration lists as listed (`lock(c)` is the set of those hashes, OQ-N21, D-13), so each Result carries the hash of the binary the Worker ran
+    - As built: a pure machine with unit tests in `crates/dp-coordinator/src/machine.rs` (queueing, assignment, cancellation, lost peers). Open: moving it into dp-core in the subset Creusot verifies, Calibration, heartbeats, retries, operator commands, the Kani harness
     - _Requirements: 1.3, 1.4, 1.7, 1.11, 5.4, 5.7, 5.15, 6.1, 6.2, 6.3, 6.10, 6.11, 6.16, 6.17, 7.1, 7.2, 7.3, 7.4, 7.5, 7.7, 7.8, 7.9, 7.10, 7.11_
     - _Properties: 4, 8_
 
@@ -470,10 +476,11 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - `crates/dp-core/tests/prop_cancel.rs`
     - **Validates: Requirements 5.6, 6.12**
 
-  - [ ] 15.12 Extend `verdict.rs` `accept_result` to remote Results with Creusot contracts
+  - [-] 15.12 Extend `verdict.rs` `accept_result` to remote Results with Creusot contracts
     - Decisions from A3 facts: canonical form, size, Ed25519 tag under the operator-signed registry view and held revocations, Task_Hash of `print_local`, task count, submitted pair, import-set hash, recomputed local limit; an authenticated Result naming an open Job that is discarded ends that Job failed
     - Registry view: of the Worker registries with a valid operator signature that the Front_End holds, the one with the highest version supplies the registered identities and verification data, whatever channel delivered each and in whatever order (D-9)
     - Contracts for P1.3.1, P1.3.2, P1.3.4 to P1.3.7 and P1.3.9 to P1.3.11
+    - As built: `accept_remote` with its contract (authentic, registered, not revoked, submitted and bound to the local print), proved by Creusot. Open: the remaining criteria this task names (Partition, import-set hash, Calibration limits)
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.6, 3.7, 3.8, 3.9, 3.10, 3.11, 4.6, 4.7, 6.13, 7.6, 9.24, 30.7_
     - _Properties: 3_
 
@@ -483,24 +490,28 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - **Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.9, 3.10, 3.11, 7.6, 30.7**
 
 - [ ] 16. Implement the Cluster shells
-  - [ ] 16.1 Implement Worker and operator authentication (D-9)
+  - [-] 16.1 Implement Worker and operator authentication (D-9)
     - Ed25519 Worker keys and tags with domain tags; operator registry key signing the versioned Worker registry and revocations; operator command key; `dp-operator` binary in `crates/dp-coordinator/` for key generation, registry signing, revocation, drain and status
     - Operator-signed Worker registry and revocation format: grammar in `docs/formats/`, codec in dp-formats, round-trip cases in `crates/dp-formats/tests/roundtrip.rs`, `fuzz/worker_registry/` (run by `ci/fuzz-smoke` and `sched/fuzz-nightly`) and its registry entry in `docs/formats/index.toml`
+    - As built: Ed25519 tags on Results, the operator-signed registry, key generation and registry signing commands, with property tests. Open: revocations, registry versions from several channels, the operator command key
     - _Requirements: 3.2, 3.9, 3.11, 7.1, 7.5, 7.6, 7.11, 30.7, 39.1, 39.7_
     - _Properties: 3, 8, 34_
 
-  - [ ] 16.2 Implement the dp-coordinator shell (C5, D-1)
+  - [-] 16.2 Implement the dp-coordinator shell (C5, D-1)
     - Separate Rust Coordinator service in the Proof_Server role around the dp-core Coordinator machine (D-1): ZeroMQ endpoints; Worker connections with offers and Calibrations; task blob store by Task_Hash; heartbeats every `<TBD-31>`; timeouts `<TBD-5>` and `<TBD-32>`; incarnation identifier at start; authenticated operator commands; status report printed with the codec of task 16.6 together with its text rendering (D-20); Session-drop to the Lemma_Pool
+    - As built: a TCP shell around the Coordinator machine. Open: ZeroMQ, task blobs by Task_Hash, incarnation identifiers, traces
     - _Requirements: 1.3, 1.4, 1.7, 6.14, 6.16, 6.17, 6.19, 7.7, 7.8, 7.9, 7.12_
     - _Properties: 8_
 
-  - [ ] 16.3 Implement the dp-worker shell for Unpatched_Solvers (C6, D-16)
+  - [-] 16.3 Implement the dp-worker shell for Unpatched_Solvers (C6, D-16)
     - Offer with why3find Calibrations through the bridge; task blob fetch with Task_Hash check; solver start by dp-worker itself in its own process group with Why3's prover command line and the Job's seed, options and local limit (D-16, AS-39), binary hash checked just before and reported in the Result; tree termination within `<TBD-33>` after limit expiry and `<TBD-2>` after cancellation; signed Results with the fields of R1.3 criteria 1 and 2 and R1.4 criterion 2; heartbeats; deduplication
+    - As built: runs only commands of its own Why3 configuration, checks the solver binary against its Lock_File before each start, signs Results that carry the solver's output and exit status. Open: why3find's Calibration, heartbeats, message deduplication, traces
     - _Requirements: 1.3, 3.1, 3.2, 4.2, 4.5, 5.5, 5.6, 6.12, 6.14, 36.7_
     - _Properties: 3, 11_
 
-  - [ ] 16.4 Implement the cluster mode of dp-frontend (C3)
+  - [-] 16.4 Implement the cluster mode of dp-frontend (C3)
     - Connection within `<TBD-30>`; submission of Escalated_Goals with task blobs (configuration list of a non-Hard Escalated_Goal from why3find's reference-time parallel pass, D-17); cancellation after a Verdict; heartbeats; fallback after `<TBD-7>` silence (`local` or `unresolved`); incarnation change with one replacement Job per open Job; per-goal deadline `<TBD-3>` with local tree kill within `<TBD-45>`; remote facts in `accept.rs`
+    - As built: prover calls after the first sequential pass go to the Cluster; Results are checked by `accept_remote` and read by the pinned driver; the Session proves locally without a Coordinator. Tested end to end with real provers, an unregistered Worker and a Coordinator that forges answers. Open: `dp.toml`, heartbeats and the silence timeout, Races, traces
     - _Requirements: 1.1, 1.2, 1.5, 1.8, 5.3, 5.9, 5.16, 5.17, 6.4, 6.5, 6.6, 6.8, 6.9, 6.15, 6.20, 9.25_
     - _Properties: 3, 9, 33_
 
