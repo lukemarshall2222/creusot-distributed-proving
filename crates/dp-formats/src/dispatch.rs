@@ -45,6 +45,55 @@ pub struct ProverInfo {
     pub driver: String,
     /// Why3's command line, with `%f`, `%t` and the other placeholders.
     pub command: String,
+    /// Extension of the prover's input file, with its dot, from the driver.
+    pub extension: String,
+}
+
+/// The answer that a Why3 driver reads from the output of a prover run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DriverAnswer {
+    Valid,
+    Invalid,
+    Timeout,
+    OutOfMemory,
+    StepLimitExceeded,
+    Unknown,
+    Failure,
+    HighFailure,
+}
+
+impl DriverAnswer {
+    pub const ALL: [DriverAnswer; 8] = [
+        DriverAnswer::Valid,
+        DriverAnswer::Invalid,
+        DriverAnswer::Timeout,
+        DriverAnswer::OutOfMemory,
+        DriverAnswer::StepLimitExceeded,
+        DriverAnswer::Unknown,
+        DriverAnswer::Failure,
+        DriverAnswer::HighFailure,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            DriverAnswer::Valid => "valid",
+            DriverAnswer::Invalid => "invalid",
+            DriverAnswer::Timeout => "timeout",
+            DriverAnswer::OutOfMemory => "outofmemory",
+            DriverAnswer::StepLimitExceeded => "steplimitexceeded",
+            DriverAnswer::Unknown => "unknown",
+            DriverAnswer::Failure => "failure",
+            DriverAnswer::HighFailure => "highfailure",
+        }
+    }
+
+    fn decode(s: &Sexp) -> Result<DriverAnswer, DecodeError> {
+        let name = s.as_str();
+        DriverAnswer::ALL
+            .into_iter()
+            .find(|a| Some(a.name()) == name)
+            .ok_or_else(|| DecodeError("driver answer".into()))
+    }
 }
 
 /// A message from why3find.
@@ -61,6 +110,7 @@ pub enum FromWhy3find {
     Task { qid: String, task: Vec<u8> },
     Provers { qid: String, provers: Vec<ProverInfo> },
     Calibration { qid: String, millionths: u64 },
+    AnswerRead { qid: String, answer: DriverAnswer },
     Error { qid: String, message: String },
 }
 
@@ -74,6 +124,9 @@ pub enum ToWhy3find {
     TaskPrint { qid: String, gid: String },
     Provers { qid: String },
     Calibration { qid: String, prover: String },
+    /// Asks for the answer that the driver of `prover` reads from the output
+    /// and exit status of a run.
+    ReadAnswer { qid: String, prover: String, status: u32, output: Vec<u8> },
 }
 
 /// A well-formed S-expression that is not a message of the format.
@@ -209,12 +262,21 @@ impl FromWhy3find {
                 [a("provers"), a(qid)]
                     .into_iter()
                     .chain(provers.iter().map(|p| {
-                        Sexp::list([a(&p.prover), a(&p.digest), a(&p.driver), a(&p.command)])
+                        Sexp::list([
+                            a(&p.prover),
+                            a(&p.digest),
+                            a(&p.driver),
+                            a(&p.command),
+                            a(&p.extension),
+                        ])
                     }))
                     .collect(),
             ),
             Calibration { qid, millionths } => {
                 Sexp::list([a("calibration"), a(qid), n(*millionths)])
+            }
+            AnswerRead { qid, answer } => {
+                Sexp::list([a("answer-read"), a(qid), a(answer.name())])
             }
             Error { qid, message } => Sexp::list([a("error"), a(qid), a(message)]),
         }
@@ -274,11 +336,12 @@ impl FromWhy3find {
                 provers: provers
                     .iter()
                     .map(|p| match items(p)? {
-                        [prover, digest, driver, command] => Ok(ProverInfo {
+                        [prover, digest, driver, command, extension] => Ok(ProverInfo {
                             prover: text(prover)?,
                             digest: text(digest)?,
                             driver: text(driver)?,
                             command: text(command)?,
+                            extension: text(extension)?,
                         }),
                         _ => err("prover entry"),
                     })
@@ -286,6 +349,9 @@ impl FromWhy3find {
             }),
             ("calibration", [qid, v]) => {
                 Ok(Calibration { qid: text(qid)?, millionths: number(v)? })
+            }
+            ("answer-read", [qid, answer]) => {
+                Ok(AnswerRead { qid: text(qid)?, answer: DriverAnswer::decode(answer)? })
             }
             ("error", [qid, message]) => Ok(Error { qid: text(qid)?, message: text(message)? }),
             _ => err(tag),
@@ -312,6 +378,13 @@ impl ToWhy3find {
             TaskPrint { qid, gid } => Sexp::list([a("task-print"), a(qid), a(gid)]),
             Provers { qid } => Sexp::list([a("provers"), a(qid)]),
             Calibration { qid, prover } => Sexp::list([a("calibration"), a(qid), a(prover)]),
+            ReadAnswer { qid, prover, status, output } => Sexp::list([
+                a("read-answer"),
+                a(qid),
+                a(prover),
+                n(u64::from(*status)),
+                Sexp::atom(output),
+            ]),
         }
     }
 
@@ -345,6 +418,12 @@ impl ToWhy3find {
             ("calibration", [qid, prover]) => {
                 Ok(Calibration { qid: text(qid)?, prover: text(prover)? })
             }
+            ("read-answer", [qid, prover, status, output]) => Ok(ReadAnswer {
+                qid: text(qid)?,
+                prover: text(prover)?,
+                status: small(status)?,
+                output: bytes(output)?,
+            }),
             _ => err(tag),
         }
     }

@@ -14,7 +14,7 @@ use std::{
 };
 
 use dp_formats::{
-    dispatch::{FromWhy3find, ProverInfo, ToWhy3find},
+    dispatch::{DriverAnswer, FromWhy3find, ProverInfo, ToWhy3find},
     sexp::{self, Prefix},
 };
 
@@ -67,8 +67,15 @@ pub struct Printed {
     pub bytes: Vec<u8>,
 }
 
+/// Answers the messages on which why3find blocks: `cache-get` and
+/// `cache-set`. why3find waits for these answers before it does anything
+/// else, including answering a request, so they are answered as soon as they
+/// are read, also while a request is open.
+pub type Responder = Box<dyn FnMut(&FromWhy3find) -> Option<ToWhy3find>>;
+
 /// A running why3find in dispatch mode.
 pub struct Bridge {
+    responder: Responder,
     child: Child,
     stdin: Option<ChildStdin>,
     incoming: Receiver<Result<FromWhy3find, BridgeError>>,
@@ -88,6 +95,7 @@ impl Bridge {
         args: &[OsString],
         dir: &Path,
         limit: usize,
+        responder: Responder,
     ) -> Result<Bridge, BridgeError> {
         let mut child = Command::new(why3find)
             .arg("prove")
@@ -143,7 +151,7 @@ impl Bridge {
                 }
             }
         });
-        Ok(Bridge { child, stdin, incoming, deferred: VecDeque::new(), next_qid: 0, closed: false })
+        Ok(Bridge { responder, child, stdin, incoming, deferred: VecDeque::new(), next_qid: 0, closed: false })
     }
 
     /// Sends one message.
@@ -167,7 +175,13 @@ impl Bridge {
             return Ok(Poll::Closed);
         }
         match self.incoming.recv_timeout(timeout) {
-            Ok(Ok(msg)) => Ok(Poll::Message(msg)),
+            Ok(Ok(msg)) => match (self.responder)(&msg) {
+                Some(reply) => {
+                    self.send(&reply)?;
+                    Ok(Poll::Idle)
+                }
+                None => Ok(Poll::Message(msg)),
+            },
             Ok(Err(e)) => Err(e),
             Err(RecvTimeoutError::Timeout) => Ok(Poll::Idle),
             Err(RecvTimeoutError::Disconnected) => {
@@ -194,6 +208,7 @@ impl Bridge {
                         | FromWhy3find::Task { qid, .. }
                         | FromWhy3find::Provers { qid, .. }
                         | FromWhy3find::Calibration { qid, .. }
+                        | FromWhy3find::AnswerRead { qid, .. }
                         | FromWhy3find::Error { qid, .. } => Some(qid),
                         _ => None,
                     };
@@ -254,6 +269,26 @@ impl Bridge {
     pub fn calibration(&mut self, prover: &str) -> Result<u64, BridgeError> {
         match self.request(|qid| ToWhy3find::Calibration { qid, prover: prover.to_string() })? {
             FromWhy3find::Calibration { millionths, .. } => Ok(millionths),
+            other => Err(BridgeError::Protocol(format!("unexpected reply {other:?}"))),
+        }
+    }
+
+    /// The answer that the pinned driver of `prover` reads from the output
+    /// and exit status of a prover run. Why3 itself reads it.
+    pub fn read_answer(
+        &mut self,
+        prover: &str,
+        status: u32,
+        output: &[u8],
+    ) -> Result<DriverAnswer, BridgeError> {
+        let reply = self.request(|qid| ToWhy3find::ReadAnswer {
+            qid,
+            prover: prover.to_string(),
+            status,
+            output: output.to_vec(),
+        })?;
+        match reply {
+            FromWhy3find::AnswerRead { answer, .. } => Ok(answer),
             other => Err(BridgeError::Protocol(format!("unexpected reply {other:?}"))),
         }
     }

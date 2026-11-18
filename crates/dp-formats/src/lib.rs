@@ -5,3 +5,4 @@ pub mod hash;
 pub mod sexp;
 pub mod dispatch;
 pub mod lockfile;
+pub mod cluster;

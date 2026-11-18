@@ -49,9 +49,22 @@ fn project(name: &str) -> PathBuf {
     dir
 }
 
+/// Every cache read is a miss and nothing is stored.
+fn no_cache(msg: &FromWhy3find) -> Option<ToWhy3find> {
+    match msg {
+        FromWhy3find::CacheGet { rid, .. } => {
+            Some(ToWhy3find::Cache { rid: rid.clone(), result: ProverResult::NoResult })
+        }
+        FromWhy3find::CacheSet { rid, .. } => {
+            Some(ToWhy3find::Stored { rid: rid.clone(), store: false })
+        }
+        _ => None,
+    }
+}
+
 fn start(why3find: &Path, dir: &Path) -> Bridge {
     let args: Vec<OsString> = vec!["-f".into(), "arith.mlw".into()];
-    Bridge::start(why3find, &args, dir, LIMIT).unwrap()
+    Bridge::start(why3find, &args, dir, LIMIT, Box::new(no_cache)).unwrap()
 }
 
 fn proof_files(dir: &Path) -> Vec<PathBuf> {
@@ -80,19 +93,10 @@ fn run(bridge: &mut Bridge, answer: ProverResult) -> Vec<FromWhy3find> {
     loop {
         match bridge.poll(Duration::from_secs(60)).unwrap() {
             Poll::Closed => return log,
-            Poll::Idle => panic!("why3find is silent"),
+            Poll::Idle => {}
             Poll::Message(msg) => {
-                match &msg {
-                    FromWhy3find::CacheGet { rid, .. } => bridge
-                        .send(&ToWhy3find::Cache { rid: rid.clone(), result: ProverResult::NoResult })
-                        .unwrap(),
-                    FromWhy3find::Prove { rid, .. } => {
-                        bridge.send(&ToWhy3find::Answer { rid: rid.clone(), result: answer }).unwrap()
-                    }
-                    FromWhy3find::CacheSet { rid, .. } => {
-                        bridge.send(&ToWhy3find::Stored { rid: rid.clone(), store: false }).unwrap()
-                    }
-                    _ => {}
+                if let FromWhy3find::Prove { rid, .. } = &msg {
+                    bridge.send(&ToWhy3find::Answer { rid: rid.clone(), result: answer }).unwrap();
                 }
                 log.push(msg);
             }
@@ -150,17 +154,24 @@ fn requests_are_answered_while_prover_calls_are_open() {
     let mut bridge = start(&why3find, &dir);
     let (rid, gid, prover) = loop {
         match bridge.poll(Duration::from_secs(60)).unwrap() {
-            Poll::Message(FromWhy3find::CacheGet { rid, .. }) => bridge
-                .send(&ToWhy3find::Cache { rid, result: ProverResult::NoResult })
-                .unwrap(),
             Poll::Message(FromWhy3find::Prove { rid, gid, prover, .. }) => break (rid, gid, prover),
-            Poll::Message(_) => {}
+            Poll::Message(_) | Poll::Idle => {}
             other => panic!("{other:?}"),
         }
     };
     let provers = bridge.provers().unwrap();
     assert!(provers.iter().any(|p| p.prover == prover));
-    assert!(provers.iter().all(|p| p.command.contains("%f")));
+    assert!(provers.iter().all(|p| p.command.contains("%f") && p.extension.starts_with('.')));
+
+    // Why3 reads answers with the prover's driver.
+    use dp_formats::dispatch::DriverAnswer;
+    assert_eq!(bridge.read_answer(&prover, 0, b"unsat\n").unwrap(), DriverAnswer::Valid);
+    assert_eq!(bridge.read_answer(&prover, 0, b"sat\n").unwrap(), DriverAnswer::Unknown);
+    assert_eq!(bridge.read_answer(&prover, 0, b"unknown\n").unwrap(), DriverAnswer::Unknown);
+    for (status, output) in [(0, &b"  unsat\n"[..]), (0, b"hello\n"), (3, b"(error \"x\")\n"), (0, b"")] {
+        assert_ne!(bridge.read_answer(&prover, status, output).unwrap(), DriverAnswer::Valid);
+    }
+    assert!(matches!(bridge.read_answer("no-such-prover", 0, b"unsat\n"), Err(BridgeError::Refused(_))));
 
     let task = bridge.task_print(&gid).unwrap();
     assert!(!task.is_empty());
@@ -187,8 +198,8 @@ fn closing_the_pipe_stops_why3find_without_a_proof_file() {
     let mut bridge = start(&why3find, &dir);
     loop {
         match bridge.poll(Duration::from_secs(60)).unwrap() {
-            Poll::Message(FromWhy3find::CacheGet { .. }) => break,
-            Poll::Message(_) => {}
+            Poll::Message(FromWhy3find::Prove { .. }) => break,
+            Poll::Message(_) | Poll::Idle => {}
             other => panic!("{other:?}"),
         }
     }

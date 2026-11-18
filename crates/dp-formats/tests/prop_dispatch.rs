@@ -39,8 +39,9 @@ fn from_why3find() -> impl Strategy<Value = FromWhy3find> {
         0..4,
     );
     let provers = proptest::collection::vec(
-        (s(), s(), s(), s())
-            .prop_map(|(prover, digest, driver, command)| ProverInfo { prover, digest, driver, command }),
+        (s(), s(), s(), s(), s()).prop_map(|(prover, digest, driver, command, extension)| {
+            ProverInfo { prover, digest, driver, command, extension }
+        }),
         0..4,
     );
     prop_oneof![
@@ -59,6 +60,8 @@ fn from_why3find() -> impl Strategy<Value = FromWhy3find> {
         (s(), blob()).prop_map(|(qid, task)| Task { qid, task }),
         (s(), provers).prop_map(|(qid, provers)| Provers { qid, provers }),
         (s(), any::<u64>()).prop_map(|(qid, millionths)| Calibration { qid, millionths }),
+        (s(), proptest::sample::select(DriverAnswer::ALL.to_vec()))
+            .prop_map(|(qid, answer)| AnswerRead { qid, answer }),
         (s(), s()).prop_map(|(qid, message)| Error { qid, message }),
     ]
 }
@@ -75,6 +78,8 @@ fn to_why3find() -> impl Strategy<Value = ToWhy3find> {
         (s(), s()).prop_map(|(qid, gid)| TaskPrint { qid, gid }),
         s().prop_map(|qid| Provers { qid }),
         (s(), s()).prop_map(|(qid, prover)| Calibration { qid, prover }),
+        (s(), s(), any::<u32>(), blob())
+            .prop_map(|(qid, prover, status, output)| ReadAnswer { qid, prover, status, output }),
     ]
 }
 
