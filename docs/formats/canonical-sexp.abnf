@@ -1,0 +1,11 @@
+; Canonical S-expressions (design decision D-7, R7.10 criteria 3 and 8).
+; Codec: crates/dp-formats/src/sexp.rs. Every value has exactly one printed
+; form. There is no whitespace between items.
+
+sexp   = atom / list
+list   = "(" *sexp ")"                ; nested at most 64 deep
+atom   = length ":" *OCTET            ; exactly <length> octets follow the colon
+length = "0" / (%x31-39 *DIGIT)       ; decimal, no leading zeros
+
+DIGIT  = %x30-39
+OCTET  = %x00-FF
