@@ -13,15 +13,16 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
 ### Stage 1: dp-foundations
 
 - [ ] 1. Scaffold the repository, pinned toolchain and CI skeleton
-  - [ ] 1.1 Create the Cargo workspace and crate skeletons
+  - [x] 1.1 Create the Cargo workspace and crate skeletons
     - Crates `dp-core`, `dp-formats`, `dp-shell`, `dp-testkit`, `dp-frontend`, `dp-coordinator`, `dp-worker`, `dp-pool`, `dp-canon`, `dp-cert`, `dp-replay`; the other directories of the planned layout of `requirements.md` (`tests/`, `fuzz/`, `verification/tla/`, `verification/kani/`, `proofs/lean/DP/`, `eval/`, `tools/`, `docs/formats/`, `patches/`, `deps/`) are created by the first sub-task that adds a file to them, with no placeholder files, so a directory that a Verification line names exists exactly from that sub-task (R7.11 criterion 12)
     - dp-core has no dependency outside the pure-dependency allow-list of task 2.6 (R7.3)
     - _Requirements: 32.1, 32.2_
     - _Properties: 35_
 
-  - [ ] 1.2 Write the Nix flake that pins every tool (decision D-8 on OQ-N10)
+  - [-] 1.2 Write the Nix flake that pins every tool (decision D-8 on OQ-N10)
     - Pinned nixpkgs; Rust toolchain; Why3, why3find and Creusot built from opam packages inside Nix; Alt-Ergo, Z3, cvc5, Ethos with the CPC signature files, Carcara with the Alethe rule list, Lean 4, TLC, Apalache, Kani, cargo-mutants, Python with the statistics libraries (TB-15)
     - OCI images for the integration cluster built by Nix; everything under `deps/` and `flake.nix`
+    - As built: Ethos is pinned ten commits after the commit that cvc5 1.4.1 names, where `--reference` is not enforced; the Rust nightly of Kani comes from a second rust-overlay input; Alt-Ergo 2.6.4 is allowed as an unfree package. Open: the Alethe rule list (defined in stage 5), the two Linux platforms and the OCI images, which are not built yet
     - _Requirements: 36.1, 36.2, 36.9_
     - _Properties: 36_
 
@@ -150,13 +151,15 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - _Requirements: 39.3_
 
 - [ ] 4. Implement the dp-core decision core for the proved-standalone path
-  - [ ] 4.1 Implement the machine interface, trace actions and the Front_End machine skeleton (C4)
-    - Create `machine.rs` (`Machine`, `Step`), `trace.rs` (`TlaAction`, generator of `verification/tla/actions.toml`) and `frontend.rs` (the Front_End machine of the Scheduler and Verdict_Recorder) handling Session start, Goal announced, print facts, cache facts, prover call, local process exit and final write; inputs carry `now`; ordered maps only
+  - [-] 4.1 Implement the machine interface, trace actions and the Front_End machine skeleton (C4)
+    - Create `machine.rs` (`Machine`, `Step`), `trace.rs` (`TlaAction`, generator of `verification/tla/actions.toml`) and `frontend.rs` (the Front_End machine of the Scheduler and Verdict_Recorder) handling Session start, Goal announced, print facts, cache facts, prover call, local process exit and final write; inputs carry `now`; ordered collections only, as strictly increasing vectors (Creusot has no `BTreeMap` contracts), with state rules as Creusot type invariants
+    - Open: the generator of `verification/tla/actions.toml`, and action names taken from `Coordinator.tla` (task 14)
     - _Requirements: 32.1, 32.2, 5.10_
     - _Properties: 10, 35_
 
-  - [ ] 4.2 Implement `labels.rs` (`classify`, `most_informative`) with Creusot contracts
+  - [x] 4.2 Implement `labels.rs` (`classify`, `most_informative`) with Creusot contracts
     - why3find's classification of prover answers (AS-31); information order read from the TCB_Document
+    - Open: the information order is fixed in `labels.rs`; comparing it with the TCB_Document waits for `docs/tcb.toml` (task 2.4)
     - _Requirements: 31.5, 31.6_
     - _Properties: 30_
 
@@ -209,8 +212,9 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - _Properties: 5_
 
 - [ ] 5. Write the dependency patches and the why3find bridge
-  - [ ] 5.1 Write the why3find dispatch patch (`patches/why3find/`, C2, D-3, AS-37, TB-23)
+  - [x] 5.1 Write the why3find dispatch patch (`patches/why3find/`, C2, D-3, AS-37, TB-23)
     - `why3find prove --dispatch`: Goal announcements with goal path and Goal_Hash input, prover calls tagged with the strategy step, cache reads and writes, legacy `proof.json` written only from dp-frontend's answers; bridge requests for printing with a Driver and Transformation_Pipeline with task count, deterministic untransformed task print, detected provers with command lines, Calibration; a closed pipe is fatal
+    - As built: Calibration runs stay inside why3find and use its own cache; the bridge answers only for Goals announced in the current run
     - _Requirements: 3.3, 3.10, 10.5, 31.3, 34.7, 41.1, 38.1_
     - _Properties: 30, 33_
 
@@ -221,6 +225,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
 
   - [ ] 5.3 Add the patched builds to the Lock_File and implement the bridge client
     - Lock_File entries for patched why3find and Creusot (never Unpatched_Solver kinds); `crates/dp-shell/src/why3find.rs`: client of the `dispatch` format over a pipe to the why3find child process, with no FFI (D-2), used by dp-frontend, dp-worker and dp-replay
+    - Bridge request that addresses a Goal by its goal path without a proving run, for dp-replay (7.1); dp-frontend starts the patched why3find by its explicit path (`DP_WHY3FIND` in the development shell), because Creusot's wrapper puts the unpatched one on `PATH`
     - _Requirements: 38.2, 38.4, 36.1_
     - _Properties: 36_
 
@@ -665,6 +670,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
 
   - [ ] 22.3 Implement the dp-cert proof parsers, skeletons and certificate printer (C12)
     - CPC and Alethe parsers with size limits into skeletons with canonical assumption keys; printer of Composed_Certificates (Lemma sub-proofs as `assume-push` of ¬L with namespaced steps, scope step and contradiction or double-negation step; Alethe `anchor` subproofs; target proof with references to justifications); container recording `print_local(B)` and its Task_Hash; `fuzz/cpc_proof/`, `fuzz/alethe_proof/` (`ci/fuzz-smoke`, `sched/fuzz-nightly`)
+    - The printed certificate declares no symbol of `print_local(B)`; Ethos rejects every assumption of a proof that declares them again
     - _Requirements: 22.8, 22.9, 22.13, 22.15, 22.20, 39.1, 39.4, 39.5_
     - _Properties: 24, 34_
 
@@ -688,6 +694,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - Ethos and Carcara command lines with the `docs/tcb.toml` option lists; binding facts (binary hash just before start, option list, signature-file hashes, recorded input Task_Hash against `print_local(B)`, independent assumption check, `fragment_ok`, Alethe hole check while the Carcara part of AS-6 is To check); banned options never passed; process group killed at the certification deadline; output classifier from the fixed table; logged checker identity
     - Codecs, round-trip cases, fuzz targets (`ci/fuzz-smoke`, `sched/fuzz-nightly`) and registry entries for the checker entries of `docs/tcb.toml` and the checker-output record that the Certificate_Store keeps
     - Switch row R7.5 to in scope with the switch step (Notes): `check.rs` is its last artifact, after `cache_on_off/` (9.6); `targets.toml` gains `encode_key`; registry entries for `encode_key`, `lookup_ok`, `validate_entry` (R7.11 criterion 12)
+    - Ethos outcome from the exit status and standard output only; warnings on standard error (for example for `:pattern`) are not part of it
     - _Requirements: 23.1, 23.2, 23.3, 23.6, 23.7, 23.8, 23.9, 23.10, 23.12, 23.13, 23.14, 23.15, 23.16, 23.19, 36.4, 37.3, 37.4, 39.7_
     - _Properties: 27, 34_
 
@@ -768,6 +775,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [ ] 23.16 Implement the proof-producer list and the target-proof requests (D-6)
     - `proof_producers` option of `dp.toml`: the proof-producing cvc5 Solver_Configurations for target proofs, CPC preferred and Alethe second, possibly empty; for each Result that needs certification, exactly one proof-producing run of its extended problem with every imported Lemma and recomputed instance as a plain assertion, submitted as a proof Job while the Front_End is connected and not in the fallback, and started locally otherwise and for the local certification of R1.2 criterion 8; Lemma proof requests only after the target proof is obtained; with an empty list no request is made and the Result is labelled unchecked under R5.1 criterion 4
     - P5.1.12 asserted on `tests/sim/` traces with and without a Cluster connection, after the switch to the fallback, in certify-all Sessions and with an empty proof-producer list
+    - Proof-producing runs also set `--dag-thresh=0`; the Transformation_Pipeline of a certifying Driver includes `eliminate_algebraic` or `eliminate_match`, because Ethos cannot read `match` in a reference file
     - _Requirements: 21.11, 21.1, 21.2, 21.4, 2.8_
     - _Properties: 17, 23_
 
