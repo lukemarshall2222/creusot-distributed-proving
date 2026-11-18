@@ -6,6 +6,7 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+ed25519-dalek = "2"
 dp-core = { workspace = true }
 dp-formats = { workspace = true }
 dp-shell = { workspace = true }
