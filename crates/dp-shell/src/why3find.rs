@@ -293,6 +293,25 @@ impl Bridge {
         }
     }
 
+    /// Like `read_answer`, without waiting: the reply arrives through `poll`
+    /// as an `AnswerRead` message (or an `Error`) with the returned identifier.
+    pub fn ask_answer(
+        &mut self,
+        prover: &str,
+        status: u32,
+        output: &[u8],
+    ) -> Result<String, BridgeError> {
+        self.next_qid += 1;
+        let qid = format!("q{}", self.next_qid);
+        self.send(&ToWhy3find::ReadAnswer {
+            qid: qid.clone(),
+            prover: prover.to_string(),
+            status,
+            output: output.to_vec(),
+        })?;
+        Ok(qid)
+    }
+
     /// Closes the pipe to why3find. In dispatch mode why3find treats this as
     /// fatal and exits without writing its proof files.
     pub fn close(&mut self) {

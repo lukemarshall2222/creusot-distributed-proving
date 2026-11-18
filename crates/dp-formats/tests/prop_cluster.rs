@@ -16,18 +16,19 @@ fn blob() -> impl Strategy<Value = Vec<u8>> {
 }
 
 fn job() -> impl Strategy<Value = Job> {
-    (s(), s(), blob(), s(), any::<u64>(), blob()).prop_map(
-        |(job_id, prover, driver, extension, micros, goal)| Job { job_id, prover, driver, extension, micros, goal },
+    (s(), s(), blob(), s(), any::<u64>(), any::<Option<u64>>(), blob()).prop_map(
+        |(job_id, prover, driver, extension, micros, seed, goal)| Job { job_id, prover, driver, extension, micros, seed, goal },
     )
 }
 
 fn fields() -> impl Strategy<Value = ResultFields> {
-    (s(), any::<[u8; 32]>(), s(), any::<[u8; 32]>(), s(), any::<Option<u32>>(), any::<bool>(), blob(), any::<u64>())
-        .prop_map(|(job_id, task_hash, prover, binary_hash, worker, status, timed_out, output, elapsed_micros)| {
+    (s(), any::<[u8; 32]>(), s(), any::<Option<u64>>(), any::<[u8; 32]>(), s(), any::<Option<u32>>(), any::<bool>(), blob(), any::<u64>())
+        .prop_map(|(job_id, task_hash, prover, seed, binary_hash, worker, status, timed_out, output, elapsed_micros)| {
             ResultFields {
                 job_id,
                 task_hash: Hash(task_hash),
                 prover,
+                seed,
                 binary_hash: Hash(binary_hash),
                 worker,
                 status,
@@ -58,7 +59,8 @@ fn message() -> impl Strategy<Value = Message> {
 /// One changed field of a Result.
 fn mutate(f: &ResultFields, which: u8) -> ResultFields {
     let mut g = f.clone();
-    match which % 9 {
+    match which % 10 {
+        9 => g.seed = Some(g.seed.map_or(0, |s| s.wrapping_add(1))),
         0 => g.job_id.push('x'),
         1 => g.task_hash.0[0] ^= 1,
         2 => g.prover.push('x'),

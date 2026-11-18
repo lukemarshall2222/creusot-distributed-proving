@@ -76,6 +76,10 @@ fn main() -> ExitCode {
         jobs,
         cluster,
         job_margin,
+        record: std::env::var_os("DP_RECORD").map(PathBuf::from),
+        // Portfolios come from `dp.toml` (R2.1), which does not exist yet.
+        portfolio_seeds: std::env::var("DP_PORTFOLIO_SEEDS").ok().and_then(|s| s.parse().ok()).unwrap_or(1),
+        export: std::env::var_os("DP_EXPORT_DIR").map(PathBuf::from),
     };
     match session::run(config) {
         Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),

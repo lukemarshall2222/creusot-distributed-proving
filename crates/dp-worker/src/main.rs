@@ -61,6 +61,11 @@ impl Worker {
             return Err(format!("the binary of {} does not match the Lock_File", job.prover));
         }
         self.seq += 1;
+        // The Job chooses nothing of the command line but the seed.
+        let command = match job.seed {
+            Some(seed) => solver::with_seed(&command, seed),
+            None => command,
+        };
         let run = solver::start(
             &exe,
             &command,
@@ -114,6 +119,7 @@ impl Worker {
                     task_hash: hash::task_hash(&job.goal, &job.driver, b""),
                     job_id: job.job_id,
                     prover: job.prover,
+                    seed: job.seed,
                     binary_hash,
                     worker: self.id.clone(),
                     status: finished.status,
@@ -163,6 +169,7 @@ fn run(args: &[String]) -> Result<(), String> {
         provers: worker.commands.keys().cloned().collect(),
     };
     worker.send(hello)?;
+    println!("dp-worker: {} connected to {address}", worker.id);
     let result = worker.run();
     let _ = fs::remove_dir_all(tmp);
     result

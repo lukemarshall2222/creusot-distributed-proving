@@ -146,7 +146,7 @@ mod tests {
     use super::*;
 
     fn job(id: &str, prover: &str) -> Job {
-        Job { job_id: id.into(), prover: prover.into(), driver: vec![], extension: ".smt2".into(), micros: 1, goal: vec![] }
+        Job { job_id: id.into(), prover: prover.into(), driver: vec![], extension: ".smt2".into(), micros: 1, seed: None, goal: vec![] }
     }
 
     fn run(inputs: Vec<Input>) -> (State, Vec<Effect>) {
@@ -230,6 +230,7 @@ mod tests {
                     job_id: job_id.into(),
                     task_hash: Hash([0; 32]),
                     prover: "z3@".into(),
+                    seed: None,
                     binary_hash: Hash([0; 32]),
                     worker: "w".into(),
                     status: Some(0),

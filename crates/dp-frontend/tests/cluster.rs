@@ -128,28 +128,40 @@ fn sign_registry(e: &Env, s: &Setup, workers: &[(&str, &str)]) {
     fs::write(s.dir.join("registry"), out.stdout).unwrap();
 }
 
+/// Starts the Workers `w1` and `w2` and waits until both have connected.
 fn start_workers(e: &Env, s: &Setup, port: u16) -> Guard {
-    let workers = ["w1", "w2"]
-        .iter()
-        .map(|w| {
-            Command::new(e.bin.join("dp-worker"))
-                .args(["run", "--coordinator", &format!("127.0.0.1:{port}"), "--id", w])
-                .arg("--key")
-                .arg(s.dir.join(format!("{w}.key")))
-                .arg("--why3-conf")
-                .arg(&e.why3_conf)
-                .arg("--lock")
-                .arg(&e.lock)
-                .stderr(Stdio::null())
-                .spawn()
-                .unwrap()
-        })
-        .collect();
+    use std::io::{BufRead, BufReader};
+    let mut workers = Vec::new();
+    for w in ["w1", "w2"] {
+        let mut child = Command::new(e.bin.join("dp-worker"))
+            .args(["run", "--coordinator", &format!("127.0.0.1:{port}"), "--id", w])
+            .arg("--key")
+            .arg(s.dir.join(format!("{w}.key")))
+            .arg("--why3-conf")
+            .arg(&e.why3_conf)
+            .arg("--lock")
+            .arg(&e.lock)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut line = String::new();
+        BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+        assert!(line.contains("connected"), "{line:?}");
+        workers.push(child);
+    }
+    // The Coordinator reads the Workers' first messages a moment later.
+    thread::sleep(Duration::from_millis(500));
     Guard(workers)
 }
 
 fn prove(e: &Env, s: &Setup, port: u16) -> Output {
+    prove_with_seeds(e, s, port, 1)
+}
+
+fn prove_with_seeds(e: &Env, s: &Setup, port: u16, seeds: u32) -> Output {
     Command::new(env!("CARGO_BIN_EXE_dp-frontend"))
+        .env("DP_PORTFOLIO_SEEDS", seeds.to_string())
         .args(["prove", "--no-autodetect", "--no-autoload", "-f", "arith.mlw"])
         .current_dir(&s.dir)
         .env("WHY3CONFIG", &e.why3_conf)
@@ -175,6 +187,7 @@ fn workers_prove_what_the_provers_prove() {
     let port = free_port();
     let coordinator = Command::new(e.bin.join("dp-coordinator"))
         .args(["--listen", &format!("127.0.0.1:{port}")])
+        .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
@@ -196,6 +209,33 @@ fn workers_prove_what_the_provers_prove() {
 }
 
 #[test]
+fn a_race_of_seeds_proves_the_same_goals() {
+    let Some(e) = env() else { return };
+    let s = setup(&e, "race");
+    sign_registry(&e, &s, &[("w1", &s.worker_keys[0]), ("w2", &s.worker_keys[1])]);
+    let port = free_port();
+    let coordinator = Command::new(e.bin.join("dp-coordinator"))
+        .args(["--listen", &format!("127.0.0.1:{port}")])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let _guard = Guard(vec![coordinator]);
+    wait_for_port(port);
+    let _workers = start_workers(&e, &s, port);
+    thread::sleep(Duration::from_millis(300));
+    // Three Jobs with different seeds race on every prover call.
+    let out = prove_with_seeds(&e, &s, port, 3);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("Theory arith.Arith: ✘ (2/3)"), "{stderr}");
+    assert!(stderr.contains("2 proved-standalone Verdicts (2 from Workers)"), "{stderr}");
+    let proofs = proofs(&s);
+    assert!(proofs.contains(r#""Wrong": null"#) && proofs.contains(r#""Easy": { "prover":"#), "{proofs}");
+    fs::remove_dir_all(&s.dir).unwrap();
+}
+
+#[test]
 fn results_of_an_unregistered_worker_prove_nothing() {
     let Some(e) = env() else { return };
     let s = setup(&e, "unregistered");
@@ -206,6 +246,7 @@ fn results_of_an_unregistered_worker_prove_nothing() {
     let port = free_port();
     let coordinator = Command::new(e.bin.join("dp-coordinator"))
         .args(["--listen", &format!("127.0.0.1:{port}")])
+        .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
@@ -295,7 +336,7 @@ fn a_coordinator_that_forges_answers_proves_nothing() {
     tampering_coordinator(listener);
     let _workers = start_workers(&e, &s, port);
     thread::sleep(Duration::from_millis(300));
-    let out = prove(&e, &s, port);
+    let out = prove_with_seeds(&e, &s, port, 2);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(1), "{stderr}");
     // Every forged Result fails its tag; even the true goals stay unproved,

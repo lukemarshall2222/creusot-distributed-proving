@@ -79,8 +79,27 @@ pub struct Job {
     pub extension: String,
     /// The reference time limit in microseconds.
     pub micros: u64,
+    /// The seed of the Solver_Configuration, or `None` for the seed of the
+    /// Worker's prover configuration. A number is all a Job can add to the
+    /// command line that a Worker runs.
+    pub seed: Option<u64>,
     /// The Printed_Goal.
     pub goal: Vec<u8>,
+}
+
+fn optional(v: Option<u64>) -> Sexp {
+    match v {
+        Some(v) => Sexp::list([n(v)]),
+        None => Sexp::list([]),
+    }
+}
+
+fn optional_number(s: &Sexp) -> Result<Option<u64>, DecodeError> {
+    match items(s)? {
+        [] => Ok(None),
+        [v] => Ok(Some(number(v)?)),
+        _ => err("optional number"),
+    }
 }
 
 impl Job {
@@ -91,18 +110,20 @@ impl Job {
             Sexp::atom(&self.driver),
             a(&self.extension),
             n(self.micros),
+            optional(self.seed),
             Sexp::atom(&self.goal),
         ]
     }
 
     fn decode(fields: &[Sexp]) -> Result<Job, DecodeError> {
         match fields {
-            [job_id, prover, driver, extension, micros, goal] => Ok(Job {
+            [job_id, prover, driver, extension, micros, seed, goal] => Ok(Job {
                 job_id: text(job_id)?,
                 prover: text(prover)?,
                 driver: bytes(driver)?,
                 extension: text(extension)?,
                 micros: number(micros)?,
+                seed: optional_number(seed)?,
                 goal: bytes(goal)?,
             }),
             _ => err("job"),
@@ -117,6 +138,8 @@ pub struct ResultFields {
     /// Task_Hash of the Printed_Goal that the solver ran on.
     pub task_hash: Hash,
     pub prover: String,
+    /// The seed that the solver ran with, as the Job named it.
+    pub seed: Option<u64>,
     /// Hash of the solver binary that ran.
     pub binary_hash: Hash,
     pub worker: String,
@@ -135,6 +158,7 @@ impl ResultFields {
             a(&self.job_id),
             Sexp::atom(self.task_hash.0),
             a(&self.prover),
+            optional(self.seed),
             Sexp::atom(self.binary_hash.0),
             a(&self.worker),
             match self.status {
@@ -149,11 +173,12 @@ impl ResultFields {
 
     fn decode(s: &Sexp) -> Result<ResultFields, DecodeError> {
         match items(s)? {
-            [job_id, task_hash, prover, binary_hash, worker, status, end, output, elapsed] => {
+            [job_id, task_hash, prover, seed, binary_hash, worker, status, end, output, elapsed] => {
                 Ok(ResultFields {
                     job_id: text(job_id)?,
                     task_hash: hash(task_hash)?,
                     prover: text(prover)?,
+                    seed: optional_number(seed)?,
                     binary_hash: hash(binary_hash)?,
                     worker: text(worker)?,
                     status: match items(status)? {
