@@ -360,8 +360,9 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
 ### Stage 2: dp-evaluation, corpus milestone
 
 - [ ] 12. Implement the Corpus_Exporter and the CI corpus
-  - [ ] 12.1 Implement the corpus configuration and metadata formats
+  - [-] 12.1 Implement the corpus configuration and metadata formats
     - Corpus configuration (projects at pinned commits, license allow-list, CI selection rule field of OQ-N50, reference Portfolio); corpus metadata and exclusion-list codecs in dp-formats with their grammars, round-trip cases in `crates/dp-formats/tests/roundtrip.rs` (P6.1.3), `fuzz/corpus_metadata/` (run by `ci/fuzz-smoke` and `sched/fuzz-nightly`) and registry entries; pre-registration template `eval/rq/templates/corpus.toml` with the R6.2 criterion 17 fields and `<TBD-1>`, `<TBD-16>`, `<TBD-36>`, `<TBD-17>` as named placeholders, which the parser reports as missing fields for any non-smoke run
+    - As built so far: `eval/corpus/corpus.toml` (Creusot's examples and CreuSAT at pinned commits), `eval/scripts/corpus_hardness.py`, `DP_RECORD` and `DP_EXPORT_DIR` in dp-frontend, and an exploratory run in `eval/raw/exploratory-2026-11-17/`. Finding: every goal of both sources is proved by the default strategy (CreuSAT: 601 goals, 587 by the first sequential pass, 14 after it, none unsolved), so neither source has goals beyond the default strategy's reach. Open: the exporter proper, hardness classes with `<TBD-16>` and `<TBD-36>`, metadata, releases, licenses
     - _Requirements: 26.2, 26.3, 27.2, 27.17, 39.1, 39.4, 39.7_
     - _Properties: 34, 38_
 
@@ -589,8 +590,9 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
 ### Stage 4: dp-portfolio
 
 - [ ] 19. Implement Solver_Configurations, Portfolios and Races
-  - [ ] 19.1 Implement the Solver_Configuration file and its validation (C3, C16)
+  - [-] 19.1 Implement the Solver_Configuration file and its validation (C3, C16)
     - Canonical TOML grammar and codec for Solver_Configurations and Portfolios, extending the `dp.toml` grammar and codec of task 3.2; Portfolio chosen by the portfolio option; `validate_config` for unknown prover-version pairs, parse errors, duplicate names, empty Portfolios, unknown names, duplicate entries and splitting transformations; warning when portfolio racing is on without the cluster option
+    - As built so far, as a slice: seeds only. Jobs and signed Results carry a seed; a Worker changes nothing of its command line but the solver's seed options; `DP_PORTFOLIO_SEEDS` races that many Jobs on each prover call on the Cluster, the first proof label wins, and otherwise the call gets the most informative non-proof outcome. Open: the Solver_Configuration file, option lists (OQ-N37), Hard_Goal classification, `race.rs` in dp-core, the replay fields
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.7, 9.15, 9.17, 9.27_
     - _Properties: 5, 34_
 
