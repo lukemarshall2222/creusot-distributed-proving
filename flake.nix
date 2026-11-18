@@ -103,26 +103,12 @@
       );
 
       devShells = forAllSystems (
-        system: pkgs: {
-          default = pkgs.mkShell {
-            # `pkgs.dp.creusot` is named in full: inside `with`, the name
-            # `creusot` would still mean the flake input.
-            packages = with pkgs.dp; [
-              pkgs.dp.creusot
-              alt-ergo
-              apalache
-              carcara
-              cargo-mutants
-              cvc5
-              ethos
-              kani
-              lean
-              python
-              rust-toolchain
-              tlc
-              why3
-              z3
-            ];
+        system: pkgs:
+        let
+          # Environment that dp-frontend, the Workers and the tests read.
+          environment = {
+            # Signature files that Ethos loads for CPC proofs (TB-11).
+            DP_CPC_SIGNATURE = "${pkgs.dp.cpc-signature}";
 
             # Creusot's wrapper puts unpatched why3find on PATH, as Creusot_CLI
             # needs without the backend option. The patched build has the same
@@ -136,10 +122,45 @@
             # and for tests that run why3find as Creusot_CLI does.
             DP_CREUSOT_HOME = "${pkgs.dp.creusot}";
             DP_CREUSOT_EXAMPLES = "${creusot}/examples";
-
-            # Signature files that Ethos loads for CPC proofs (TB-11).
-            DP_CPC_SIGNATURE = "${pkgs.dp.cpc-signature}";
           };
+        in
+        {
+          default = pkgs.mkShell (
+            environment
+            // {
+              # `pkgs.dp.creusot` is named in full: inside `with`, the name
+              # `creusot` would still mean the flake input.
+              packages = with pkgs.dp; [
+                pkgs.dp.creusot
+                alt-ergo
+                apalache
+                carcara
+                cargo-mutants
+                cvc5
+                ethos
+                kani
+                lean
+                python
+                rust-toolchain
+                tlc
+                why3
+                z3
+              ];
+            }
+          );
+
+          # What the gating CI jobs need, and no more: without Kani, Lean,
+          # Apalache and the Certificate_Checkers, which no check uses yet.
+          ci = pkgs.mkShell (
+            environment
+            // {
+              packages = with pkgs.dp; [
+                pkgs.dp.creusot
+                python
+                tlc
+              ];
+            }
+          );
         }
       );
 

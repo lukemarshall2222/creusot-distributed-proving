@@ -31,6 +31,8 @@ end
 fn why3find() -> Option<PathBuf> {
     let path = std::env::var_os("DP_WHY3FIND").map(PathBuf::from);
     if path.is_none() {
+        // In CI a skipped test would be a check that checked nothing.
+        assert!(std::env::var_os("DP_REQUIRE_TOOLS").is_none(), "DP_WHY3FIND is not set");
         eprintln!("DP_WHY3FIND is not set: bridge test skipped");
     }
     path

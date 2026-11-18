@@ -48,6 +48,11 @@ fn env() -> Option<Env> {
             Some(Env { why3find, lock, why3_conf: home.join("creusot_why3.conf"), bin })
         }
         _ => {
+            // In CI a skipped test would be a check that checked nothing.
+            assert!(
+                std::env::var_os("DP_REQUIRE_TOOLS").is_none(),
+                "development shell or workspace executables missing"
+            );
             eprintln!("development shell or workspace executables missing: cluster test skipped");
             None
         }

@@ -1,0 +1,79 @@
+# CI on Linux (task 1.4, first version). Each step named ci/<job> runs
+# ci/jobs/<job>.sh, which also runs on a developer machine.
+#
+# Not here yet: the other jobs of the R7.11 job list (ci/lean, ci/kani,
+# ci/sim, ci/canaries, ci/traceability and the rest), which have nothing to
+# check so far, and the scheduled jobs.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The gating checks. One job, so that the solvers, Why3 and Creusot are
+  # built once; the first run builds them from source and takes long.
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix', 'deps/**', 'patches/**') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 8G
+      - name: ci/patches
+        run: ci/jobs/patches.sh
+      - name: build the CI shell
+        run: nix develop .#ci --command true
+      - name: ci/test
+        run: nix develop .#ci --command ci/jobs/test.sh
+        env:
+          DP_GENERATED_LOCK: ${{ runner.temp }}/lock.toml
+      - name: ci/creusot
+        run: nix develop .#ci --command ci/jobs/creusot.sh
+      - name: ci/tlc
+        run: nix develop .#ci --command ci/jobs/tlc.sh
+      - name: keep the Lock_File generated for this platform
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lock-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/lock.toml
+          if-no-files-found: ignore
+
+  # Reported, not gating yet: whether the builds are bit-for-bit reproducible
+  # on Linux is not known (they are not on macOS). Once this passes, it gates.
+  repro-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: ci/repro-build
+        run: ci/jobs/repro-build.sh
+
+  # Reported, not gating yet: the pinned tools that no check uses so far and
+  # the OCI images of the integration cluster. None has been built on Linux.
+  tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: build the remaining tools and the cluster images
+        run: |
+          status=0
+          for package in ethos carcara cpc-signature kani apalache lean cargo-mutants \
+                         image-coordinator image-pool image-worker; do
+            if nix build ".#$package" --no-link; then echo "built: $package"; else echo "FAILED: $package"; status=1; fi
+          done
+          exit $status

@@ -44,6 +44,11 @@ fn env() -> Option<Env> {
             Some(Env { home, examples, frontend })
         }
         _ => {
+            // In CI a skipped test would be a check that checked nothing.
+            assert!(
+                std::env::var_os("DP_REQUIRE_TOOLS").is_none(),
+                "development shell or target/debug/dp-frontend missing"
+            );
             eprintln!("development shell or target/debug/dp-frontend missing: legacy_compat skipped");
             None
         }

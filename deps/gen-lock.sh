@@ -17,7 +17,9 @@
 set -eu
 
 platform=$(nix eval --raw --impure --expr builtins.currentSystem)
-sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
+sha() {
+  if command -v sha256sum > /dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1
+}
 # Creusot's wrapper is what puts the solvers on PATH; hash the files it links to.
 wrapper=$(nix build .#creusot --no-link --print-out-paths)
 real() { python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$1"; }

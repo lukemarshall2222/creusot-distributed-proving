@@ -33,10 +33,11 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - _Requirements: 36.1, 36.2, 36.6, 36.9_
     - _Properties: 36_
 
-  - [ ] 1.4 Write the CI workflow skeleton (GitHub Actions, D-15)
+  - [-] 1.4 Write the CI workflow skeleton (GitHub Actions, D-15)
     - Every `ci/` and `sched/` job of the R7.11 CI job list with the dependencies of the design's CI job graph, including `sched/fuzz-nightly`, which runs every target under `fuzz/` for `<TBD-24>` per target (the targets `ci/fuzz-smoke` runs briefly); `ci/traceability` depends on every other `ci/` job; every `sched/` job declares input paths and a schedule
     - One script per job under `ci/jobs/`; each discovers its inputs (specifications and `.cfg` files, Kani harnesses, fuzz targets, simulation scenarios, diff suites, canary modes), so later tasks add files without editing the workflow; a `ci/` job whose inputs do not exist yet passes with a notice (`ci/traceability` catches in-scope rows that name missing artifacts), while a `sched/` job without inputs records no run, so the rows that name it are pending (R7.11 criterion 8) rather than backed by a run that checked nothing; every job runs the components with the tracing retention setting complete (R1.5 criterion 19)
     - `ci/creusot` proves dp-core and `decode_label` with unmodified pinned why3find (legacy configuration); `ci/kani` runs every harness with the bounds recorded next to it
+    - As built: `.github/workflows/ci.yml` on Linux with `ci/jobs/{patches,test,creusot,tlc,repro-build}.sh`, a `ci` development shell, and tests that fail when their tools are missing under `DP_REQUIRE_TOOLS`; `ci/repro-build` and the build of the remaining tools and images report without gating until they have passed once. Open: the other jobs of the R7.11 job list, the `sched/` jobs, `ci/traceability` as the last job, input discovery for jobs without inputs
     - _Requirements: 40.9, 40.10, 5.19_
     - _Properties: 37_
 

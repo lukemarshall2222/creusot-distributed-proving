@@ -25,6 +25,8 @@ fn env() -> Option<(PathBuf, String)> {
     match (std::env::var_os("DP_WHY3FIND"), std::env::var_os("DP_LOCK")) {
         (Some(w), Some(l)) => Some((w.into(), fs::read_to_string(l).unwrap())),
         _ => {
+            // In CI a skipped test would be a check that checked nothing.
+            assert!(std::env::var_os("DP_REQUIRE_TOOLS").is_none(), "DP_WHY3FIND or DP_LOCK is not set");
             eprintln!("DP_WHY3FIND or DP_LOCK is not set: local session test skipped");
             None
         }
