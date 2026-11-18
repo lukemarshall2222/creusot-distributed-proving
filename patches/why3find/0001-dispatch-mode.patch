@@ -1,0 +1,593 @@
+Subject: Add dispatch mode to `why3find prove`
+
+Purpose: `why3find prove --dispatch` keeps goal generation, the proof
+  strategy, tactics and the proof files in why3find, and sends every prover
+  call and every access to the prover cache to the parent process over stdin
+  and stdout. It also answers the parent's requests to print a goal with a
+  prover's driver after a list of transformations (with the number of tasks),
+  to print a goal's task, to list the provers with their commands, and to
+  report a prover's calibration. Without the option, behaviour is unchanged.
+  The message grammar is documented in src/dispatch.mli.
+Requirements: R1.2, R1.3, R2.3, R7.2, R7.5, R7.9, R7.12
+Upstream: not yet submitted
+Base: https://github.com/creusot-rs/why3find commit 89dd8721fb9de7fea5d00e58ebdabdc75a8235b8
+---
+ lib/proofs.ml    |   8 +-
+ lib/proofs.mli   |   3 +
+ src/command.ml   |   2 +
+ src/dispatch.ml  | 269 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ src/dispatch.mli |  87 ++++++++++++++++++
+ src/hammer.ml    |  44 +++++++--
+ src/prove.ml     |   6 +-
+ 7 files changed, 408 insertions(+), 11 deletions(-)
+
+diff --git a/lib/proofs.ml b/lib/proofs.ml
+index 316ba09..187f63b 100644
+--- a/lib/proofs.ml
++++ b/lib/proofs.ml
+@@ -105,6 +105,8 @@ let dump =
+       ]
+     end
+ 
++let deferred = ref false
++
+ let buffer ?profile crc = {
+     crc ;
+     proofs = crc.strategy ;
+@@ -116,7 +118,8 @@ let add theory goal crc buffer =
+   let theory = Session.thy_name theory in
+   let goal = Session.name goal in
+   let tasks = M.add goal crc @@ M.find_def M.empty theory buffer.proofs in
+-  buffer.proofs <- M.add theory tasks buffer.proofs ; dump buffer
++  buffer.proofs <- M.add theory tasks buffer.proofs ;
++  if not !deferred then dump buffer
+ 
+ let init theory goals hints buffer =
+   let theory = Session.thy_name theory in
+@@ -130,7 +133,8 @@ let init theory goals hints buffer =
+            | None -> rs
+            | Some r -> M.add a r rs)
+         M.empty goals
+-  in buffer.proofs <- M.add theory results buffer.proofs ; dump buffer
++  in buffer.proofs <- M.add theory results buffer.proofs ;
++  if not !deferred then dump buffer
+ 
+ let save cache buffer =
+   begin
+diff --git a/lib/proofs.mli b/lib/proofs.mli
+index a1cc7b0..59711a7 100644
+--- a/lib/proofs.mli
++++ b/lib/proofs.mli
+@@ -38,4 +38,7 @@ type buffer
+ val buffer : ?profile:Json.t -> crc_info -> buffer
+ val add : Session.theory -> Session.goal -> Crc.crc -> buffer -> unit
+ val init : Session.theory -> Session.goal list -> Crc.crc Mstr.t -> buffer -> unit
++(** When set, proofs are only written by [save]. *)
++val deferred : bool ref
++
+ val save : Cache.t -> buffer -> unit
+diff --git a/src/command.ml b/src/command.ml
+index 8b0e16a..508d671 100644
+--- a/src/command.ml
++++ b/src/command.ml
+@@ -682,6 +682,8 @@ let () = register ~name:"prove" ~args:"[OPTIONS] PATH..."
+             "-l", Arg.Set details, "performance details (cache, prover, tactics)";
+             "-a", Arg.Set axioms, "report axioms and parameters";
+             "-H", Arg.Set_int hammer, "[0-4] hammer strategy level (default 4)";
++            "--dispatch", Arg.Unit Dispatch.enable,
++            "send prover calls and cache accesses to the parent process";
+           ] @
+           Client.options @ [
+             "--summary",  Arg.Unit (set results `Summary), "make a summary of results";
+diff --git a/src/dispatch.ml b/src/dispatch.ml
+new file mode 100644
+index 0000000..ae0fafe
+--- /dev/null
++++ b/src/dispatch.ml
+@@ -0,0 +1,269 @@
++(**************************************************************************)
++(*                                                                        *)
++(*  SPDX-License-Identifier LGPL-2.1                                      *)
++(*  Copyright (C)                                                         *)
++(*  CEA (Commissariat à l'énergie atomique et aux énergies alternatives)  *)
++(*                                                                        *)
++(**************************************************************************)
++
++(* -------------------------------------------------------------------------- *)
++(* --- Why3 Runner                                                        --- *)
++(* -------------------------------------------------------------------------- *)
++(* -------------------------------------------------------------------------- *)
++(* --- Dispatch Mode                                                      --- *)
++(* -------------------------------------------------------------------------- *)
++
++type sexp = A of string | L of sexp list
++
++let fatal fmt =
++  Format.kasprintf
++    (fun msg -> prerr_endline ("why3find: dispatch: " ^ msg) ; Unix._exit 3) fmt
++
++(* -------------------------------------------------------------------------- *)
++(* --- Canonical S-Expressions                                            --- *)
++(* -------------------------------------------------------------------------- *)
++
++let rec print b = function
++  | A s ->
++    Buffer.add_string b (string_of_int (String.length s)) ;
++    Buffer.add_char b ':' ;
++    Buffer.add_string b s
++  | L xs -> Buffer.add_char b '(' ; List.iter (print b) xs ; Buffer.add_char b ')'
++
++exception Incomplete
++
++let parse s pos =
++  let n = String.length s in
++  let rec item i =
++    if i >= n then raise Incomplete else
++      match s.[i] with
++      | '(' -> list (i+1) []
++      | '0'..'9' -> atom i i
++      | c -> fatal "malformed message (byte %C)" c
++  and list i acc =
++    if i >= n then raise Incomplete else
++    if s.[i] = ')' then L (List.rev acc), i+1 else
++      let x,j = item i in list j (x::acc)
++  and atom i0 i =
++    if i >= n then raise Incomplete else
++      match s.[i] with
++      | '0'..'9' when i - i0 < 9 && (i = i0 || s.[i0] <> '0') -> atom i0 (i+1)
++      | ':' ->
++        let len = int_of_string (String.sub s i0 (i - i0)) in
++        if i + 1 + len > n then raise Incomplete else
++          A (String.sub s (i+1) len), i + 1 + len
++      | _ -> fatal "malformed message (atom length)"
++  in item pos
++
++(* -------------------------------------------------------------------------- *)
++(* --- Channel                                                            --- *)
++(* -------------------------------------------------------------------------- *)
++
++let enabled = ref false
++let active () = !enabled
++let output = ref Unix.stdout
++let input = Buffer.create 4096
++let replies : (string, sexp) Hashtbl.t = Hashtbl.create 64
++
++let send msg =
++  let b = Buffer.create 256 in
++  print b msg ;
++  let s = Buffer.to_bytes b in
++  let n = Bytes.length s in
++  let rec write k =
++    if k < n then write (k + Unix.write !output s k (n - k)) in
++  try write 0 with Unix.Unix_error _ -> fatal "pipe closed"
++
++let enable () =
++  if not !enabled then
++    begin
++      enabled := true ;
++      Proofs.deferred := true ;
++      Sys.set_signal Sys.sigpipe Sys.Signal_ignore ;
++      flush stdout ;
++      output := Unix.dup Unix.stdout ;
++      Unix.dup2 Unix.stderr Unix.stdout ;
++      send (L [A "hello" ; A "1"]) ;
++    end
++
++let counter = ref 0
++let fresh () = incr counter ; string_of_int !counter
++
++let micro t = string_of_int (int_of_float (Float.round (t *. 1e6)))
++let of_micro s =
++  try float_of_int (int_of_string s) /. 1e6
++  with Failure _ -> fatal "malformed message (number %S)" s
++
++let of_result : Result.t -> sexp = function
++  | NoResult -> L [A "noresult"]
++  | Failed -> L [A "failed"]
++  | Valid t -> L [A "valid" ; A (micro t)]
++  | Unknown t -> L [A "unknown" ; A (micro t)]
++  | Timeout t -> L [A "timeout" ; A (micro t)]
++
++let to_result : sexp -> Result.t = function
++  | L [A "noresult"] -> NoResult
++  | L [A "failed"] -> Failed
++  | L [A "valid" ; A t] -> Valid (of_micro t)
++  | L [A "unknown" ; A t] -> Unknown (of_micro t)
++  | L [A "timeout" ; A t] -> Timeout (of_micro t)
++  | _ -> fatal "malformed message (result)"
++
++(* -------------------------------------------------------------------------- *)
++(* --- Requests of the Parent Process                                     --- *)
++(* -------------------------------------------------------------------------- *)
++
++let context = ref None
++let goals : (string, Session.goal) Hashtbl.t = Hashtbl.create 256
++
++let configure project profile provers =
++  context := Some (project, profile, provers)
++
++let task_print task =
++  Why3.Pretty.forget_all () ;
++  Format.asprintf "%a" Why3.Pretty.print_task task
++
++let rec path goal =
++  match Session.parent goal with
++  | None -> []
++  | Some parent ->
++    let tactic = Option.fold ~none:"" ~some:Tactic.name (Session.tactic parent) in
++    let rec index i = function
++      | [] -> -1 | g::gs -> if g == goal then i else index (i+1) gs in
++    let step = [A tactic ; A (string_of_int (index 0 (Session.children parent)))] in
++    path parent @ [L step]
++
++let announce goal =
++  let gid = fresh () in
++  Hashtbl.add goals gid goal ;
++  let theory = (Session.theory goal).th_name.id_string in
++  send (L [ A "goal" ; A gid ; A (Session.file goal) ; A theory ;
++            A (Session.name goal) ; L (path goal) ;
++            A (task_print (Session.task goal)) ]) ;
++  gid
++
++let request qid (reply : unit -> unit) =
++  try reply () with
++  | Not_found -> send (L [A "error" ; A qid ; A "unknown goal or prover"])
++  | exn -> send (L [A "error" ; A qid ; A (Printexc.to_string exn)])
++
++let find_prover provers name =
++  List.find (fun p -> Prover.fullname p = name) provers
++
++let handle msg =
++  let (project : Project.t), profile, provers =
++    match !context with Some c -> c | None -> fatal "not configured" in
++  match msg with
++  | L [A ("cache" | "answer" | "stored") ; A rid ; reply] ->
++    Hashtbl.replace replies rid reply
++  | L [A "print" ; A qid ; A gid ; A prover ; L transformations] ->
++    request qid @@ fun () ->
++    let apply tasks = function
++      | A name -> List.concat_map (Why3.Trans.apply_transform name project.env) tasks
++      | L _ -> fatal "malformed message (transformation)" in
++    let prover = find_prover provers prover in
++    let task = Session.task (Hashtbl.find goals gid) in
++    let tasks = List.fold_left apply [task] transformations in
++    let bytes = match tasks with
++      | [task] -> Runner.data (Runner.prepare prover task) | _ -> "" in
++    send (L [A "printed" ; A qid ; A (string_of_int (List.length tasks)) ; A bytes])
++  | L [A "task-print" ; A qid ; A gid] ->
++    request qid @@ fun () ->
++    let task = Session.task (Hashtbl.find goals gid) in
++    send (L [A "task" ; A qid ; A (task_print task)])
++  | L [A "provers" ; A qid] ->
++    let prover (p : Prover.prover) =
++      L [ A (Prover.fullname p) ; A p.digest ; A (snd p.config.driver) ;
++          A (Why3.Whyconf.get_complete_command p.config ~with_steps:false) ] in
++    send (L (A "provers" :: A qid :: List.map prover provers))
++  | L [A "calibration" ; A qid ; A prover] ->
++    request qid @@ fun () ->
++    let prover = find_prover provers prover in
++    let wmain = Why3.Whyconf.get_main project.whyconf in
++    Fibers.background
++      ~callback:(fun v -> send (L [A "calibration" ; A qid ; A (micro v)]))
++      (Calibration.velocity wmain project.cache profile prover)
++  | _ -> fatal "unexpected message"
++
++let chunk = Bytes.create 65536
++
++let pump ~block =
++  let ready,_,_ =
++    try Unix.select [Unix.stdin] [] [] (if block then (-1.0) else 0.0)
++    with Unix.Unix_error(Unix.EINTR,_,_) -> [],[],[] in
++  if ready <> [] then
++    begin
++      let n = try Unix.read Unix.stdin chunk 0 (Bytes.length chunk)
++        with Unix.Unix_error _ -> 0 in
++      if n = 0 then fatal "pipe closed" ;
++      Buffer.add_subbytes input chunk 0 n ;
++      let data = Buffer.contents input in
++      let rec loop pos =
++        match parse data pos with
++        | msg,next -> handle msg ; loop next
++        | exception Incomplete -> pos in
++      let pos = loop 0 in
++      Buffer.clear input ;
++      Buffer.add_substring input data pos (String.length data - pos) ;
++    end
++
++let yield () = if !enabled then pump ~block:false
++
++let poll rid =
++  pump ~block:false ;
++  match Hashtbl.find_opt replies rid with
++  | None -> None
++  | Some reply -> Hashtbl.remove replies rid ; Some reply
++
++let rec wait rid =
++  match poll rid with
++  | Some reply -> reply
++  | None -> pump ~block:true ; wait rid
++
++(* -------------------------------------------------------------------------- *)
++(* --- Prover Calls and Cache Accesses                                    --- *)
++(* -------------------------------------------------------------------------- *)
++
++let cache_get ~gid prover timeout =
++  let rid = fresh () in
++  send (L [ A "cache-get" ; A rid ; A gid ; A (Prover.fullname prover) ;
++            A (micro timeout) ]) ;
++  Result.crop ~timeout @@ to_result @@ wait rid
++
++let prove ~gid ~step ?cancel prover timeout =
++  let rid = fresh () in
++  send (L [ A "prove" ; A rid ; A gid ; A step ; A (Prover.fullname prover) ;
++            A (micro timeout) ]) ;
++  let canceled = ref false in
++  let handler () =
++    if not !canceled then (canceled := true ; send (L [A "cancel" ; A rid])) in
++  Fibers.monitor ?signal:cancel ~handler @@
++  Fibers.async (fun () -> Option.map to_result (poll rid))
++
++let cache_set ~gid prover result =
++  let rid = fresh () in
++  send (L [ A "cache-set" ; A rid ; A gid ; A (Prover.fullname prover) ;
++            of_result result ]) ;
++  match wait rid with
++  | A "store" -> true
++  | A "skip" -> false
++  | _ -> fatal "malformed message (stored)"
++
++(* -------------------------------------------------------------------------- *)
++(* --- Proof Files                                                        --- *)
++(* -------------------------------------------------------------------------- *)
++
++let deferred = ref []
++
++let defer action =
++  if !enabled then deferred := action :: !deferred else action ()
++
++let finish () =
++  if !enabled then
++    begin
++      List.iter (fun action -> action ()) (List.rev !deferred) ;
++      deferred := [] ;
++      send (L [A "done"]) ;
++    end
++
++(* -------------------------------------------------------------------------- *)
+diff --git a/src/dispatch.mli b/src/dispatch.mli
+new file mode 100644
+index 0000000..4f9b51d
+--- /dev/null
++++ b/src/dispatch.mli
+@@ -0,0 +1,87 @@
++(**************************************************************************)
++(*                                                                        *)
++(*  SPDX-License-Identifier LGPL-2.1                                      *)
++(*  Copyright (C)                                                         *)
++(*  CEA (Commissariat à l'énergie atomique et aux énergies alternatives)  *)
++(*                                                                        *)
++(**************************************************************************)
++
++(* -------------------------------------------------------------------------- *)
++(* --- Why3 Runner                                                        --- *)
++(* -------------------------------------------------------------------------- *)
++(* -------------------------------------------------------------------------- *)
++(* --- Dispatch Mode                                                      --- *)
++(* -------------------------------------------------------------------------- *)
++
++(** Dispatch mode ([why3find prove --dispatch]).
++
++    In dispatch mode why3find still generates goals, runs its proof strategy
++    and tactics and writes its proof files, but it runs no prover and reads no
++    prover result from its cache. It sends every prover call and every access
++    to its prover cache to the parent process and waits for the answer.
++
++    Messages are canonical S-expressions, read from stdin and written to
++    stdout: an atom is [<decimal length>:<bytes>], a list is
++    [(<item>...)], and there is no whitespace. Regular output of why3find
++    goes to stderr. A closed pipe or a malformed message is fatal: why3find
++    exits with status 3 and writes no proof file.
++
++    Times and calibration factors are decimal integers, in microseconds and
++    in millionths. A result [<r>] is one of [(valid <t>)], [(unknown <t>)],
++    [(timeout <t>)], [(failed)] and [(noresult)]. A strategy step [<step>] is
++    [fast] (first sequential pass), [parallel] (reference-time parallel pass),
++    [parallel-long] or [replay].
++
++    From why3find to the parent:
++    - [(hello 1)], first message;
++    - [(goal <gid> <file> <theory> <name> ((<tactic> <index>)...) <task>)],
++      a new goal with its path and the print of its task, before any driver;
++    - [(cache-get <rid> <gid> <prover> <time>)], answered by [(cache <rid> <r>)];
++    - [(prove <rid> <gid> <step> <prover> <time>)], answered by
++      [(answer <rid> <r>)]; [(cancel <rid>)] asks for an early answer;
++    - [(cache-set <rid> <gid> <prover> <r>)], answered by
++      [(stored <rid> store)] or [(stored <rid> skip)];
++    - [(done)], after the proof files are written.
++
++    From the parent to why3find, each answered with the same [<qid>] or with
++    [(error <qid> <message>)]:
++    - [(print <qid> <gid> <prover> (<transformation>...))], answered by
++      [(printed <qid> <count> <bytes>)]: the number of tasks after the
++      transformations and, when it is one, the prover input that the driver
++      prints for it;
++    - [(task-print <qid> <gid>)], answered by [(task <qid> <task>)];
++    - [(provers <qid>)], answered by
++      [(provers <qid> (<prover> <digest> <driver> <command>)...)];
++    - [(calibration <qid> <prover>)], answered by
++      [(calibration <qid> <velocity>)]. *)
++
++(** Switch to dispatch mode. *)
++val enable : unit -> unit
++
++val active : unit -> bool
++
++(** Environment used to answer the requests of the parent process. *)
++val configure : Project.t -> Calibration.profile -> Prover.prover list -> unit
++
++(** Announce a goal. Returns its identifier. *)
++val announce : Session.goal -> string
++
++val cache_get : gid:string -> Prover.prover -> float -> Result.t option
++
++val prove :
++  gid:string -> step:string -> ?cancel:unit Fibers.signal ->
++  Prover.prover -> float -> Result.t Fibers.t
++
++(** Returns [true] when the result shall be stored in the local cache. *)
++val cache_set : gid:string -> Prover.prover -> Result.t -> bool
++
++(** Process the pending messages of the parent process. *)
++val yield : unit -> unit
++
++(** Run now, or at [finish] in dispatch mode. *)
++val defer : (unit -> unit) -> unit
++
++(** Run the deferred actions and tell the parent process. *)
++val finish : unit -> unit
++
++(* -------------------------------------------------------------------------- *)
+diff --git a/src/hammer.ml b/src/hammer.ml
+index 5390810..a8a99e5 100644
+--- a/src/hammer.ml
++++ b/src/hammer.ml
+@@ -29,6 +29,7 @@ let tactics h = h.tactics
+ 
+ type node = {
+   goal : Session.goal ;
++  gid : string ; (* dispatch mode *)
+   hint : Crc.crc ;
+   depth : int ;
+   hammer : hammer ;
+@@ -187,6 +188,7 @@ let node hammer ~parent ?hint goal =
+   let depth = match parent with Root _ -> 0 | Parent n -> succ n.depth in
+   {
+     hammer ; goal ;
++    gid = if Dispatch.active () then Dispatch.announce goal else "" ;
+     parent ; depth ;
+     hint ;
+     state = Paused ;
+@@ -265,7 +267,33 @@ let merge u v =
+   | Killed , w | w , Killed -> w
+   | Valid(_,t) , Valid(_,t') -> if t <= t' then u else v
+ 
+-let prover ?cancel timeout prv = fun n ->
++let dispatch ?cancel ~step timeout prv = fun n ->
++  let wmain = Why3.Whyconf.get_main n.hammer.project.whyconf in
++  let callback = Session.result n.goal in
++  let killed = ref false in
++  let+ result =
++    match Dispatch.cache_get ~gid:n.gid prv timeout with
++    | Some result ->
++      Runner.notify wmain prv result callback ;
++      Fibers.return result
++    | None ->
++      let kill = Fibers.signal () in
++      let handler () = killed := true ; Fibers.emit kill () in
++      let store result =
++        Runner.notify wmain prv result callback ;
++        if result <> Result.NoResult &&
++           Dispatch.cache_set ~gid:n.gid prv result then
++          Cache.set n.hammer.project.cache (Session.task n.goal) prv result in
++      Fibers.monitor ?signal:cancel ~handler @@
++      Fibers.monitor ~signal:killall ~handler @@
++      Fibers.finally ~callback:store @@
++      Dispatch.prove ~gid:n.gid ~step ~cancel:kill prv timeout
++  in match result with
++  | Valid t when t <= timeout -> Valid(prv,Utils.round t)
++  | _ -> if !killed then Killed else Unknown
++
++let prover ?cancel ?(step="replay") timeout prv = fun n ->
++  if Dispatch.active () then dispatch ?cancel ~step timeout prv n else
+   let h = n.hammer in
+   let wmain = Why3.Whyconf.get_main h.project.whyconf in
+   let name = Session.name n.goal in
+@@ -379,9 +407,10 @@ let create
+   let profile =
+     match profile with Some pr -> pr | None ->
+       Calibration.default project in
++  Dispatch.configure project profile provers ;
+   {
+     level ; replay ; minimize ; project ;
+-    client = Client.connect project ;
++    client = if Dispatch.active () then None else Client.connect project ;
+     provers ; tactics ; profile ; preprocess ;
+   }
+ 
+@@ -414,7 +443,7 @@ let hammer0 : strategy = fun n ->
+   if h.level > 0 && t > 0.0 && List.length h.provers > 1
+   then
+     let hprove p n =
+-      let+ verdict = prover t p n in
++      let+ verdict = prover ~step:"fast" t p n in
+       match verdict with
+       | Killed -> Interrupted
+       | Unknown -> NotFound
+@@ -422,7 +451,7 @@ let hammer0 : strategy = fun n ->
+     in sequence hprove h.provers n
+   else notfound ()
+ 
+-let hammer13 minlevel timefactor n =
++let hammer13 minlevel timefactor step n =
+   let h = n.hammer in
+   if h.level <= minlevel then notfound () else
+     let cancel = Fibers.signal () in
+@@ -431,7 +460,7 @@ let hammer13 minlevel timefactor n =
+     let+ verdicts =
+       Fibers.all @@
+       List.map
+-        (fun prv -> Fibers.finally ~callback @@ prover ~cancel time prv n)
++        (fun prv -> Fibers.finally ~callback @@ prover ~cancel ~step time prv n)
+         n.hammer.provers in
+     match List.fold_left merge Unknown verdicts with
+     | Unknown -> NotFound
+@@ -440,8 +469,8 @@ let hammer13 minlevel timefactor n =
+       let crc = Crc.prover p t in
+       q_close n crc ; Resolved
+ 
+-let hammer1 : strategy = hammer13 1 1.0
+-let hammer3 : strategy = hammer13 3 2.0
++let hammer1 : strategy = hammer13 1 1.0 "parallel"
++let hammer3 : strategy = hammer13 3 2.0 "parallel-long"
+ 
+ let hammer2 ?hint : strategy = fun n ->
+   Fibers.return @@
+@@ -611,6 +640,7 @@ let status () =
+ let process () =
+   begin
+     Client.yield () ;
++    Dispatch.yield () ;
+     Fibers.yield () ;
+     match pop () with
+     | Some node ->
+diff --git a/src/prove.ml b/src/prove.ml
+index bc70455..bde7ff9 100644
+--- a/src/prove.ml
++++ b/src/prove.ml
+@@ -447,7 +447,7 @@ let process ~(project:Project.t)
+     let path, lib = Wutil.filepath ~root ~file in
+     let theories, format = Wutil.load_theories project.env file in
+     let session = Session.create ~file ~format theories in
+-    let move = mode <> `Replay in
++    let move = mode <> `Replay && not (Dispatch.active ()) in
+     let proof = Proofs.load ~move ~root ~path ~file () in
+     let default = Calibration.default project in
+     let profile = Calibration.of_json ~default proof.profile in
+@@ -468,7 +468,8 @@ let process ~(project:Project.t)
+         (Session.theories session)
+     in
+     if save then Session.save session ;
+-    Option.iter (Proofs.save project.cache) buffer ;
++    Option.iter
++      (fun b -> Dispatch.defer (fun () -> Proofs.save project.cache b)) buffer ;
+     let henv =
+       if axioms then
+         Some (Axioms.init project)
+@@ -511,6 +512,7 @@ let prove_files ~(project:Project.t)
+          ~provers ~tactics ~axioms ~unsuccess ~gnames)
+       files ;
+     Hammer.run () ;
++    Dispatch.finish () ;
+     Utils.flush () ;
+     if details then
+       begin
