@@ -10,7 +10,7 @@ use dp_core::{
     worker::{self, Effect, Input, JobId, State},
 };
 use dp_formats::{
-    cluster::{Job, Message, ResultFields, SignedResult},
+    cluster::{Job, JobKind, Message, ResultFields, SignedResult},
     hash::{self, Hash},
 };
 use dp_shell::{
@@ -96,7 +96,14 @@ impl<E: Env> Shell<E> {
         if !self.config.pinned.iter().any(|(prover, hash)| prover == name && *hash == binary_hash) {
             return Err(format!("the binary of {} does not match the Lock_File", job.prover));
         }
-        // The Job chooses nothing of the command line but the seed.
+        // The Job chooses nothing of the command line but the seed, and
+        // whether the prover prints a proof: for a certificate the program
+        // of the Worker's own command line runs with the fixed proof
+        // options of dp-cert.
+        let command = match job.kind {
+            JobKind::Prove => command,
+            JobKind::Certify => dp_cert::proof_command(&program),
+        };
         let command = match job.seed {
             Some(seed) => solver::with_seed(&command, seed),
             None => command,
@@ -106,12 +113,10 @@ impl<E: Env> Shell<E> {
         // recomputes it from the signed Result.
         let velocity = self.config.velocities.get(&job.prover).copied().unwrap_or(1_000_000);
         let local_micros = calibration::scale(job.micros, velocity);
-        let spec = RunSpec {
-            command,
-            input: job.goal.clone(),
-            extension: job.extension.clone(),
-            micros: local_micros,
-        };
+        let mut spec = RunSpec::solver(command, job.goal.clone(), job.extension.clone(), local_micros);
+        if job.kind == JobKind::Certify {
+            spec.output_limit = dp_cert::PROOF_LIMIT as usize;
+        }
         self.env.start(id, &exe, &spec).map_err(|e| e.to_string())?;
         self.current = Some(Current { id, job, binary_hash, velocity, local_micros });
         Ok(())

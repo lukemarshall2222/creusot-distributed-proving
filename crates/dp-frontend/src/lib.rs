@@ -4,4 +4,5 @@
 
 pub mod config;
 pub mod proofs;
+pub mod revocations;
 pub mod session;

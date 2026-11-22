@@ -50,6 +50,9 @@ pub struct PortfolioOptions {
     /// Where the first sequential pass runs: local, the default, or as a
     /// race on the Cluster.
     pub first_pass: Option<FirstPass>,
+    /// The call's own prover also runs on this machine as a member of
+    /// every race, when a local solver slot is free.
+    pub local_member: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]

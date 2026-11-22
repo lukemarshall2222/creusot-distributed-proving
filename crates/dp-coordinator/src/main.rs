@@ -11,7 +11,7 @@ use dp_shell::{
 };
 
 const USAGE: &str = "usage:
-  dp-coordinator --listen HOST:PORT [--silence-seconds S] [--beat-seconds S] [--retries N] [--trace FILE]
+  dp-coordinator --listen HOST:PORT [--silence-seconds S] [--beat-seconds S] [--retries N] [--trace FILE] [--state FILE]
       [--with-parent yes]   stop when the process that started it is gone
   dp-coordinator --listen HOST:PORT --operator-key VERIFICATION_KEY ...
       takes operator commands that are signed with that key
@@ -55,8 +55,11 @@ fn operator(args: &[String]) -> Result<(), String> {
         }
         [cmd, address] if cmd == "status" => {
             match request(address, &Message::StatusRequest)? {
-                Message::Status { workers, queued, front_ends } => {
-                    println!("{front_ends} Front_Ends, {queued} queued Jobs, {} Workers", workers.len());
+                Message::Status { incarnation, workers, queued, front_ends } => {
+                    println!(
+                        "incarnation {incarnation}: {front_ends} Front_Ends, {queued} queued Jobs, {} Workers",
+                        workers.len()
+                    );
                     for w in workers {
                         println!(
                             "worker {} {} {} provers: {}",
@@ -102,7 +105,7 @@ fn request(address: &str, message: &dp_formats::cluster::Message) -> Result<dp_f
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     while std::time::Instant::now() < deadline {
         match env.poll(Duration::from_millis(100)) {
-            Some(NetEvent::Message(_, Message::Heartbeat)) | None => {}
+            Some(NetEvent::Message(_, Message::Heartbeat | Message::Welcome { .. })) | None => {}
             Some(NetEvent::Message(_, answer)) => return Ok(answer),
             Some(NetEvent::Disconnected(_)) => return Err("the Coordinator closed the connection".into()),
             Some(NetEvent::Connected(_)) => {}
@@ -141,6 +144,7 @@ fn main() -> ExitCode {
         silence_limit: seconds("--silence-seconds", 10.0),
         beat_period: seconds("--beat-seconds", 2.0),
         retries: options.get("--retries").and_then(|v| v.parse().ok()).unwrap_or(2),
+        serial: 0,
     };
     let Some(address) = options.get("--listen") else {
         eprintln!("{USAGE}");
@@ -161,7 +165,10 @@ fn main() -> ExitCode {
             ),
             None => None,
         };
-        Ok((Shell::new(env, config, trace, operator), bound))
+        // With a state file the revocations, the last serial number and
+        // the incarnation outlive a restart.
+        let state_file = options.get("--state").map(std::path::PathBuf::from);
+        Ok((Shell::with_state(env, config, trace, operator, state_file)?, bound))
     });
     let (mut shell, bound) = match started {
         Ok(started) => started,

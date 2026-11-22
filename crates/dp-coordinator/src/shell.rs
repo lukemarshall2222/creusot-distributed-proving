@@ -2,7 +2,7 @@
 //! the dp-core Coordinator machine and carries out the effects. It decides
 //! nothing, and it never looks inside a Result.
 
-use std::{collections::BTreeMap, io, time::Duration};
+use std::{collections::BTreeMap, io, path::PathBuf, time::Duration};
 
 use dp_core::{
     coord::{self, Config, Effect, Failure, Input, JobId, Offer, State},
@@ -10,8 +10,10 @@ use dp_core::{
 };
 use dp_formats::cluster::{Job, Message, Operation, SignedCommand, WorkerStatus};
 use ed25519_dalek::VerifyingKey;
+use dp_formats::sexp::{self, Sexp};
 use dp_shell::{
     env::{Env, NetEvent, Peer},
+    store,
     trace::TraceWriter,
 };
 
@@ -34,11 +36,89 @@ pub struct Shell<E: Env> {
     /// The revocations that were taken, as signed, for Front_Ends that
     /// connect later, and the names that they revoke.
     revocations: Vec<SignedCommand>,
+    /// Which start of the Coordinator this is; it grows with every start
+    /// when there is a state file.
+    incarnation: u64,
+    /// Where the revocations, the last serial number and the incarnation
+    /// are kept across restarts.
+    state_file: Option<PathBuf>,
+}
+
+/// What a Coordinator keeps across restarts (R1.7): without it, a restart
+/// would let a revoked Worker join again and an old operator command be
+/// sent again.
+struct Durable {
+    incarnation: u64,
+    serial: u64,
+    revocations: Vec<SignedCommand>,
+}
+
+impl Durable {
+    fn encode(&self) -> Vec<u8> {
+        sexp::print(&Sexp::list([
+            Sexp::atom("coordinator-state"),
+            Sexp::atom(self.incarnation.to_string()),
+            Sexp::atom(self.serial.to_string()),
+            Sexp::list(self.revocations.iter().map(|r| Sexp::List(r.encode()))),
+        ]))
+    }
+
+    fn decode(bytes: &[u8]) -> Option<Durable> {
+        let parsed = sexp::parse(bytes, 1 << 24).ok()?;
+        let [tag, incarnation, serial, revocations] = parsed.as_list()? else { return None };
+        if tag.as_str() != Some("coordinator-state") {
+            return None;
+        }
+        Some(Durable {
+            incarnation: incarnation.as_str()?.parse().ok()?,
+            serial: serial.as_str()?.parse().ok()?,
+            revocations: revocations
+                .as_list()?
+                .iter()
+                .map(|r| SignedCommand::decode(r.as_list()?).ok())
+                .collect::<Option<_>>()?,
+        })
+    }
 }
 
 impl<E: Env> Shell<E> {
+    /// A Coordinator without a state file: it forgets its revocations when
+    /// it stops.
     pub fn new(env: E, config: Config, trace: TraceWriter, operator: Option<VerifyingKey>) -> Shell<E> {
-        Shell {
+        Shell::with_state(env, config, trace, operator, None).expect("no state file is read")
+    }
+
+    /// A Coordinator that keeps its revocations, its last serial number
+    /// and its incarnation in `state_file`. A file that cannot be read as
+    /// such a state stops the start: starting empty would forget
+    /// revocations.
+    pub fn with_state(
+        env: E,
+        mut config: Config,
+        trace: TraceWriter,
+        operator: Option<VerifyingKey>,
+        state_file: Option<PathBuf>,
+    ) -> io::Result<Shell<E>> {
+        let mut durable = Durable { incarnation: 0, serial: config.serial, revocations: Vec::new() };
+        if let Some(path) = &state_file {
+            match std::fs::read(path) {
+                Ok(bytes) => {
+                    durable = Durable::decode(&bytes)
+                        .ok_or_else(|| io::Error::other(format!("{}: not a Coordinator state", path.display())))?;
+                }
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e),
+            }
+            // Only revocations that the operator signed count, as when
+            // they arrived.
+            durable.revocations.retain(|r| {
+                r.operation == Operation::Revoke && operator.as_ref().is_some_and(|key| r.verifies(key))
+            });
+            durable.incarnation += 1;
+            store::write_atomic(path, &durable.encode())?;
+        }
+        config.serial = config.serial.max(durable.serial);
+        Ok(Shell {
             state: Some(coord::Coordinator::init(&config)),
             env,
             provers: BTreeMap::new(),
@@ -51,8 +131,24 @@ impl<E: Env> Shell<E> {
             trace,
             operator,
             names: BTreeMap::new(),
-            revocations: Vec::new(),
-        }
+            revocations: durable.revocations,
+            incarnation: durable.incarnation,
+            state_file,
+        })
+    }
+
+    pub fn incarnation(&self) -> u64 {
+        self.incarnation
+    }
+
+    fn persist(&self) -> io::Result<()> {
+        let Some(path) = &self.state_file else { return Ok(()) };
+        let durable = Durable {
+            incarnation: self.incarnation,
+            serial: self.state().serial,
+            revocations: self.revocations.clone(),
+        };
+        store::write_atomic(path, &durable.encode())
     }
 
     fn revoked(&self, worker: &str) -> bool {
@@ -66,6 +162,7 @@ impl<E: Env> Shell<E> {
             self.provers.iter().find(|(_, v)| **v == id).map_or_else(|| id.to_string(), |(k, _)| k.clone())
         };
         Message::Status {
+            incarnation: self.incarnation,
             workers: state
                 .workers
                 .iter()
@@ -152,6 +249,11 @@ impl<E: Env> Shell<E> {
                         if command.operation == Operation::Revoke {
                             self.revocations.push(command.clone());
                         }
+                    }
+                    // The command is on disk before the operator hears
+                    // that it was taken.
+                    if taken {
+                        self.persist()?;
                     }
                     self.env.send(peer, &Message::OperatorResult { serial, taken });
                 }
@@ -248,7 +350,13 @@ impl<E: Env> Shell<E> {
                     _ => None,
                 };
                 let joined = matches!(input, Input::FrontEndHello { .. });
+                let hello = matches!(input, Input::FrontEndHello { .. } | Input::WorkerHello { .. });
                 self.step(input, Some(&message))?;
+                // Whoever joined learns which start of the Coordinator this is.
+                let state = self.state();
+                if hello && (state.front_ends.iter().any(|f| f.peer == peer) || state.workers.iter().any(|w| w.peer == peer)) {
+                    self.env.send(peer, &Message::Welcome { incarnation: self.incarnation });
+                }
                 // A Front_End that joins learns of the revocations so far.
                 if joined && self.state().front_ends.iter().any(|f| f.peer == peer) {
                     for revocation in self.revocations.clone() {

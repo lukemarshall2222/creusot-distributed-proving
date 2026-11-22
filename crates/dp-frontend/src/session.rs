@@ -42,7 +42,7 @@ use dp_core::{
 };
 use dp_formats::{
     cache::{self, Entry, Origin},
-    cluster::{Job, Message, Registry, SignedResult},
+    cluster::{Job, JobKind, Message, Registry, SignedResult},
     dispatch::{DriverAnswer, FromWhy3find, ProverInfo, ProverResult, StrategyStep, ToWhy3find},
     hash::{self, Hash},
     lockfile::{current_platform, Kind, LockFile},
@@ -72,47 +72,14 @@ pub struct Cluster {
     pub operator: ed25519_dalek::VerifyingKey,
 }
 
-/// What an attempt to certify a Goal gave, before the store.
-pub struct Attempt {
-    /// The certificate, if one was produced.
-    pub proof: Option<Vec<u8>>,
-    /// The checker accepted it against the reference.
-    pub accepted: bool,
-    /// Hashes of the checker binary and of its signature files as they ran.
-    pub checker_hash: Hash,
+/// The checker of certification, as a Session uses it (R5.3).
+#[derive(Clone, Debug)]
+pub struct Certification {
+    /// The checker's program: a path, or a name on PATH.
+    pub ethos: String,
+    /// The directory of its signature files, and their hash.
+    pub signature: PathBuf,
     pub signature_hash: Hash,
-}
-
-/// Produces a certificate for a Printed_Goal and has the checker check it
-/// with that print as the reference. The production adapter runs cvc5 and
-/// Ethos; a simulated Session has a scripted one.
-pub trait Certifier {
-    fn certify(&mut self, producer: &Path, goal: &[u8], extension: &str, limit: Duration) -> std::io::Result<Attempt>;
-}
-
-/// cvc5 as the proof producer and the pinned Ethos as the checker.
-pub struct EthosCertifier {
-    pub checker: dp_cert::Checker,
-    pub tmp: PathBuf,
-}
-
-impl Certifier for EthosCertifier {
-    fn certify(&mut self, producer: &Path, goal: &[u8], extension: &str, limit: Duration) -> std::io::Result<Attempt> {
-        fs::create_dir_all(&self.tmp)?;
-        let proof = dp_cert::produce(producer, goal, extension, limit, &self.tmp)?;
-        let accepted = match &proof {
-            // The checker gets more time than the solver took: checking a
-            // proof is slower than finding it for some rules.
-            Some(proof) => self.checker.check(goal, extension, proof, limit * 10 + Duration::from_secs(10), &self.tmp)?,
-            None => false,
-        };
-        Ok(Attempt {
-            proof,
-            accepted,
-            checker_hash: self.checker.binary_hash()?,
-            signature_hash: self.checker.signature_hash()?,
-        })
-    }
 }
 
 /// A member of the Portfolio: a Solver_Configuration by name.
@@ -155,8 +122,12 @@ pub struct Config {
     pub portfolio: Vec<Member>,
     /// The first sequential pass goes to the Cluster too.
     pub fast_remote: bool,
+    /// The call's own prover also runs here as a member of its race.
+    pub local_racer: bool,
+    /// Certification is on, with this checker (R5.1).
+    pub certification: Option<Certification>,
     /// Every reported proof needs a certificate, also one of an
-    /// Unpatched_Solver (R5.5). Only with a certifier.
+    /// Unpatched_Solver (R5.5). Only with certification.
     pub certify_all: bool,
     /// When set, every Printed_Goal that a prover call runs on is written to
     /// this directory, named by its Task_Hash.
@@ -347,6 +318,12 @@ pub struct Session<E: Env, W: Why3find> {
     lock_hash: Hash,
     cluster: Option<(Peer, Registry)>,
     operator: Option<ed25519_dalek::VerifyingKey>,
+    /// The Worker registry of the cluster option. It is kept when the
+    /// Coordinator is not reachable: stored Results of Workers are still
+    /// checked against it.
+    registry: Option<Registry>,
+    /// Which start of the Coordinator the Session is connected to.
+    incarnation: Option<u64>,
     /// Workers that the operator revoked: none of their Results is
     /// accepted from now on, from the Cluster or from the Result_Cache.
     revoked: BTreeSet<String>,
@@ -384,10 +361,48 @@ pub struct Session<E: Env, W: Why3find> {
     started: bool,
     matrix: Matrix,
     portfolio: Vec<Member>,
-    certifier: Option<Box<dyn Certifier>>,
+    certification: Option<Certification>,
+    /// The certifications that are under way.
+    certs: Vec<Cert>,
+    cert_runs: u64,
+    /// Certificates by where they came from: a Worker, this machine, or
+    /// the Certificate_Store of an earlier Session.
+    cert_sources: BTreeMap<&'static str, u64>,
+    job_margin: u64,
     /// Store entries of certificates whose check the machine has not
     /// labelled yet, by call.
     stored: BTreeMap<CallId, Hash>,
+}
+
+/// Identifiers of the runs of certification start here.
+const CERT_BASE: u64 = 1 << 41;
+
+/// Where a certification is.
+enum CertStage {
+    /// The proof producer runs: on a Worker (`job`, until `deadline`) or on
+    /// this machine (`run`).
+    Producing { run: Option<u64>, job: Option<String>, deadline: u64 },
+    /// The checker runs on the certificate.
+    Checking { run: u64, proof: Vec<u8> },
+}
+
+/// One certification of the Goal of a call.
+struct Cert {
+    call: CallId,
+    gid: String,
+    /// The proof producer, as why3find names it, and its executable.
+    prover: String,
+    exe: PathBuf,
+    program: String,
+    /// The Front_End's print of the Goal for that prover: the reference.
+    goal: Vec<u8>,
+    extension: String,
+    task_hash: Hash,
+    driver: Vec<u8>,
+    /// The reference time limit of the call.
+    micros: u64,
+    stage: CertStage,
+    facts: verdict::CheckFacts,
 }
 
 /// Identifiers of measurement runs start here; calls are numbered from 0.
@@ -625,12 +640,15 @@ impl<E: Env, W: Why3find> Session<E, W> {
 
     // ---- The Result_Cache (R7.5) -------------------------------------------
 
-    /// The lookup fields of the run description of a call (R7.5 criterion 1).
-    fn lookup_fields(&mut self, call: CallId) -> Result<LookupFields, SessionError> {
-        let (gid, prover, micros) = {
+    /// The lookup fields of the run description of a run on the Goal of a
+    /// call (R7.5 criterion 1): the call's own prover, or the prover and
+    /// seed of a Portfolio member.
+    fn lookup_fields(&mut self, call: CallId, prover: &str, seed: Option<u64>) -> Result<LookupFields, SessionError> {
+        let (gid, micros) = {
             let c = &self.calls[&call];
-            (c.gid.clone(), c.prover.clone(), c.micros)
+            (c.gid.clone(), c.micros)
         };
+        let prover = prover.to_string();
         let (_, task_hash) = self.print_local(&gid, &prover)?;
         let goal = &self.goals[&gid];
         let goal_path = dp_formats::sexp::print(&dp_formats::sexp::Sexp::list([
@@ -648,7 +666,7 @@ impl<E: Env, W: Why3find> Session<E, W> {
             pipeline: Vec::new(),
             prover: name.as_bytes().to_vec(),
             version: p.version.clone().into_bytes(),
-            seed: None,
+            seed,
             micros,
             import_mark: false,
             // The option list is the command line of the prover configuration.
@@ -668,7 +686,46 @@ impl<E: Env, W: Why3find> Session<E, W> {
         if !self.use_cache {
             return Ok(None);
         }
-        let wanted = cache_key::encode_key(&self.lookup_fields(call)?);
+        let call_prover = self.calls[&call].prover.clone();
+        if self.portfolio.is_empty() {
+            return Ok(self.cache_entry(call, &call_prover, None)?.map(|(input, finished, _)| (input, finished)));
+        }
+        // With a Portfolio, a call is a race of its members. A stored proof
+        // of any member answers it. Stored non-proofs answer it only if
+        // every member has one: otherwise the members without one may
+        // still prove the Goal, and the race runs.
+        let mut members: Vec<(String, Option<u64>)> = Vec::new();
+        for k in 0..self.portfolio.len() as u64 {
+            let member = self.member(&call_prover, k);
+            if !members.contains(&member) {
+                members.push(member);
+            }
+        }
+        let mut hits = Vec::new();
+        for (prover, seed) in &members {
+            if let Some(hit) = self.cache_entry(call, prover, *seed)? {
+                if hit.2 == DriverAnswer::Valid {
+                    return Ok(Some((hit.0, hit.1)));
+                }
+                hits.push(hit);
+            }
+        }
+        if hits.len() == members.len() {
+            return Ok(hits.into_iter().next().map(|(input, finished, _)| (input, finished)));
+        }
+        Ok(None)
+    }
+
+    /// The Result_Cache entry of one run description, as a cache-hit input,
+    /// with the answer that it stores.
+    fn cache_entry(
+        &mut self,
+        call: CallId,
+        prover: &str,
+        seed: Option<u64>,
+    ) -> Result<Option<(Input, Finished, DriverAnswer)>, SessionError> {
+        let prover = prover.to_string();
+        let wanted = cache_key::encode_key(&self.lookup_fields(call, &prover, seed)?);
         let path = self.cache_file(&formats_atoms(&wanted));
         let Ok(bytes) = fs::read(&path) else { return Ok(None) };
         let miss = |reason: &str| {
@@ -686,9 +743,9 @@ impl<E: Env, W: Why3find> Session<E, W> {
             miss("its lookup fields are not those of the lookup");
             return Ok(None);
         }
-        let (gid, prover, micros) = {
+        let (gid, micros) = {
             let c = &self.calls[&call];
-            (c.gid.clone(), c.prover.clone(), c.micros)
+            (c.gid.clone(), c.micros)
         };
         let (name_id, version_id) = {
             let p = self.prover(&prover)?;
@@ -729,12 +786,13 @@ impl<E: Env, W: Why3find> Session<E, W> {
         let (task_hash, result_prover, remote) = match &entry.origin {
             Origin::Local => (local_task_hash, prover.clone(), None),
             Origin::Worker(signed) => {
-                let key = self.cluster.as_ref().and_then(|(_, registry)| registry.key(&signed.fields.worker));
+                let key = self.registry.as_ref().and_then(|registry| registry.key(&signed.fields.worker));
                 let facts = RemoteFacts {
                     registered: key.is_some(),
                     revoked: self.revoked.contains(&signed.fields.worker),
                     signature_valid: key.is_some_and(|k| signed.verifies(&k)),
                     submitted: signed.fields.prover == prover
+                        && signed.fields.seed == seed
                         && signed.fields.binary_hash == entry.binary_hash,
                 };
                 (signed.fields.task_hash, signed.fields.prover.clone(), Some(facts))
@@ -768,7 +826,7 @@ impl<E: Env, W: Why3find> Session<E, W> {
             output: Vec::new(),
             micros: entry.micros,
         };
-        Ok(Some((Input::CacheHit { now: self.now(), rid: call, evidence, remote }, finished)))
+        Ok(Some((Input::CacheHit { now: self.now(), rid: call, evidence, remote }, finished, entry.answer)))
     }
 
     /// Stores the Result of a labelled run (R7.5 criterion 3).
@@ -777,12 +835,12 @@ impl<E: Env, W: Why3find> Session<E, W> {
         if !self.use_cache || matches!(answer, ProverAnswer::Failure | ProverAnswer::HighFailure) {
             return Ok(());
         }
-        // An entry is found by the run description of a prover call. The
-        // run of a Portfolio member with another prover has another
-        // description and is not stored yet.
-        if self.calls.get(&finished.call).is_some_and(|c| c.prover != finished.prover) {
-            return Ok(());
-        }
+        // The run description is that of the run: the prover that ran,
+        // and the seed of its Solver_Configuration.
+        let seed = match &finished.source {
+            Source::Worker { signed, .. } => signed.fields.seed,
+            _ => None,
+        };
         let (binary_hash, velocity, local_micros, origin) = match &finished.source {
             Source::Cache { .. } => return Ok(()),
             Source::Local { binary_hash, mismatch, velocity, local_micros } => {
@@ -802,7 +860,8 @@ impl<E: Env, W: Why3find> Session<E, W> {
         if !self.calls.contains_key(&finished.call) {
             return Ok(());
         }
-        let lookup = formats_atoms(&cache_key::encode_key(&self.lookup_fields(finished.call)?));
+        let lookup =
+            formats_atoms(&cache_key::encode_key(&self.lookup_fields(finished.call, &finished.prover, seed)?));
         let entry = Entry {
             lookup,
             binary_hash,
@@ -828,12 +887,12 @@ impl<E: Env, W: Why3find> Session<E, W> {
         let velocity = self.velocity(&prover_name)?;
         let prover = self.prover(&prover_name)?;
         let (exe, program, pinned) = (prover.exe.clone(), prover.program.clone(), prover.pinned);
-        let spec = RunSpec {
-            command: prover.info.command.clone(),
-            input: printed.bytes.clone(),
-            extension: prover.info.extension.clone(),
-            micros: calibration::scale(micros, velocity).max(1),
-        };
+        let spec = RunSpec::solver(
+            prover.info.command.clone(),
+            printed.bytes.clone(),
+            prover.info.extension.clone(),
+            calibration::scale(micros, velocity).max(1),
+        );
         // R7.7 criterion 7: the solver binary is checked just before it
         // starts (the environment reads it again only if the file changed).
         let (_, binary_hash) = self.env.solver_binary(&program)?;
@@ -867,6 +926,7 @@ impl<E: Env, W: Why3find> Session<E, W> {
         }
         let prover = self.prover(&prover_name)?;
         let job = Job {
+            kind: JobKind::Prove,
             job_id: format!("{}/{call}/{seed}", self.session_id),
             prover: prover_name.clone(),
             driver: prover.info.digest.clone().into_bytes(),
@@ -939,12 +999,7 @@ impl<E: Env, W: Why3find> Session<E, W> {
                 }
                 Ok(())
             }
-            Effect::Certify { rid } => {
-                let facts = self.certify(rid)?;
-                let now = self.now();
-                self.inputs.push_front((Input::Certificate { now, rid, facts }, None));
-                Ok(())
-            }
+            Effect::Certify { rid } => self.cert_begin(rid),
             Effect::Beat => {
                 if let Some((peer, _)) = &self.cluster {
                     self.env.send(*peer, &Message::Heartbeat);
@@ -961,6 +1016,9 @@ impl<E: Env, W: Why3find> Session<E, W> {
                 Ok(())
             }
             Effect::Answer { rid, reply } => {
+                // A call that is answered while its Goal is being certified
+                // was cancelled.
+                self.cert_abort(rid);
                 let Some(call) = self.calls.remove(&rid) else { return Ok(()) };
                 self.call_ids.remove(&call.rid);
                 // The time of the run that settled the call, if this step
@@ -984,13 +1042,26 @@ impl<E: Env, W: Why3find> Session<E, W> {
     }
 
     // ---- Certification (R5) -------------------------------------------------
+    //
+    // A certificate is produced by cvc5, on a Worker when there is a Cluster
+    // and otherwise here, and then checked here by the pinned checker with
+    // the Front_End's own print of the Goal as the reference. Both runs go
+    // on beside the solver runs. Nothing of what a Worker sends is trusted:
+    // a wrong or forged proof fails the check. dp-core gives the label from
+    // the facts that this code establishes.
 
-    /// Tries to certify the Goal of a call: cvc5 proves the Front_End's own
-    /// print of the Goal again with a proof, the pinned checker checks the
-    /// proof against that print, and the certificate is stored. Returns
-    /// what was established; dp-core gives the label.
-    fn certify(&mut self, call: CallId) -> Result<verdict::CheckFacts, SessionError> {
-        let mut facts = verdict::CheckFacts {
+    fn cert_finish(&mut self, cert: Cert) {
+        let now = self.now();
+        self.inputs.push_back((Input::Certificate { now, rid: cert.call, facts: cert.facts }, None));
+    }
+
+    fn cert_index(&self, task_hash: Hash) -> PathBuf {
+        self.dir.join(".dp-certs").join("by-task").join(task_hash.to_hex())
+    }
+
+    /// Starts the certification of the Goal of a call.
+    fn cert_begin(&mut self, call: CallId) -> Result<(), SessionError> {
+        let facts = verdict::CheckFacts {
             produced: false,
             checker_pinned: false,
             signature_pinned: false,
@@ -999,7 +1070,14 @@ impl<E: Env, W: Why3find> Session<E, W> {
             complete: false,
             stored: false,
         };
-        let Some((gid, micros)) = self.calls.get(&call).map(|c| (c.gid.clone(), c.micros)) else { return Ok(facts) };
+        let now = self.now();
+        let refuse = |session: &mut Self| {
+            session.inputs.push_back((Input::Certificate { now, rid: call, facts }, None));
+            Ok(())
+        };
+        let Some((gid, micros)) = self.calls.get(&call).map(|c| (c.gid.clone(), c.micros)) else {
+            return refuse(self);
+        };
         // The proof producer is the project's cvc5; it is not trusted.
         self.load_provers()?;
         let producer = self.provers.as_ref().expect("loaded").values().find(|p| {
@@ -1007,56 +1085,240 @@ impl<E: Env, W: Why3find> Session<E, W> {
         });
         let Some(producer) = producer else {
             eprintln!("dp-frontend: goal {gid}: no certificate, cvc5 is not a prover of the project");
-            return Ok(facts);
+            return refuse(self);
         };
-        let (name, exe, extension, driver) = (
+        let (prover, exe, program, extension, driver) = (
             producer.info.prover.clone(),
             producer.exe.clone(),
+            producer.program.clone(),
             producer.info.extension.clone(),
             producer.info.digest.clone().into_bytes(),
         );
-        let (printed, task_hash) = self.print_local(&gid, &name)?;
-        // The reference of the check is this print, and nothing else.
-        facts.bound_to_local_print = printed.tasks == 1;
-        if !facts.bound_to_local_print {
-            return Ok(facts);
+        let (printed, task_hash) = self.print_local(&gid, &prover)?;
+        if printed.tasks != 1 {
+            return refuse(self);
         }
-        let t = Instant::now();
-        let limit = Duration::from_micros(micros.max(1_000_000));
-        let attempt = match self.certifier.as_mut() {
-            Some(certifier) => certifier.certify(&exe, &printed.bytes, &extension, limit)?,
-            None => return Ok(facts),
+        let mut cert = Cert {
+            call,
+            gid,
+            prover,
+            exe,
+            program,
+            goal: printed.bytes,
+            extension,
+            task_hash,
+            driver,
+            micros: micros.max(1_000_000),
+            stage: CertStage::Producing { run: None, job: None, deadline: 0 },
+            // The reference of the check is this print, and nothing else.
+            facts: verdict::CheckFacts { bound_to_local_print: true, ..facts },
         };
-        *self.spent.entry("certify").or_default() += t.elapsed();
-        let pinned = |lock: &LockFile, kind: Kind, hash: Hash, platform: &str| {
-            lock.pins(kind, platform).any(|(_, pin)| pin == hash)
-        };
-        facts.checker_pinned = pinned(&self.lock, Kind::Checker, attempt.checker_hash, &self.platform);
-        facts.signature_pinned = pinned(&self.lock, Kind::CheckerSignature, attempt.signature_hash, &self.platform);
-        let Some(proof) = attempt.proof else { return Ok(facts) };
-        facts.produced = true;
-        facts.accepted = attempt.accepted;
-        facts.complete = !dp_cert::has_trusted_step(&proof);
-        if facts.accepted {
-            let certificate = dp_cert::Certificate {
-                goal: printed.bytes,
-                extension,
-                proof,
-                task_hash,
-                driver,
-                prover: name,
-                checker_hash: attempt.checker_hash,
-                signature_hash: attempt.signature_hash,
-            };
-            match certificate.store(&self.dir.join(".dp-certs")) {
-                Ok(content) => {
-                    facts.stored = true;
-                    self.stored.insert(call, content);
-                }
-                Err(e) => eprintln!("dp-frontend: goal {gid}: the certificate could not be stored: {e}"),
+        // A certificate that an earlier Session stored for this very print
+        // saves the production, not the check: the store is not trusted.
+        let stored = fs::read_to_string(self.cert_index(task_hash))
+            .ok()
+            .and_then(|hex| dp_formats::cluster::from_hex::<32>(&hex))
+            .and_then(|content| dp_cert::Certificate::load(&self.dir.join(".dp-certs"), Hash(content)).ok())
+            .filter(|stored| stored.goal == cert.goal && stored.prover == cert.prover);
+        match stored {
+            Some(stored) => {
+                *self.cert_sources.entry("from the store").or_insert(0) += 1;
+                self.cert_check(cert, stored.proof)
+            }
+            None => {
+                self.cert_produce(&mut cert, self.cluster.is_some())?;
+                self.certs.push(cert);
+                Ok(())
             }
         }
-        Ok(facts)
+    }
+
+    /// Starts the proof producer: on a Worker, or on this machine.
+    fn cert_produce(&mut self, cert: &mut Cert, on_cluster: bool) -> Result<(), SessionError> {
+        if let (true, Some((peer, _))) = (on_cluster, &self.cluster) {
+            let job = Job {
+                kind: JobKind::Certify,
+                job_id: format!("{}/cert/{}", self.session_id, cert.call),
+                prover: cert.prover.clone(),
+                driver: cert.driver.clone(),
+                extension: cert.extension.clone(),
+                micros: cert.micros,
+                seed: None,
+                goal: cert.goal.clone(),
+            };
+            let job_id = job.job_id.clone();
+            self.env.send(*peer, &Message::Submit(job));
+            let deadline = self.now().saturating_add(2 * cert.micros).saturating_add(self.job_margin);
+            cert.stage = CertStage::Producing { run: None, job: Some(job_id), deadline };
+            return Ok(());
+        }
+        self.cert_runs += 1;
+        let run = CERT_BASE + self.cert_runs;
+        let velocity = self.velocity(&cert.prover)?;
+        let mut spec = RunSpec::solver(
+            dp_cert::proof_command(&cert.program),
+            cert.goal.clone(),
+            cert.extension.clone(),
+            calibration::scale(cert.micros, velocity).max(1),
+        );
+        spec.output_limit = dp_cert::PROOF_LIMIT as usize;
+        self.env.start(run, &cert.exe, &spec)?;
+        cert.stage = CertStage::Producing { run: Some(run), job: None, deadline: 0 };
+        Ok(())
+    }
+
+    /// The proof producer answered: its proof goes to the checker.
+    fn cert_produced(&mut self, cert: Cert, output: Option<Vec<u8>>) -> Result<(), SessionError> {
+        match output.as_deref().and_then(dp_cert::extract_proof) {
+            Some(proof) => self.cert_check(cert, proof),
+            None => {
+                self.cert_finish(cert);
+                Ok(())
+            }
+        }
+    }
+
+    /// Starts the pinned checker on a certificate.
+    fn cert_check(&mut self, mut cert: Cert, proof: Vec<u8>) -> Result<(), SessionError> {
+        let Some(certification) = self.certification.clone() else {
+            self.cert_finish(cert);
+            return Ok(());
+        };
+        cert.facts.produced = true;
+        cert.facts.complete = !dp_cert::has_trusted_step(&proof);
+        // The checker binary is hashed as it is about to run.
+        let Ok((exe, checker_hash)) = self.env.solver_binary(&certification.ethos) else {
+            self.cert_finish(cert);
+            return Ok(());
+        };
+        let pinned = |kind: Kind, hash: Hash| self.lock.pins(kind, &self.platform).any(|(_, pin)| pin == hash);
+        cert.facts.checker_pinned = pinned(Kind::Checker, checker_hash);
+        cert.facts.signature_pinned = pinned(Kind::CheckerSignature, certification.signature_hash);
+        self.cert_runs += 1;
+        let run = CERT_BASE + self.cert_runs;
+        let spec = RunSpec {
+            command: dp_cert::check_command(&certification.ethos, &certification.signature),
+            input: proof.clone(),
+            extension: ".cpc".to_string(),
+            // Checking a proof is slower than finding it for some rules.
+            micros: cert.micros.saturating_mul(10).saturating_add(10_000_000),
+            reference: Some((cert.goal.clone(), cert.extension.clone())),
+            output_limit: 1 << 16,
+        };
+        self.env.start(run, &exe, &spec)?;
+        cert.stage = CertStage::Checking { run, proof };
+        self.stored.insert(cert.call, checker_hash);
+        self.certs.push(cert);
+        Ok(())
+    }
+
+    /// A run of certification ended.
+    fn cert_run_ended(&mut self, run: u64, done: dp_shell::env::RunEnd) -> Result<(), SessionError> {
+        let Some(at) = self.certs.iter().position(|c| match &c.stage {
+            CertStage::Producing { run: r, .. } => *r == Some(run),
+            CertStage::Checking { run: r, .. } => *r == run,
+        }) else {
+            return Ok(());
+        };
+        let mut cert = self.certs.remove(at);
+        match std::mem::replace(&mut cert.stage, CertStage::Producing { run: None, job: None, deadline: 0 }) {
+            CertStage::Producing { .. } => {
+                *self.cert_sources.entry("produced here").or_insert(0) += 1;
+                self.cert_produced(cert, (!done.timed_out).then_some(done.output))
+            }
+            CertStage::Checking { proof, .. } => {
+                let checker_hash = self.stored.remove(&cert.call);
+                cert.facts.accepted = !done.timed_out && dp_cert::accepted(done.status, &done.output);
+                if let (true, Some(checker_hash), Some(certification)) =
+                    (cert.facts.accepted, checker_hash, self.certification.clone())
+                {
+                    let certificate = dp_cert::Certificate {
+                        goal: cert.goal.clone(),
+                        extension: cert.extension.clone(),
+                        proof,
+                        task_hash: cert.task_hash,
+                        driver: cert.driver.clone(),
+                        prover: cert.prover.clone(),
+                        checker_hash,
+                        signature_hash: certification.signature_hash,
+                    };
+                    match certificate.store(&self.dir.join(".dp-certs")) {
+                        Ok(content) => {
+                            cert.facts.stored = true;
+                            self.stored.insert(cert.call, content);
+                            // For later Sessions: the certificate of this print.
+                            let _ = store::write_atomic(&self.cert_index(cert.task_hash), content.to_hex().as_bytes());
+                        }
+                        Err(e) => {
+                            eprintln!("dp-frontend: goal {}: the certificate could not be stored: {e}", cert.gid)
+                        }
+                    }
+                }
+                self.cert_finish(cert);
+                Ok(())
+            }
+        }
+    }
+
+    /// The Cluster answered a proof Job, or will not: `output` is what the
+    /// producer printed, if the Job ran. Without it the producer runs here.
+    fn cert_job_ended(&mut self, job_id: &str, output: Option<Vec<u8>>) -> Result<bool, SessionError> {
+        let Some(at) = self.certs.iter().position(
+            |c| matches!(&c.stage, CertStage::Producing { job: Some(j), .. } if j == job_id),
+        ) else {
+            return Ok(false);
+        };
+        let mut cert = self.certs.remove(at);
+        match output {
+            Some(output) => {
+                *self.cert_sources.entry("from Workers").or_insert(0) += 1;
+                self.cert_produced(cert, Some(output))?
+            }
+            None => {
+                self.cert_produce(&mut cert, false)?;
+                self.certs.push(cert);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Proof Jobs that the Cluster will not answer in time, or at all, are
+    /// run on this machine instead.
+    fn cert_fallback(&mut self, all: bool) -> Result<(), SessionError> {
+        let now = self.now();
+        let late: Vec<String> = self
+            .certs
+            .iter()
+            .filter_map(|c| match &c.stage {
+                CertStage::Producing { job: Some(job), deadline, .. } if all || now >= *deadline => Some(job.clone()),
+                _ => None,
+            })
+            .collect();
+        for job_id in late {
+            if let Some((peer, _)) = &self.cluster {
+                self.env.send(*peer, &Message::Cancel { job_id: job_id.clone() });
+            }
+            self.cert_job_ended(&job_id, None)?;
+        }
+        Ok(())
+    }
+
+    /// The call of a certification was answered without it: stop its runs.
+    fn cert_abort(&mut self, call: CallId) {
+        let Some(at) = self.certs.iter().position(|c| c.call == call) else { return };
+        let cert = self.certs.remove(at);
+        match cert.stage {
+            CertStage::Producing { run, job, .. } => {
+                if let Some(run) = run {
+                    self.env.kill(run);
+                }
+                if let (Some(job_id), Some((peer, _))) = (job, &self.cluster) {
+                    self.env.send(*peer, &Message::Cancel { job_id });
+                }
+            }
+            CertStage::Checking { run, .. } => self.env.kill(run),
+        }
+        self.stored.remove(&call);
     }
 
     // ---- Measurement runs (corpus mode) --------------------------------------
@@ -1093,12 +1355,12 @@ impl<E: Env, W: Why3find> Session<E, W> {
             }
             let prover = self.prover(&prover_name)?;
             let exe = prover.exe.clone();
-            let spec = RunSpec {
-                command: prover.info.command.clone(),
-                input: printed.bytes,
-                extension: prover.info.extension.clone(),
-                micros: calibration::scale(limit, velocity).max(1),
-            };
+            let spec = RunSpec::solver(
+                prover.info.command.clone(),
+                printed.bytes,
+                prover.info.extension.clone(),
+                calibration::scale(limit, velocity).max(1),
+            );
             self.matrix.next += 1;
             let id = MEASURE_BASE + self.matrix.next;
             self.env.start(id, &exe, &spec)?;
@@ -1459,6 +1721,10 @@ impl<E: Env, W: Why3find> Session<E, W> {
 
     fn reap(&mut self) -> Result<(), SessionError> {
         for (call, done) in self.env.finished()? {
+            if call >= CERT_BASE {
+                self.cert_run_ended(call, done)?;
+                continue;
+            }
             if call >= MEASURE_BASE {
                 self.measure_ended(call, done)?;
                 continue;
@@ -1574,13 +1840,18 @@ impl<E: Env, W: Why3find> Session<E, W> {
                     let now = self.now();
                     self.inputs.push_back((Input::ClusterHeard { now }, None));
                     match message {
+                        // The answer to a proof Job is a certificate to
+                        // check, whoever sent it.
+                        Message::Result(signed) if self.cert_job_ended(&signed.fields.job_id, None::<Vec<u8>>.or(Some(signed.fields.output.clone())))? => {}
                         Message::Result(signed) => self.result(signed)?,
+                        Message::Failed { job_id, .. } if self.cert_job_ended(&job_id, None)? => {}
                         Message::Failed { job_id, reason } => {
                             if let Some((call, seed)) = self.jobs.remove(&job_id) {
                                 eprintln!("dp-frontend: {job_id} was not run on the Cluster ({reason})");
                                 self.inputs.push_back((Input::JobNotRun { now, rid: call, seed }, None));
                             }
                         }
+                        Message::Welcome { incarnation } => self.incarnation = Some(incarnation),
                         // A revocation counts only with the operator's
                         // signature; the Coordinator merely passes it on.
                         Message::Revocation(command) => {
@@ -1588,6 +1859,10 @@ impl<E: Env, W: Why3find> Session<E, W> {
                             if signed && command.operation == dp_formats::cluster::Operation::Revoke {
                                 if self.revoked.insert(command.worker.clone()) {
                                     eprintln!("dp-frontend: the operator revoked Worker {:?}", command.worker);
+                                }
+                                // Later Sessions of the project know it too.
+                                if let Err(e) = crate::revocations::add(&self.dir, &command) {
+                                    eprintln!("dp-frontend: the revocation could not be stored: {e}");
                                 }
                             } else {
                                 eprintln!("dp-frontend: a revocation without the operator's signature was ignored");
@@ -1632,6 +1907,9 @@ impl<E: Env, W: Why3find> Session<E, W> {
             }
         }
         self.cluster_events()?;
+        // Proof Jobs that are late, or whose Cluster is gone, run here.
+        let gone = self.cluster.is_none();
+        self.cert_fallback(gone)?;
         self.reap()?;
         self.measure_start()?;
         // Deadlines of races, heartbeats and the Coordinator's silence are
@@ -1647,6 +1925,11 @@ impl<E: Env, W: Why3find> Session<E, W> {
 
     pub fn state(&self) -> &State {
         self.state.as_ref().expect("the state is present between steps")
+    }
+
+    /// Which start of the Coordinator this Session is connected to.
+    pub fn incarnation(&self) -> Option<u64> {
+        self.incarnation
     }
 
     /// The Workers that the operator revoked, as far as this Session knows.
@@ -1668,15 +1951,20 @@ impl<E: Env, W: Why3find> Session<E, W> {
         bridge: W,
         config: Config,
         standalone: Rc<RefCell<BTreeSet<(String, String)>>>,
-        certifier: Option<Box<dyn Certifier>>,
     ) -> Result<Session<E, W>, SessionError> {
-        let certify = certifier.is_some();
+        let certify = config.certification.is_some();
         let session_id = format!(
             "{:x}-{:x}",
             std::process::id(),
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos())
         );
         let operator = config.cluster.as_ref().map(|c| c.operator);
+        let registry = config.cluster.as_ref().map(|c| c.registry.clone());
+        // Revocations that earlier Sessions of this project saw.
+        let revoked = match &operator {
+            Some(key) => crate::revocations::load(&config.dir, key),
+            None => BTreeSet::new(),
+        };
         let cluster = config.cluster.and_then(|c| match env.connect(&c.address) {
             Ok(peer) => {
                 env.send(peer, &Message::FrontEndHello { session: session_id.clone() });
@@ -1705,7 +1993,9 @@ impl<E: Env, W: Why3find> Session<E, W> {
             lock_hash: config.lock_hash,
             cluster,
             operator,
-            revoked: BTreeSet::new(),
+            registry,
+            incarnation: None,
+            revoked,
             session_id,
             state: None,
             inputs: VecDeque::new(),
@@ -1735,7 +2025,11 @@ impl<E: Env, W: Why3find> Session<E, W> {
             tick_period: if silence == 0 { 200_000 } else { (beat.min(silence) / 4).clamp(1, 200_000) },
             started: false,
             portfolio: config.portfolio.clone(),
-            certifier,
+            certification: config.certification.clone(),
+            certs: Vec::new(),
+            cert_runs: 0,
+            cert_sources: BTreeMap::new(),
+            job_margin: config.job_margin.as_micros() as u64,
             stored: BTreeMap::new(),
             matrix: Matrix {
                 limit: config.matrix.map(|d| d.as_micros() as u64),
@@ -1753,6 +2047,7 @@ impl<E: Env, W: Why3find> Session<E, W> {
                 config.portfolio.len() as u64
             },
             fast_remote: config.fast_remote,
+            local_racer: config.local_racer,
             job_margin: config.job_margin.as_micros() as u64,
             silence_limit: silence,
             beat_period: beat,
@@ -1865,9 +2160,7 @@ fn core_atoms(atoms: &[cache::Atom]) -> Vec<cache_key::Atom> {
 }
 
 /// Runs one Session and returns the exit status for Creusot_CLI.
-/// `certifier` is the proof producer and checker of certification, when
-/// certification is on.
-pub fn run(config: Config, certifier: Option<Box<dyn Certifier>>) -> Result<i32, SessionError> {
+pub fn run(config: Config) -> Result<i32, SessionError> {
     let platform = current_platform();
     // R7.7 criterion 3: why3find itself is a local executable of the Session.
     let why3find = fs::canonicalize(&config.why3find)
@@ -1900,7 +2193,7 @@ pub fn run(config: Config, certifier: Option<Box<dyn Certifier>>) -> Result<i32,
     };
     let bridge = Bridge::start(&why3find, &config.args, &config.dir, MESSAGE_LIMIT, Box::new(responder))?;
     let env = OsEnv::new("dp-frontend")?;
-    let mut session = Session::start(env, bridge, config, standalone, certifier)?;
+    let mut session = Session::start(env, bridge, config, standalone)?;
     let result = loop {
         match session.turn(Duration::from_millis(5)) {
             Ok(false) => {}
@@ -1913,7 +2206,7 @@ pub fn run(config: Config, certifier: Option<Box<dyn Certifier>>) -> Result<i32,
     }
     session.trace.finish()?;
     let files = goal_labels(session.state(), &session.goals);
-    let Session { bridge, state, counts, cache_hits, remote_proofs, spent, dir, lock_hash, .. } = session;
+    let Session { bridge, state, counts, cache_hits, remote_proofs, spent, dir, lock_hash, cert_sources, .. } = session;
     match result {
         Ok(()) => {
             let status = bridge.wait()?;
@@ -1923,8 +2216,9 @@ pub fn run(config: Config, certifier: Option<Box<dyn Certifier>>) -> Result<i32,
             let verdicts =
                 state.verdicts.entries.iter().filter(|v| v.label == Label::ProvedStandalone).count();
             let certified = state.verdicts.entries.iter().filter(|v| v.label == Label::Certified).count();
-            if certified > 0 {
-                eprintln!("dp-frontend: {certified} certified Verdicts");
+            if certified > 0 || !cert_sources.is_empty() {
+                let sources: Vec<_> = cert_sources.iter().map(|(from, n)| format!("{n} {from}")).collect();
+                eprintln!("dp-frontend: {certified} certified Verdicts; certificates checked: {}", sources.join(", "));
             }
             let summary: Vec<_> = counts.iter().map(|(label, n)| format!("{n} {label}")).collect();
             eprintln!(

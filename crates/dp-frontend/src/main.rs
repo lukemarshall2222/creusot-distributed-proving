@@ -59,6 +59,19 @@ fn main() -> ExitCode {
         portfolio_seeds: options.portfolio_seeds,
         portfolio: options.portfolio,
         fast_remote: options.fast_remote,
+        local_racer: options.local_racer,
+        certification: match options.checker {
+            // The signature files are hashed once, at the start.
+            Some(checker) => match checker.signature_hash() {
+                Ok(signature_hash) => Some(session::Certification {
+                    ethos: checker.ethos.to_string_lossy().into_owned(),
+                    signature: checker.signature,
+                    signature_hash,
+                }),
+                Err(e) => return fail(format!("the signature files of the checker: {e}")),
+            },
+            None => None,
+        },
         certify_all: options.certify_all,
         export: std::env::var_os("DP_EXPORT_DIR").map(PathBuf::from),
         trace: options.trace,
@@ -70,13 +83,7 @@ fn main() -> ExitCode {
             .filter(|s| *s > 0.0)
             .map(std::time::Duration::from_secs_f64),
     };
-    let scratch = std::env::temp_dir().join(format!("dp-frontend-certify-{}", std::process::id()));
-    let certifier = options.checker.map(|checker| {
-        Box::new(session::EthosCertifier { checker, tmp: scratch.clone() }) as Box<dyn session::Certifier>
-    });
-    let result = session::run(config, certifier);
-    let _ = std::fs::remove_dir_all(&scratch);
-    match result {
+    match session::run(config) {
         Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
         Err(e) => fail(e),
     }

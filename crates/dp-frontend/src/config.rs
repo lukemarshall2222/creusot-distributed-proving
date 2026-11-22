@@ -28,6 +28,7 @@ pub struct Options {
     pub portfolio_seeds: u64,
     pub portfolio: Vec<Member>,
     pub fast_remote: bool,
+    pub local_racer: bool,
     /// The checker of certification, when certification is on.
     pub checker: Option<dp_cert::Checker>,
     pub certify_all: bool,
@@ -154,6 +155,14 @@ pub fn load(dir: &Path) -> Result<Options, String> {
         (None, _) => (FirstPass::Local, "portfolio.first_pass = local"),
     };
 
+    let local_member = pick(
+        "portfolio.local_member",
+        "DP_LOCAL_MEMBER",
+        |t| t.parse().ok(),
+        file.portfolio.local_member,
+        false,
+    )?;
+
     let micros = |s: f64| (s * 1e6) as u64;
     let parsed_address = address.as_ref().and_then(|a| cluster_address(&a.value));
     let settings = Settings {
@@ -233,6 +242,7 @@ pub fn load(dir: &Path) -> Result<Options, String> {
         portfolio_seeds: seeds.value,
         portfolio,
         fast_remote: first_pass.0 == FirstPass::Cluster,
+        local_racer: local_member.value,
         checker: if certify.value { checker } else { None },
         certify_all: certify_all.value,
         trace: trace_file.map(|f| {

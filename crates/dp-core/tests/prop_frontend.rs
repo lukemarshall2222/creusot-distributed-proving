@@ -27,6 +27,7 @@ fn config(local_jobs: u64, seeds: u64) -> Config {
         seeds,
         fast_remote: false,
         certify: false,
+        local_racer: false,
         job_margin: 10,
         silence_limit: 0,
         beat_period: u64::MAX,
@@ -138,8 +139,16 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(2000))]
 
     #[test]
-    fn a_session_keeps_its_promises(inputs in session(), local_jobs in 0u64..3, seeds in 0u64..4) {
-        let cfg = config(local_jobs, seeds);
+    fn a_session_keeps_its_promises(
+        inputs in session(),
+        local_jobs in 0u64..3,
+        seeds in 0u64..4,
+        local_racer in any::<bool>(),
+        fast_remote in any::<bool>(),
+    ) {
+        let mut cfg = config(local_jobs, seeds);
+        cfg.local_racer = local_racer;
+        cfg.fast_remote = fast_remote;
         let mut state: State = FrontEnd::init(&cfg);
         let mut answered: BTreeSet<u64> = BTreeSet::new();
         let mut open: BTreeSet<u64> = BTreeSet::new();          // calls made and not yet answered
@@ -172,6 +181,13 @@ proptest! {
                 }
             }
 
+            // A local run that ended holds no solver slot any more, whether
+            // it was a call's own run or the local member of its race.
+            if let Input::LocalRun { rid, .. } = input {
+                if out.action != TlaAction::Discard {
+                    prop_assert!(local.remove(&rid), "a local run ended that was not started: {}", rid);
+                }
+            }
             if let Input::ProverCall { rid, goal, .. } = input {
                 if out.action != TlaAction::Discard {
                     open.insert(rid);
@@ -201,7 +217,7 @@ proptest! {
                     // Only a Session on the Cluster talks to the Coordinator.
                     Effect::Beat | Effect::LeaveCluster => prop_assert!(before.cluster),
                     Effect::CancelLocal { rid } => {
-                        prop_assert!(local.contains(&rid));
+                        prop_assert!(local.remove(&rid), "a local run was cancelled that does not run: {}", rid);
                     }
                     Effect::Submit { .. } => {
                         // Jobs go to the Cluster only while the Session uses it.
@@ -633,4 +649,63 @@ fn without_certification_an_unpinned_proof_is_unchecked() {
         last = out.effects;
     }
     assert_eq!(last, vec![Effect::Answer { rid: 9, reply: Reply::Unknown }]);
+}
+
+// P-ID: P2.2.1, P2.2.8
+#[test]
+fn the_local_member_of_a_race_can_win_it_or_lose_it() {
+    let mut cfg = config(1, 2);
+    cfg.local_racer = true;
+    let racing = |cfg: &Config| {
+        let mut state = FrontEnd::init(cfg);
+        let mut last = Vec::new();
+        for input in [
+            Input::SessionStart { now: 0, cluster: true },
+            Input::GoalAnnounced { now: 0, goal: 5 },
+            Input::ProverCall { now: 0, rid: 9, goal: 5, prover: 1, pass: Pass::Later, micros: 4 },
+            Input::PrintFacts { now: 0, rid: 9, task_count: 1 },
+        ] {
+            let out = step(state, input);
+            state = out.state;
+            last = out.effects;
+        }
+        assert_eq!(
+            last,
+            vec![Effect::Submit { rid: 9, seed: 0 }, Effect::Submit { rid: 9, seed: 1 }, Effect::StartLocal { rid: 9 }]
+        );
+        state
+    };
+    // The local member proves the Goal first: the Jobs are cancelled.
+    let out = step(racing(&cfg), Input::LocalRun { now: 1, rid: 9, evidence: good() });
+    assert_eq!(
+        out.effects,
+        vec![
+            Effect::CancelJob { rid: 9, seed: 0 },
+            Effect::CancelJob { rid: 9, seed: 1 },
+            Effect::Answer { rid: 9, reply: Reply::Valid },
+        ]
+    );
+    assert_eq!(out.state.local_running, 0);
+    // A Job proves it first: the local member is stopped and its slot freed.
+    let out = step(racing(&cfg), result(1, good(), true));
+    assert_eq!(
+        out.effects,
+        vec![
+            Effect::CancelJob { rid: 9, seed: 0 },
+            Effect::CancelLocal { rid: 9 },
+            Effect::Answer { rid: 9, reply: Reply::Valid },
+        ]
+    );
+    assert_eq!(out.state.local_running, 0);
+    // Nobody proves it: the call is answered when the last member ends,
+    // whichever that is.
+    let (state, effects) = run(racing(&cfg), &[result(0, unknown(), true), result(1, unknown(), true)]);
+    assert!(effects.is_empty(), "the local member still runs: {effects:?}");
+    let out = step(state, Input::LocalRun { now: 3, rid: 9, evidence: unknown() });
+    assert_eq!(out.effects, vec![Effect::Answer { rid: 9, reply: Reply::Unknown }]);
+    // The Cluster is lost: the local member goes on as the call's own run.
+    let out = step(racing(&cfg), Input::ClusterLost { now: 2 });
+    assert!(out.effects.is_empty(), "{:?}", out.effects);
+    let out = step(out.state, Input::LocalRun { now: 3, rid: 9, evidence: good() });
+    assert_eq!(out.effects, vec![Effect::Answer { rid: 9, reply: Reply::Valid }]);
 }

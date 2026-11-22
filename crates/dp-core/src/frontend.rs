@@ -84,6 +84,9 @@ pub struct Call {
     pub lost: Vec<Outcome>,
     /// When the Front_End stops waiting for its race.
     pub deadline: Time,
+    /// The call's own prover also runs on this machine, as one more member
+    /// of its race.
+    pub racer: bool,
 }
 
 /// What does not change during a Session.
@@ -100,6 +103,10 @@ pub struct Config {
     pub fast_remote: bool,
     /// How long, beyond twice its time limit, the Front_End waits for a race.
     pub job_margin: Time,
+    /// A race on the Cluster has a local member: the call's own prover
+    /// also runs on this machine when a solver slot is free, and whichever
+    /// proves the Goal first wins.
+    pub local_racer: bool,
     /// Certification is on (R5.1): a reported proof that is not
     /// proved-standalone gets a certificate and a run of the pinned checker.
     pub certify: bool,
@@ -406,7 +413,13 @@ fn fall_back(s: &mut State, effects: &mut Vec<Effect>) {
     #[invariant(s.goals == _old.goals && s.verdicts == _old.verdicts && s.phase == _old.phase)]
     while k < s.calls.len() {
         if s.calls[k].place == Place::Remote {
-            s.calls[k].place = Place::Queued;
+            // A local member that runs already is the call's local run.
+            if s.calls[k].racer {
+                s.calls[k].place = Place::Local;
+                s.calls[k].racer = false;
+            } else {
+                s.calls[k].place = Place::Queued;
+            }
             s.calls[k].jobs.clear();
             s.calls[k].lost.clear();
         }
@@ -417,10 +430,12 @@ fn fall_back(s: &mut State, effects: &mut Vec<Effect>) {
 
 /// Moves queued calls to free local solver slots, oldest first.
 #[ensures((^s).goals == s.goals && (^s).verdicts == s.verdicts && (^s).phase == s.phase)]
+#[ensures((^s).calls@.len() == s.calls@.len())]
 fn start_queued(s: &mut State, effects: &mut Vec<Effect>) {
     let _old = snapshot! { *s };
     let mut k = 0;
     #[invariant(k@ <= s.calls@.len())]
+    #[invariant(s.calls@.len() == _old.calls@.len())]
     #[invariant(s.goals == _old.goals && s.verdicts == _old.verdicts && s.phase == _old.phase)]
     while k < s.calls.len() && s.local_running < s.config.local_jobs {
         if s.calls[k].place == Place::Queued {
@@ -434,11 +449,22 @@ fn start_queued(s: &mut State, effects: &mut Vec<Effect>) {
 
 /// A local solver slot became free.
 #[ensures((^s).goals == s.goals && (^s).verdicts == s.verdicts && (^s).phase == s.phase)]
+#[ensures((^s).calls@.len() == s.calls@.len())]
 fn release_local(s: &mut State, effects: &mut Vec<Effect>) {
     if s.local_running > 0 {
         s.local_running -= 1;
     }
     start_queued(s, effects);
+}
+
+/// Stops the local member of a race, if it runs, and frees its slot.
+#[ensures((^s).goals == s.goals && (^s).verdicts == s.verdicts && (^s).phase == s.phase)]
+#[ensures((^s).calls@.len() == s.calls@.len())]
+fn stop_racer(s: &mut State, racer: bool, rid: CallId, effects: &mut Vec<Effect>) {
+    if racer {
+        effects.push(Effect::CancelLocal { rid });
+        release_local(s, effects);
+    }
 }
 
 /// Cancels the open Jobs of a race.
@@ -485,6 +511,7 @@ fn answer_or_certify(s: &mut State, call: Call, outcome: Outcome, effects: &mut 
         let rid = call.rid;
         let mut call = call;
         call.place = Place::Certifying;
+        call.racer = false;
         call.jobs.clear();
         s.calls.push(call);
         effects.push(Effect::Certify { rid });
@@ -515,15 +542,22 @@ fn conclude(
     k: usize,
     evidence: Evidence,
     remote: Option<RemoteFacts>,
+    // The run is that of the local member of a race.
+    local_member: bool,
     action: TlaAction,
 ) -> Step<State, Effect> {
     let mut effects = Vec::new();
     let rid = s.calls[k].rid;
     let ctx = context(s.config.clone(), evidence);
     let decision = decide(evidence, &ctx, remote);
+    if local_member {
+        // Its run is over and its slot is free.
+        s.calls[k].racer = false;
+        release_local(&mut s, &mut effects);
+    }
     let raced = match remote {
         Some(_) => true,
-        None => false,
+        None => local_member,
     };
     match decision {
         Decision::Proved => {
@@ -533,6 +567,7 @@ fn conclude(
             s.verdicts = record_verdict(s.verdicts, call.goal, Label::ProvedStandalone);
             if raced {
                 cancel_jobs(&call, &mut effects);
+                stop_racer(&mut s, call.racer, call.rid, &mut effects);
             } else {
                 release_local(&mut s, &mut effects);
             }
@@ -546,7 +581,7 @@ fn conclude(
             };
             if raced {
                 s.calls[k].lost.push(outcome);
-                if s.calls[k].jobs.is_empty() {
+                if s.calls[k].jobs.is_empty() && !s.calls[k].racer {
                     end_lost_race(&mut s, k, &mut effects);
                 }
             } else {
@@ -625,6 +660,7 @@ pub fn step(mut s: State, i: Input) -> Step<State, Effect> {
                 jobs: Vec::new(),
                 lost: Vec::new(),
                 deadline: 0,
+                racer: false,
             });
             effects.push(Effect::Print { rid });
             done(s, effects, TlaAction::ProverCall)
@@ -666,6 +702,10 @@ pub fn step(mut s: State, i: Input) -> Step<State, Effect> {
                     // A Portfolio of no seeds: run locally.
                     s.calls[k].place = Place::Queued;
                     start_queued(&mut s, &mut effects);
+                } else if s.config.local_racer && s.local_running < s.config.local_jobs {
+                    s.calls[k].racer = true;
+                    s.local_running += 1;
+                    effects.push(Effect::StartLocal { rid });
                 }
             } else {
                 s.calls[k].place = Place::Queued;
@@ -695,8 +735,10 @@ pub fn step(mut s: State, i: Input) -> Step<State, Effect> {
                     Step { state: s, effects, action: TlaAction::CacheHit, log }
                 }
                 Decision::Lost(outcome) => {
-                    s.calls.remove(k);
-                    effects.push(Effect::Answer { rid, reply: reply_of(outcome) });
+                    // A stored proof that lacks a proof label needs its
+                    // certificate, like a fresh one (R7.5 criterion 6).
+                    let call = s.calls.remove(k);
+                    answer_or_certify(&mut s, call, outcome, &mut effects);
                     let mut log = Vec::new();
                     log.push(LogEntry::Lost { call: rid, outcome });
                     Step { state: s, effects, action: TlaAction::CacheHit, log }
@@ -709,10 +751,11 @@ pub fn step(mut s: State, i: Input) -> Step<State, Effect> {
                 Some(k) => k,
                 None => return discard(s),
             };
-            if s.calls[k].place != Place::Local {
+            let member = s.calls[k].place == Place::Remote && s.calls[k].racer;
+            if s.calls[k].place != Place::Local && !member {
                 return discard(s);
             }
-            conclude(s, k, evidence, None, TlaAction::LocalExit)
+            conclude(s, k, evidence, None, member, TlaAction::LocalExit)
         }
         Input::RemoteResult {
             rid, seed, prover, evidence, signature_valid, registered, revoked, velocity, local_micros, ..
@@ -748,7 +791,7 @@ pub fn step(mut s: State, i: Input) -> Step<State, Effect> {
                 submitted: prover == s.calls[k].prover
                     && local_micros == crate::calibration::scale(s.calls[k].micros, velocity),
             };
-            conclude(s, k, evidence, Some(facts), TlaAction::RemoteResult)
+            conclude(s, k, evidence, Some(facts), false, TlaAction::RemoteResult)
         }
         Input::JobNotRun { rid, seed, .. } => {
             let k = match find_call(&s.calls, rid) {
@@ -763,7 +806,7 @@ pub fn step(mut s: State, i: Input) -> Step<State, Effect> {
                 None => return discard(s),
             };
             s.calls[k].jobs.remove(j);
-            if s.calls[k].jobs.is_empty() {
+            if s.calls[k].jobs.is_empty() && !s.calls[k].racer {
                 end_lost_race(&mut s, k, &mut effects);
             }
             done(s, effects, TlaAction::JobNotRun)
@@ -780,7 +823,10 @@ pub fn step(mut s: State, i: Input) -> Step<State, Effect> {
                     effects.push(Effect::CancelLocal { rid });
                     release_local(&mut s, &mut effects);
                 }
-                Place::Remote => cancel_jobs(&call, &mut effects),
+                Place::Remote => {
+                    cancel_jobs(&call, &mut effects);
+                    stop_racer(&mut s, call.racer, rid, &mut effects);
+                }
                 _ => {}
             }
             effects.push(Effect::Answer { rid, reply: Reply::NoResult });
@@ -853,6 +899,8 @@ pub fn step(mut s: State, i: Input) -> Step<State, Effect> {
                 if s.calls[k].place == Place::Remote && now >= s.calls[k].deadline {
                     let mut call = s.calls.remove(k);
                     cancel_jobs(&call, &mut effects);
+                    stop_racer(&mut s, call.racer, call.rid, &mut effects);
+                    call.racer = false;
                     call.lost.push(Outcome::Timeout);
                     let best = most_informative(&call.lost);
                     answer_or_certify(&mut s, call, best, &mut effects);

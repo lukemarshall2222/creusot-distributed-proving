@@ -133,6 +133,17 @@ FrontEndLost(p) ==
 
 PeerLost(p) == WorkerLost(p) \/ FrontEndLost(p)
 
+(* The Coordinator stops and starts again: it has no peer and holds no Job.
+   What it keeps on disk (revocations, the last serial number of an operator
+   command, its incarnation) is outside this model. Whoever was connected
+   joins again as a new peer; a Job that a Worker was running is not held
+   any more, and its Front_End runs the call itself. *)
+Restart ==
+  /\ frontEnds' = {} /\ workers' = {} /\ queue' = {} /\ draining' = {}
+  /\ offers' = [p \in Peers |-> {}]
+  /\ busy' = [p \in Peers |-> None]
+  /\ UNCHANGED <<owner, prover, lost>>
+
 (* Steps that change nothing here: heartbeats, ticks, discarded inputs, and
    the loss of a peer that is not connected. *)
 Stutter == UNCHANGED vars
@@ -143,6 +154,7 @@ Next ==
   \/ \E p \in Peers, j \in Jobs, a \in Provers : Submit(p, j, a)
   \/ \E p \in Peers, j \in Jobs : Assign(p, j) \/ CancelCall(p, j) \/ Forward(p, j) \/ JobNotRun(p, j)
   \/ \E j \in Jobs : FailNoWorker(j)
+  \/ Restart
 
 Spec == Init /\ [][Next]_vars
 

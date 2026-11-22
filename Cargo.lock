@@ -336,6 +336,7 @@ dependencies = [
 name = "dp-worker"
 version = "0.0.0"
 dependencies = [
+ "dp-cert",
  "dp-core",
  "dp-formats",
  "dp-shell",

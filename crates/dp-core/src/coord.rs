@@ -70,6 +70,9 @@ pub struct Config {
     /// How many times a Job is given to another Worker after the Worker
     /// that ran it was lost, before the Job fails.
     pub retries: u64,
+    /// The largest serial number of an operator command that an earlier
+    /// start of this Coordinator took: none of those is taken again.
+    pub serial: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, DeepModel)]
@@ -684,7 +687,14 @@ impl Machine for Coordinator {
     type Effect = Effect;
 
     fn init(cfg: &Config) -> State {
-        State { config: *cfg, front_ends: Vec::new(), workers: Vec::new(), queue: Vec::new(), beat: 0, serial: 0 }
+        State {
+            config: *cfg,
+            front_ends: Vec::new(),
+            workers: Vec::new(),
+            queue: Vec::new(),
+            beat: 0,
+            serial: cfg.serial,
+        }
     }
 
     fn step(s: State, i: Input) -> Step<State, Effect> {

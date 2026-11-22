@@ -67,9 +67,21 @@ fn items(s: &Sexp) -> Result<&[Sexp], DecodeError> {
     s.as_list().ok_or_else(|| DecodeError("expected a list".into()))
 }
 
+/// What a Job asks a Worker for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JobKind {
+    /// The prover's answer on the Printed_Goal.
+    Prove,
+    /// A certificate: the prover proves the Printed_Goal again and prints
+    /// its proof, which is the Result's output (R5.2). The proof is not
+    /// trusted; the Front_End has the pinned checker check it.
+    Certify,
+}
+
 /// One Job: one run of one prover on one Printed_Goal.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Job {
+    pub kind: JobKind,
     /// Names the Session and, within it, the Job.
     pub job_id: String,
     /// The prover, as the prover configuration names it (`name@version`).
@@ -106,6 +118,10 @@ fn optional_number(s: &Sexp) -> Result<Option<u64>, DecodeError> {
 impl Job {
     fn encode(&self) -> Vec<Sexp> {
         vec![
+            a(match self.kind {
+                JobKind::Prove => "prove",
+                JobKind::Certify => "certify",
+            }),
             a(&self.job_id),
             a(&self.prover),
             Sexp::atom(&self.driver),
@@ -118,7 +134,12 @@ impl Job {
 
     fn decode(fields: &[Sexp]) -> Result<Job, DecodeError> {
         match fields {
-            [job_id, prover, driver, extension, micros, seed, goal] => Ok(Job {
+            [kind, job_id, prover, driver, extension, micros, seed, goal] => Ok(Job {
+                kind: match kind.as_str() {
+                    Some("prove") => JobKind::Prove,
+                    Some("certify") => JobKind::Certify,
+                    _ => return err("job kind"),
+                },
                 job_id: text(job_id)?,
                 prover: text(prover)?,
                 driver: bytes(driver)?,
@@ -306,11 +327,11 @@ impl SignedCommand {
         operator.verify_strict(&self.signed_bytes(), &Signature::from_bytes(&self.tag)).is_ok()
     }
 
-    fn encode(&self) -> Vec<Sexp> {
+    pub fn encode(&self) -> Vec<Sexp> {
         vec![SignedCommand::body(self.serial, self.operation, &self.worker), Sexp::atom(self.tag)]
     }
 
-    fn decode(fields: &[Sexp]) -> Result<SignedCommand, DecodeError> {
+    pub fn decode(fields: &[Sexp]) -> Result<SignedCommand, DecodeError> {
         let [body, tag] = fields else { return err("signed command") };
         let [serial, operation, worker] = items(body)? else { return err("command") };
         Ok(SignedCommand {
@@ -360,7 +381,11 @@ pub enum Message {
     /// The answer: the connected Workers, the number of queued Jobs and of
     /// connected Front_Ends (R1.7 criterion 9). It is a report of an
     /// untrusted component; nothing is decided from it.
-    Status { workers: Vec<WorkerStatus>, queued: u64, front_ends: u64 },
+    Status { incarnation: u64, workers: Vec<WorkerStatus>, queued: u64, front_ends: u64 },
+    /// Coordinator to a peer that joined: which start of the Coordinator
+    /// this is. The number grows with every start, so a peer can tell a
+    /// Coordinator that came back from the one it knew.
+    Welcome { incarnation: u64 },
     /// Operator to Coordinator.
     Operator(SignedCommand),
     /// Coordinator to operator: whether the command was taken.
@@ -388,9 +413,11 @@ impl Message {
             Message::Result(r) => ("result", r.encode()),
             Message::Failed { job_id, reason } => ("failed", vec![a(job_id), a(reason)]),
             Message::StatusRequest => ("status-request", vec![]),
-            Message::Status { workers, queued, front_ends } => (
+            Message::Welcome { incarnation } => ("welcome", vec![n(*incarnation)]),
+            Message::Status { incarnation, workers, queued, front_ends } => (
                 "status",
                 vec![
+                    n(*incarnation),
                     Sexp::list(workers.iter().map(|w| {
                         Sexp::list([
                             a(&w.worker),
@@ -446,7 +473,9 @@ impl Message {
                 Ok(Message::Failed { job_id: text(job_id)?, reason: text(reason)? })
             }
             ("status-request", []) => Ok(Message::StatusRequest),
-            ("status", [workers, queued, front_ends]) => Ok(Message::Status {
+            ("welcome", [incarnation]) => Ok(Message::Welcome { incarnation: number(incarnation)? }),
+            ("status", [incarnation, workers, queued, front_ends]) => Ok(Message::Status {
+                incarnation: number(incarnation)?,
                 workers: items(workers)?
                     .iter()
                     .map(|w| match items(w)? {

@@ -82,6 +82,16 @@ impl Walk<'_> {
         let member = Value::String(entry.to_member());
         match node {
             Value::Object(members) if proved_in_file && proof => {
+                // The legacy member names the prover of why3find's call. In
+                // a race another prover may have proved the Goal: the
+                // member then names that one, so a legacy reader replays
+                // the proof with the prover that found it.
+                if let Some(winner) = entry.replay.first() {
+                    let named = members.get("prover").and_then(Value::as_str).unwrap_or("");
+                    if named.split('@').next() != Some(winner.prover.as_str()) {
+                        members.insert("prover".to_string(), Value::String(winner.prover.clone()));
+                    }
+                }
                 members.insert("dp".to_string(), member);
             }
             _ => {
@@ -267,5 +277,60 @@ mod conflict_tests {
         let entry = DpEntry::from_member(node["dp"].as_str().unwrap(), 1 << 20).unwrap();
         assert!(entry.conflict);
         assert_eq!(entry.invalid, vec![invalid]);
+    }
+}
+
+#[cfg(test)]
+mod winner_tests {
+    use super::*;
+    use dp_formats::proofjson::{Place, ReplayFields};
+
+    // P-ID: P2.3.5
+    #[test]
+    fn the_legacy_member_names_the_prover_that_won() {
+        let replay = |prover: &str| ReplayFields {
+            task_hash: Hash([1; 32]),
+            driver: vec![],
+            prover: prover.into(),
+            version: "1".into(),
+            binary_hash: Hash([2; 32]),
+            place: Place::Local,
+            seed: None,
+            velocity: None,
+            local_micros: None,
+            reference_micros: 1,
+        };
+        let goal = |name: &str, prover: &str| GoalLabel {
+            theory: "T".into(),
+            name: name.into(),
+            steps: vec![],
+            entry: DpEntry {
+                label: "proved-standalone".into(),
+                replay: vec![replay(prover)],
+                imports_hash: Hash([0; 32]),
+                certificate: None,
+                conflict: false,
+                invalid: vec![],
+            },
+            proof: true,
+        };
+        let text = r#"{ "profile": [], "proofs": { "T": {
+            "A": { "prover": "alt-ergo", "time": 0.5 },
+            "B": { "prover": "z3@4.12.4", "time": 0.25 } } } }"#;
+        let unresolved = DpEntry {
+            label: "unresolved".into(),
+            replay: vec![],
+            imports_hash: Hash([0; 32]),
+            certificate: None,
+            conflict: false,
+            invalid: vec![],
+        };
+        let (out, _) = extend(text, Hash([7; 32]), &[goal("A", "z3"), goal("B", "z3")], &unresolved).unwrap();
+        let file: Value = serde_json::from_str(&out).unwrap();
+        // A was called with alt-ergo and proved by z3; B was proved by its
+        // own prover and keeps its member as it was.
+        assert_eq!(file["proofs"]["T"]["A"]["prover"], "z3");
+        assert_eq!(file["proofs"]["T"]["A"]["time"], 0.5);
+        assert_eq!(file["proofs"]["T"]["B"]["prover"], "z3@4.12.4");
     }
 }

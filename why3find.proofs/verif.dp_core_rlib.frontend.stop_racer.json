@@ -1,0 +1,10 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_push_Effect": { "prover": "alt-ergo", "time": 0.012 },
+      "vc_release_local": { "prover": "alt-ergo", "time": 0.013 },
+      "vc_stop_racer": { "prover": "alt-ergo", "time": 0.019 }
+    }
+  }
+}

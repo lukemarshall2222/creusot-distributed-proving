@@ -201,8 +201,10 @@ fn run(
     forging: bool,
     seeds: u64,
     speeds: &Speeds,
+    local_member: bool,
 ) -> (Vec<Option<Reply>>, usize) {
-    let mut cluster = Cluster::with_speeds(seed, faults, 3, 0, script.to_vec(), seeds, speeds.clone());
+    let setup = Setup { seeds, speeds: speeds.clone(), local_member, ..Setup::plain() };
+    let mut cluster = Cluster::with(seed, faults, 3, 0, script.to_vec(), setup);
     if forging {
         cluster.world.borrow_mut().forging.insert(COORDINATOR);
     }
@@ -251,10 +253,11 @@ proptest! {
         // Machines as fast as the reference machine or slower.
         front_end in 1_000_000u64..3_000_000,
         workers in proptest::collection::vec(1_000_000u64..4_000_000, 3),
+        local_member in any::<bool>(),
     ) {
         let speeds = Speeds { front_end, workers };
         let faults = Faults { loss, duplicate, min_delay: 50, max_delay };
-        let (replies, most) = run(seed, faults, &script, &schedule, forging, seeds, &speeds);
+        let (replies, most) = run(seed, faults, &script, &schedule, forging, seeds, &speeds, local_member);
         for (rid, (reply, call)) in replies.iter().zip(&script).enumerate() {
             let Some(reply) = reply else {
                 return Err(TestCaseError::fail(format!("call {rid} was not answered")));
@@ -265,7 +268,7 @@ proptest! {
             prop_assert!(*reply == honest || *reply == Reply::Timeout, "call {}: {:?}, honest {:?}", rid, reply, honest);
         }
         prop_assert!(most <= 1, "a Worker had {} runs at once", most);
-        let again = run(seed, faults, &script, &schedule, forging, seeds, &speeds);
+        let again = run(seed, faults, &script, &schedule, forging, seeds, &speeds, local_member);
         prop_assert_eq!(again.0, replies);
     }
 }
@@ -322,7 +325,7 @@ fn a_proof_and_an_invalid_answer_for_one_goal_are_a_conflict() {
     assert!(conflicted.conflict);
     assert_eq!(conflicted.invalid.len(), 1);
     assert_eq!(conflicted.invalid[0].prover, "stub");
-    assert_eq!(conflicted.replay[0].prover, "other");
+    assert_eq!(conflicted.replay[0].prover, "cvc5");
     assert!(!goal("G1").entry.conflict && goal("G1").entry.invalid.is_empty());
 }
 
@@ -349,7 +352,7 @@ fn a_portfolio_races_provers_and_the_first_proof_wins() {
     let labels = cluster.front_end.labels();
     let goal = |name: &str| labels["sim.mlw"].iter().find(|g| g.name == name).unwrap();
     assert_eq!(goal("G0").entry.label, "proved-standalone");
-    assert_eq!(goal("G0").entry.replay[0].prover, "other");
+    assert_eq!(goal("G0").entry.replay[0].prover, "cvc5");
     assert_eq!(goal("G1").entry.label, "unknown");
     // The loser of the won race was cancelled: the Workers are idle again.
     assert!(cluster.workers.values().all(|w| w.state().running.is_none()));
@@ -372,7 +375,7 @@ fn a_conflict_inside_a_race_is_recorded() {
     let entry = &labels["sim.mlw"][0].entry;
     assert!(entry.conflict);
     assert_eq!(entry.invalid[0].prover, "stub");
-    assert_eq!(entry.replay[0].prover, "other");
+    assert_eq!(entry.replay[0].prover, "cvc5");
 }
 
 // P-ID: P1.2.1 (the option that moves the first pass)
@@ -419,7 +422,7 @@ fn a_drained_worker_ends_its_job_and_gets_no_other() {
     assert!(world.started.iter().all(|(node, at, _)| *node != WORKERS || *at <= drained_at), "{:?}", world.started);
     drop(world);
     // The report says so.
-    let Some(Message::Status { workers, queued, front_ends }) = cluster.status() else { panic!("no status") };
+    let Some(Message::Status { workers, queued, front_ends, .. }) = cluster.status() else { panic!("no status") };
     assert_eq!((queued, front_ends), (0, 1));
     let state: Vec<_> = workers.iter().map(|w| (w.worker.as_str(), w.draining, w.job.is_some())).collect();
     assert_eq!(state, vec![("w10", true, false), ("w11", false, false)]);
@@ -508,4 +511,127 @@ fn the_front_end_enforces_a_revocation_by_itself() {
         // The Worker did run the Jobs: its Results were refused, not missing.
         assert!(cluster.runners().contains(&WORKERS));
     }
+}
+
+/// A Session in which no solver is an Unpatched_Solver, so that every
+/// reported proof needs a certificate. The proof producer prints each Goal
+/// as the call's prover does.
+fn certifying(script: &[Call]) -> Setup {
+    Setup {
+        certify: true,
+        other_prints: script.iter().map(|c| (c.goal, c.text.clone())).collect(),
+        ..Setup::plain()
+    }
+}
+
+fn label_of(cluster: &Cluster, goal: &str) -> String {
+    cluster.front_end.labels()["sim.mlw"].iter().find(|g| g.name == goal).unwrap().entry.label.clone()
+}
+
+// P-ID: P5.2.1, P5.3.1
+#[test]
+fn a_worker_produces_the_certificate_and_the_front_end_checks_it() {
+    let script = mixed();
+    let mut cluster = Cluster::with(30, Faults::none(), 2, 0, script.clone(), certifying(&script));
+    cluster.run_until(horizon(&script));
+    for (rid, call) in script.iter().enumerate() {
+        assert_eq!(cluster.answer(rid).unwrap().0, truth(call), "call {rid}");
+    }
+    // Proved Goals are certified, with a store entry; nothing is
+    // proved-standalone, because no solver is an Unpatched_Solver.
+    assert_eq!(label_of(&cluster, "G0"), "certified");
+    assert_eq!(label_of(&cluster, "G4"), "certified");
+    assert_eq!(label_of(&cluster, "G1"), "unknown");
+    let labels = cluster.front_end.labels();
+    let certified = labels["sim.mlw"].iter().find(|g| g.name == "G0").unwrap();
+    let content = certified.entry.certificate.expect("a certified entry names its certificate");
+    assert!(cluster.dir.join(".dp-certs").join(content.to_hex()).join("proof").is_file());
+    // The Front_End's machine ran only the checker, once per certificate:
+    // the proofs were produced by Workers.
+    let world = cluster.world.borrow();
+    let local: Vec<_> = world.started.iter().filter(|(node, _, _)| *node == dp_sim::FRONT_END).collect();
+    assert_eq!(local.len(), 2, "{local:?}");
+    assert!(local.iter().all(|(_, _, input)| input.starts_with(b"(step proof-of ")));
+}
+
+// P-ID: P5.3.1, P1.3.4
+#[test]
+fn a_forged_certificate_certifies_nothing() {
+    // The Coordinator rewrites every Result, the answers to proof Jobs
+    // included: what arrives is not a proof that the checker accepts.
+    let script = mixed();
+    let mut cluster = Cluster::with(31, Faults::none(), 2, 0, script.clone(), certifying(&script));
+    cluster.world.borrow_mut().forging.insert(COORDINATOR);
+    cluster.run_until(horizon(&script));
+    for rid in 0..script.len() {
+        assert!(cluster.answer(rid).is_some_and(|(reply, _)| reply != Reply::Valid), "call {rid}");
+    }
+    assert!(cluster.front_end.labels()["sim.mlw"].iter().all(|g| !g.proof));
+}
+
+// P-ID: P5.2.3
+#[test]
+fn without_a_cluster_the_certificate_is_produced_at_home() {
+    let script = numbered(vec![call(0, "unsat 30000", 100_000)]);
+    let mut cluster = Cluster::with(32, Faults::none(), 1, 0, script.clone(), certifying(&script));
+    // The Coordinator is gone before the proof Job can be answered.
+    cluster.run_until(45_000);
+    cluster.crash(COORDINATOR, true);
+    cluster.run_until(horizon(&script));
+    assert_eq!(cluster.answer(0).unwrap().0, Reply::Valid);
+    assert_eq!(label_of(&cluster, "G0"), "certified");
+    // The producer and the checker both ran on the Front_End's machine.
+    let world = cluster.world.borrow();
+    let local: Vec<_> = world.started.iter().filter(|(node, _, _)| *node == dp_sim::FRONT_END).collect();
+    assert!(local.len() >= 2, "{local:?}");
+}
+
+// P-ID: P2.2.1
+#[test]
+fn the_local_member_of_a_race_wins_against_slow_workers() {
+    // Workers four times slower than the Front_End's machine.
+    let script = numbered(vec![call(0, "unsat 20000", 200_000), call(1_000, "unknown 20000", 200_000)]);
+    let setup = Setup {
+        local_member: true,
+        speeds: Speeds { front_end: 1_000_000, workers: vec![4_000_000] },
+        ..Setup::plain()
+    };
+    let mut cluster = Cluster::with(40, Faults::none(), 2, 0, script.clone(), setup);
+    cluster.run_until(horizon(&script));
+    // The proof came from this machine, before a Worker could finish.
+    let (reply, at) = cluster.answer(0).unwrap();
+    assert_eq!(reply, Reply::Valid);
+    assert!(at < 40_000, "answered at {at}");
+    let labels = cluster.front_end.labels();
+    let proved = labels["sim.mlw"].iter().find(|g| g.name == "G0").unwrap();
+    assert_eq!(proved.entry.replay[0].place, dp_formats::proofjson::Place::Local);
+    assert_eq!(cluster.answer(1).unwrap().0, Reply::Unknown);
+    // The Workers' Jobs of the won race were cancelled.
+    assert!(cluster.workers.values().all(|w| w.state().running.is_none()));
+}
+
+// P-ID: P1.7.6, P1.6.14
+#[test]
+fn a_restarted_coordinator_remembers_revocations_and_serial_numbers() {
+    let mut cluster = Cluster::new(50, Faults::none(), 2, 0, vec![], 1);
+    cluster.run_until(10_000);
+    assert_eq!(cluster.front_end.incarnation(), Some(1));
+    assert!(cluster.operate(3, Operation::Revoke, WORKERS, &operator_key()));
+    cluster.crash(COORDINATOR, true);
+    cluster.run_until(10_000 + SILENCE);
+    cluster.start_coordinator();
+    cluster.run_until(10_000 + 4 * SILENCE);
+    // It is another start of the Coordinator, and it says so.
+    let Some(Message::Status { incarnation, workers, .. }) = cluster.status() else { panic!("no status") };
+    assert_eq!(incarnation, 2);
+    // The revoked Worker is still turned away; the other one joined again.
+    assert_eq!(workers.iter().map(|w| w.worker.as_str()).collect::<Vec<_>>(), vec!["w11"]);
+    // A command that the first start took, or an older one, is not taken
+    // again by the second.
+    assert!(!cluster.operate(3, Operation::Remove, WORKERS + 1, &operator_key()));
+    assert!(!cluster.operate(2, Operation::Remove, WORKERS + 1, &operator_key()));
+    assert!(cluster.operate(4, Operation::Drain, WORKERS + 1, &operator_key()));
+    // The Front_End's project remembers the revocation too.
+    let stored = dp_frontend::revocations::load(&cluster.dir, &operator_key().verifying_key());
+    assert!(stored.contains("w10"), "{stored:?}");
 }

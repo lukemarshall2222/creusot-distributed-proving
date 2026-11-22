@@ -52,6 +52,19 @@ pub struct RunSpec {
     pub extension: String,
     /// The local time limit in microseconds.
     pub micros: u64,
+    /// A second input: the reference of a certificate check, with the
+    /// extension of its file, which replaces `%r` in the command line.
+    pub reference: Option<(Vec<u8>, String)>,
+    /// How much of the output is kept; zero: the default of solver runs.
+    /// Only standard output is kept then, as for a proof.
+    pub output_limit: usize,
+}
+
+impl RunSpec {
+    /// A solver run on one input.
+    pub fn solver(command: String, input: Vec<u8>, extension: String, micros: u64) -> RunSpec {
+        RunSpec { command, input, extension, micros, reference: None, output_limit: 0 }
+    }
 }
 
 /// How a solver run ended.
@@ -236,7 +249,7 @@ impl Env for OsEnv {
     }
 
     fn start(&mut self, run: u64, exe: &Path, spec: &RunSpec) -> io::Result<()> {
-        let started = solver::start(
+        let started = solver::start_with(
             exe,
             &spec.command,
             &spec.input,
@@ -244,6 +257,11 @@ impl Env for OsEnv {
             spec.micros.max(1),
             &self.tmp,
             &format!("run{run}"),
+            &solver::Extra {
+                reference: spec.reference.as_ref().map(|(bytes, extension)| (bytes.as_slice(), extension.as_str())),
+                output_limit: spec.output_limit,
+                stdout_only: spec.output_limit != 0,
+            },
         )?;
         self.runs.insert(run, started);
         Ok(())

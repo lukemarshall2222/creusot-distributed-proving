@@ -16,8 +16,17 @@ fn blob() -> impl Strategy<Value = Vec<u8>> {
 }
 
 fn job() -> impl Strategy<Value = Job> {
-    (s(), s(), blob(), s(), any::<u64>(), any::<Option<u64>>(), blob()).prop_map(
-        |(job_id, prover, driver, extension, micros, seed, goal)| Job { job_id, prover, driver, extension, micros, seed, goal },
+    (any::<bool>(), s(), s(), blob(), s(), any::<u64>(), any::<Option<u64>>(), blob()).prop_map(
+        |(certify, job_id, prover, driver, extension, micros, seed, goal)| Job {
+            kind: if certify { JobKind::Certify } else { JobKind::Prove },
+            job_id,
+            prover,
+            driver,
+            extension,
+            micros,
+            seed,
+            goal,
+        },
     )
 }
 
@@ -60,8 +69,10 @@ fn message() -> impl Strategy<Value = Message> {
         Just(Message::Heartbeat),
         Just(Message::Idle),
         Just(Message::StatusRequest),
+        any::<u64>().prop_map(|incarnation| Message::Welcome { incarnation }),
         (proptest::collection::vec((s(), proptest::option::of(s()), any::<bool>(), proptest::collection::vec(s(), 0..3)), 0..3), any::<u64>(), any::<u64>())
             .prop_map(|(workers, queued, front_ends)| Message::Status {
+                incarnation: queued / 3,
                 workers: workers
                     .into_iter()
                     .map(|(worker, job, draining, provers)| WorkerStatus { worker, job, draining, provers })

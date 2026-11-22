@@ -32,6 +32,25 @@ pub const PROOF_LIMIT: u64 = 1 << 28;
 pub const PROOF_OPTIONS: [&str; 5] =
     ["--dump-proofs", "--proof-format=cpc", "--no-proof-dag-global", "--no-proof-allow-trust", "--dag-thresh=0"];
 
+/// The command line with which a proof producer runs, in the form of a
+/// Why3 prover command: `%T` is the time limit in milliseconds and `%f`
+/// the input file. The program's name may hold spaces.
+pub fn proof_command(program: &str) -> String {
+    format!("'{program}' --tlimit=%T {} %f", PROOF_OPTIONS.join(" "))
+}
+
+/// The command line of a check of a certificate, in the same form: `%r` is
+/// the reference and `%f` the proof.
+pub fn check_command(ethos: &str, signature: &Path) -> String {
+    format!("'{ethos}' '--include={}' --reference=%r --require-proof-of-false %f", signature.join("Cpc.eo").display())
+}
+
+/// Whether what the checker printed and its exit status are an acceptance.
+pub fn accepted(status: Option<u32>, output: &[u8]) -> bool {
+    let said = String::from_utf8_lossy(output);
+    status == Some(0) && said.lines().filter(|l| !l.trim().is_empty()).last() == Some("correct")
+}
+
 /// Runs a program with a time limit; returns its exit status and its
 /// standard output, or `None` if it was ended at the limit.
 fn run(command: &mut Command, limit: Duration, out: &Path) -> io::Result<Option<(Option<i32>, Vec<u8>)>> {

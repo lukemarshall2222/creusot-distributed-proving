@@ -5,7 +5,7 @@
       "vc_clear_Outcome": { "prover": "alt-ergo", "time": 0.011 },
       "vc_clear_u64": { "prover": "alt-ergo", "time": 0.011 },
       "vc_eq_Place": { "prover": "alt-ergo", "time": 0.01 },
-      "vc_fall_back": { "prover": "alt-ergo", "time": 0.195 },
+      "vc_fall_back": { "prover": "z3", "time": 0.052 },
       "vc_index_Vec_Call_Global": { "prover": "alt-ergo", "time": 0.011 },
       "vc_index_mut_Vec_Call_Global": { "prover": "alt-ergo", "time": 0.011 },
       "vc_len_Call": { "prover": "alt-ergo", "time": 0.011 },

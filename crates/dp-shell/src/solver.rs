@@ -146,6 +146,20 @@ pub struct Run {
     deadline: Instant,
     input: PathBuf,
     output: PathBuf,
+    reference: Option<PathBuf>,
+    output_limit: usize,
+}
+
+/// What a run needs beyond a solver run's defaults.
+#[derive(Clone, Debug, Default)]
+pub struct Extra<'a> {
+    /// A second input file, with the extension of its name; its path
+    /// replaces `%r` in the command line.
+    pub reference: Option<(&'a [u8], &'a str)>,
+    /// How much of the output is kept; zero: [`OUTPUT_LIMIT`].
+    pub output_limit: usize,
+    /// Only standard output is kept; standard error is dropped.
+    pub stdout_only: bool,
 }
 
 /// How a run ended.
@@ -175,25 +189,60 @@ pub fn start(
     dir: &Path,
     tag: &str,
 ) -> io::Result<Run> {
+    start_with(exe, command, input, extension, micros, dir, tag, &Extra::default())
+}
+
+/// As [`start`], with a second input file, another output limit or without
+/// standard error.
+#[allow(clippy::too_many_arguments)]
+pub fn start_with(
+    exe: &Path,
+    command: &str,
+    input: &[u8],
+    extension: &str,
+    micros: u64,
+    dir: &Path,
+    tag: &str,
+    extra: &Extra,
+) -> io::Result<Run> {
     let input_path = dir.join(format!("{tag}{extension}"));
     fs::write(&input_path, input)?;
+    let reference = match extra.reference {
+        Some((bytes, extension)) => {
+            let path = dir.join(format!("{tag}.reference{extension}"));
+            fs::write(&path, bytes)?;
+            Some(path)
+        }
+        None => None,
+    };
     let output_path = dir.join(format!("{tag}.out"));
     let out = fs::File::create(&output_path)?;
     let args = words(command)
         .into_iter()
         .skip(1)
-        .map(|w| substitute(&w, &input_path, micros))
+        .map(|w| match &reference {
+            Some(path) if w.contains("%r") => Ok(w.replace("%r", &path.to_string_lossy())),
+            _ => substitute(&w, &input_path, micros),
+        })
         .collect::<io::Result<Vec<_>>>()?;
     let child = Command::new(exe)
         .args(args)
         .stdin(Stdio::null())
         .stdout(out.try_clone()?)
-        .stderr(out)
+        .stderr(if extra.stdout_only { Stdio::null() } else { Stdio::from(out) })
         .process_group(0)
         .spawn()?;
     let started = Instant::now();
     let deadline = started + Duration::from_micros(micros.saturating_add(micros / 2));
-    Ok(Run { child, started, deadline, input: input_path, output: output_path })
+    Ok(Run {
+        child,
+        started,
+        deadline,
+        input: input_path,
+        output: output_path,
+        reference,
+        output_limit: if extra.output_limit == 0 { OUTPUT_LIMIT } else { extra.output_limit },
+    })
 }
 
 impl Run {
@@ -211,6 +260,9 @@ impl Run {
     fn clean(&self) {
         let _ = fs::remove_file(&self.input);
         let _ = fs::remove_file(&self.output);
+        if let Some(reference) = &self.reference {
+            let _ = fs::remove_file(reference);
+        }
     }
 
     /// `Some` once the solver has exited or its time is up.
@@ -224,7 +276,7 @@ impl Run {
         // Also ends whatever an exited solver left running in its group.
         self.kill_group();
         let mut output = Vec::new();
-        fs::File::open(&self.output)?.take(OUTPUT_LIMIT as u64).read_to_end(&mut output)?;
+        fs::File::open(&self.output)?.take(self.output_limit as u64).read_to_end(&mut output)?;
         self.clean();
         Ok(Some(Finished {
             status: status.and_then(|s| s.code()).and_then(|c| u32::try_from(c).ok()),

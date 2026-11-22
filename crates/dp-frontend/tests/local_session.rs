@@ -278,6 +278,23 @@ fn a_proof_of_an_unpinned_solver_is_certified() {
     assert_eq!(entry("Wrong").label, "unknown");
     assert!(entry("Wrong").certificate.is_none());
     assert!(goals["Wrong"].get("prover").is_none());
+    assert!(stderr.contains("certificates checked: 2 produced here"), "{stderr}");
+    // A second Session reuses the stored Results and the stored
+    // certificates, and checks each certificate again.
+    let out = prove(&dir, &why3find, &demoted);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("2 certified Verdicts; certificates checked: 2 from the store"), "{stderr}");
+    assert!(stderr.contains("Goals by label: 2 certified, 1 unknown"), "{stderr}");
+    // A stored certificate that was changed is not accepted, and a new one
+    // is not produced in its place: the Goal is not certified.
+    for entry in fs::read_dir(dir.join(".dp-certs")).unwrap().flatten() {
+        if entry.path().join("proof").is_file() {
+            fs::write(entry.path().join("proof"), b"(step @p1 :rule refl :args (x))\n").unwrap();
+        }
+    }
+    let out = prove(&dir, &why3find, &demoted);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("2 certified Verdicts; certificates checked: 2 produced here"), "{stderr}");
     fs::remove_dir_all(dir).unwrap();
 }
 
@@ -321,7 +338,8 @@ fn a_checker_that_is_not_pinned_certifies_nothing() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     // cvc5 is an Unpatched_Solver and still proves what it is asked; what
     // only Alt-Ergo reported, and the checker checked, is not certified.
-    assert!(!stderr.contains("certified Verdicts"), "{stderr}");
+    // Certificates were produced and checked, and none of them counted.
+    assert!(stderr.contains("0 certified Verdicts; certificates checked:"), "{stderr}");
     assert!(!proofs(&dir).unwrap().contains("\"alt-ergo\""), "{stderr}");
     fs::remove_dir_all(dir).unwrap();
 }

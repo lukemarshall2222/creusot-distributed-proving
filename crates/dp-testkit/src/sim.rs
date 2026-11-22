@@ -61,6 +61,15 @@ pub fn script(input: &[u8]) -> Behaviour {
     }
 }
 
+/// The certificate that the scripted proof producer writes for an input,
+/// and that the scripted checker accepts for that input as its reference.
+pub fn scripted_proof(input: &[u8]) -> Vec<u8> {
+    let mut proof = b"(step proof-of ".to_vec();
+    proof.extend_from_slice(input);
+    proof.extend_from_slice(b")\n");
+    proof
+}
+
 struct Connection {
     /// The two ends: node and the peer number that the node knows it by.
     ends: [(Node, Peer); 2],
@@ -312,7 +321,20 @@ impl Env for SimEnv {
 
     fn start(&mut self, run: u64, _exe: &Path, spec: &RunSpec) -> io::Result<()> {
         let mut w = self.world.borrow_mut();
-        let behaviour = script(&spec.input);
+        let mut behaviour = script(&spec.input);
+        if let Some((reference, _)) = &spec.reference {
+            // The scripted checker: it accepts exactly the scripted proof
+            // of its reference.
+            let correct = spec.input == scripted_proof(reference);
+            behaviour = Behaviour {
+                micros: 2_000,
+                output: if correct { b"correct\n".to_vec() } else { b"incorrect\n".to_vec() },
+                status: if correct { 0 } else { 1 },
+            };
+        } else if spec.command.contains("--dump-proofs") && behaviour.output == b"unsat\n" {
+            // The scripted proof producer: the answer, then the proof.
+            behaviour.output = [b"unsat\n(\n".as_slice(), &scripted_proof(&spec.input), b")\n"].concat();
+        }
         let velocity = w.velocity.get(&self.node).copied().unwrap_or(1_000_000);
         let local = u128::from(behaviour.micros) * u128::from(velocity) / 1_000_000;
         let (elapsed, result) = if local > u128::from(spec.micros) {

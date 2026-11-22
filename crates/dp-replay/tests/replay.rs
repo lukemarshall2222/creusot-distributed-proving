@@ -310,7 +310,13 @@ fn replay_confirms_certified_verdicts_from_the_store_alone() {
 fn a_changed_or_missing_certificate_is_not_confirmed() {
     let Some(e) = env() else { return };
     let Some((dir, lock)) = certified_session(&e, "tampered-certificate") else { return };
-    let entries: Vec<PathBuf> = fs::read_dir(dir.join(".dp-certs")).unwrap().flatten().map(|e| e.path()).collect();
+    // The entries of the store; its index by Task_Hash is not one.
+    let entries: Vec<PathBuf> = fs::read_dir(dir.join(".dp-certs"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.join("proof").is_file())
+        .collect();
     assert!(!entries.is_empty());
     // A proof that is not the stored one: found by its hash.
     let saved: Vec<Vec<u8>> = entries.iter().map(|d| fs::read(d.join("proof")).unwrap()).collect();

@@ -30,7 +30,8 @@ use ed25519_dalek::SigningKey;
 pub const ADDRESS: &str = "coordinator";
 /// The provers of the simulated project.
 pub const PROVER: &str = "stub@";
-pub const OTHER_PROVER: &str = "other@";
+/// The second prover is also the proof producer of certification.
+pub const OTHER_PROVER: &str = "cvc5@";
 
 /// Times of the simulated Cluster, in microseconds.
 pub const BEAT: u64 = 20_000;
@@ -210,12 +211,25 @@ impl Why3find for Scripted {
 }
 
 /// A Lock_File that pins the simulated solver binaries.
-fn lock() -> (LockFile, hash::Hash) {
+fn lock(certify: bool) -> (LockFile, hash::Hash) {
     let mut text = String::new();
+    // With certification the solvers are pinned, but not as
+    // Unpatched_Solvers, and the checker and its signature are pinned.
+    let kind = if certify { "sharing-solver" } else { "unpatched-solver" };
+    if certify {
+        for (name, kind) in [("ethos", "checker"), ("cpc-signature", "checker-signature")] {
+            text.push_str(&format!(
+                "[[tool]]\nname = \"{name}\"\nversion = \"1\"\nkind = \"{kind}\"\n\n\
+                 [[tool.platform]]\nplatform = \"{}\"\nhash = \"sha256:{}\"\n\n",
+                current_platform(),
+                BINARY_HASH.to_hex()
+            ));
+        }
+    }
     for prover in [PROVER, OTHER_PROVER] {
         let name = prover.trim_end_matches('@');
         text.push_str(&format!(
-            "[[tool]]\nname = \"{name}\"\nversion = \"1\"\nkind = \"unpatched-solver\"\nprover = \"{name}\"\n\n\
+            "[[tool]]\nname = \"{name}\"\nversion = \"1\"\nkind = \"{kind}\"\nprover = \"{name}\"\n\n\
              [[tool.platform]]\nplatform = \"{}\"\nhash = \"sha256:{}\"\nupstream = {{ tag = \"v1\", rebuild_hashes = [] }}\n\n",
             current_platform(),
             BINARY_HASH.to_hex()
@@ -252,6 +266,12 @@ pub struct Setup {
     pub first_pass_on_cluster: bool,
     /// Prints of Goals for the other prover, by Goal.
     pub other_prints: BTreeMap<u64, Vec<u8>>,
+    /// Certification is on, and no solver is an Unpatched_Solver: every
+    /// reported proof needs a certificate.
+    pub certify: bool,
+    /// The call's own prover also runs on the Front_End's machine as a
+    /// member of every race.
+    pub local_member: bool,
 }
 
 impl Setup {
@@ -262,6 +282,8 @@ impl Setup {
             portfolio: Vec::new(),
             first_pass_on_cluster: false,
             other_prints: BTreeMap::new(),
+            certify: false,
+            local_member: false,
         }
     }
 }
@@ -274,16 +296,27 @@ pub struct Cluster {
     pub front_end: Session<SimEnv, Scripted>,
     keys: BTreeMap<Node, SigningKey>,
     speeds: Speeds,
+    /// The project directory of the simulated Session.
+    pub dir: std::path::PathBuf,
 }
 
-fn coordinator_shell(world: &Rc<RefCell<World>>) -> CoordinatorShell<SimEnv> {
-    let config = coord::Config { silence_limit: SILENCE, beat_period: BEAT, retries: 2 };
-    CoordinatorShell::new(
+impl Drop for Cluster {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// A Coordinator that keeps its state in `state`, if one is given.
+fn coordinator_shell(world: &Rc<RefCell<World>>, state: Option<std::path::PathBuf>) -> CoordinatorShell<SimEnv> {
+    let config = coord::Config { silence_limit: SILENCE, beat_period: BEAT, retries: 2, serial: 0 };
+    CoordinatorShell::with_state(
         SimEnv::new(world, COORDINATOR),
         config,
         TraceWriter::off("coordinator"),
         Some(operator_key().verifying_key()),
+        state,
     )
+    .expect("the Coordinator's state file is readable")
 }
 
 /// The operator's signing key of every simulated Cluster.
@@ -317,7 +350,7 @@ impl Cluster {
     }
 
     pub fn with(seed: u64, faults: Faults, workers: u32, strangers: u32, script: Vec<Call>, setup: Setup) -> Cluster {
-        let Setup { seeds, speeds, portfolio, first_pass_on_cluster, other_prints } = setup;
+        let Setup { seeds, speeds, portfolio, first_pass_on_cluster, other_prints, certify, local_member } = setup;
         let world = World::new(seed, faults);
         world.borrow_mut().listen(COORDINATOR, ADDRESS);
         world.borrow_mut().set_velocity(FRONT_END, speeds.front_end);
@@ -330,14 +363,21 @@ impl Cluster {
             .iter()
             .map(|n| (*n, if *n < WORKERS + strangers { key(*n, 2) } else { key(*n, 1) }))
             .collect();
-        let coordinator = Some(coordinator_shell(&world));
-        let (lock, lock_hash) = lock();
+        // What a Session stores (certificates) goes to a directory of its own.
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "dp-sim-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        ));
+        let coordinator = Some(coordinator_shell(&world, Some(dir.join("coordinator.state"))));
+        let (lock, lock_hash) = lock(certify);
         let config = session::Config {
             why3find: Default::default(),
             lock,
             // No Result_Cache: nothing of a simulated Session is on disk.
             args: vec!["--no-cache".into()],
-            dir: std::env::temp_dir(),
+            dir: dir.clone(),
             jobs: 2,
             cluster: Some(session::Cluster {
                 address: ADDRESS.into(),
@@ -354,6 +394,12 @@ impl Cluster {
                 .map(|p| session::Member { name: p.clone(), prover: p.trim_end_matches('@').to_string(), seed: None })
                 .collect(),
             fast_remote: first_pass_on_cluster,
+            local_racer: local_member,
+            certification: certify.then(|| session::Certification {
+                ethos: "ethos".into(),
+                signature: "signature".into(),
+                signature_hash: BINARY_HASH,
+            }),
             certify_all: false,
             export: None,
             trace: None,
@@ -373,9 +419,9 @@ impl Cluster {
             step: if first_pass_on_cluster { StrategyStep::Fast } else { StrategyStep::Parallel },
         };
         // The Front_End connects once the Coordinator listens.
-        let front_end = Session::start(SimEnv::new(&world, FRONT_END), why3find, config, Default::default(), None)
+        let front_end = Session::start(SimEnv::new(&world, FRONT_END), why3find, config, Default::default())
             .expect("a simulated Session starts");
-        let mut cluster = Cluster { world, coordinator, workers: BTreeMap::new(), front_end, keys, speeds };
+        let mut cluster = Cluster { world, coordinator, workers: BTreeMap::new(), front_end, keys, speeds, dir };
         for node in nodes {
             cluster.start_worker(node);
         }
@@ -384,7 +430,7 @@ impl Cluster {
 
     pub fn start_coordinator(&mut self) {
         self.world.borrow_mut().restart(COORDINATOR);
-        self.coordinator = Some(coordinator_shell(&self.world));
+        self.coordinator = Some(coordinator_shell(&self.world, Some(self.dir.join("coordinator.state"))));
     }
 
     pub fn start_worker(&mut self, node: Node) {
@@ -410,7 +456,7 @@ impl Cluster {
     /// Starts the Coordinator again, from an empty state, with a complete
     /// trace of its steps in `path`.
     pub fn trace_coordinator(&mut self, path: &str) {
-        let config = coord::Config { silence_limit: SILENCE, beat_period: BEAT, retries: 2 };
+        let config = coord::Config { silence_limit: SILENCE, beat_period: BEAT, retries: 2, serial: 0 };
         let trace = TraceWriter::to_file("coordinator", path.into(), dp_shell::trace::Retention::Complete)
             .expect("the trace file can be written");
         self.coordinator = Some(CoordinatorShell::new(
