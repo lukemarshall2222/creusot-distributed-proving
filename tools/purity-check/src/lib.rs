@@ -136,6 +136,23 @@ pub fn public_functions(module: &str, source: &str) -> Vec<String> {
 pub struct Registry {
     #[serde(default)]
     pub function: Vec<Entry>,
+    /// Decision functions that a requirement in scope names and dp-core
+    /// does not have yet.
+    #[serde(default)]
+    pub missing: Vec<Missing>,
+}
+
+/// A decision function that is owed: the Traceability_Table names it for a
+/// requirement in scope, and dp-core has no public function of the name.
+/// The check does not fail on it; every run prints it. It fails once the
+/// function exists (then it is registered) and when no requirement in
+/// scope names it any more.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Missing {
+    pub function: String,
+    pub requirement: String,
+    pub reason: String,
 }
 
 #[derive(Deserialize)]
@@ -175,6 +192,92 @@ pub fn check_registry(registry: &Registry, public: &[String]) -> Vec<String> {
         }
     }
     problems
+}
+
+/// R7.3 criterion 4 and P7.3.4: every function that the Traceability_Table
+/// names for a requirement in scope is a registered decision function of
+/// dp-core, or is recorded as missing with a reason. `named` holds the
+/// requirement and the name of each such function.
+pub fn check_scope(registry: &Registry, public: &[String], named: &[(String, String)]) -> Vec<String> {
+    let mut problems = Vec::new();
+    let paths = |name: &str| -> Vec<&String> {
+        public.iter().filter(|path| path.rsplit("::").next() == Some(name)).collect()
+    };
+    for (req, name) in named {
+        let found = paths(name);
+        let owed = registry.missing.iter().any(|m| &m.function == name && &m.requirement == req);
+        if found.is_empty() {
+            if !owed {
+                problems.push(format!(
+                    "registry: {req} is in scope and names `{name}`, which is no public function of dp-core and is not recorded as missing"
+                ));
+            }
+            continue;
+        }
+        let decision = found.iter().any(|path| {
+            registry.function.iter().any(|e| &e.path == *path && e.kind == "decision")
+        });
+        if !decision {
+            problems.push(format!(
+                "registry: {req} is in scope and names `{name}`, which is not registered as a decision function"
+            ));
+        }
+    }
+    for m in &registry.missing {
+        if m.reason.trim().is_empty() {
+            problems.push(format!("registry: `{}` is recorded as missing without a reason", m.function));
+        }
+        if !paths(&m.function).is_empty() {
+            problems.push(format!("registry: `{}` is recorded as missing, and dp-core has it: register it", m.function));
+        }
+        if !named.iter().any(|(req, name)| req == &m.requirement && name == &m.function) {
+            problems.push(format!(
+                "registry: `{}` is recorded as missing for {}, which is not in scope or does not name it",
+                m.function, m.requirement
+            ));
+        }
+    }
+    problems
+}
+
+/// What the registry still owes, as lines for the report of a run.
+pub fn pending(registry: &Registry) -> Vec<String> {
+    registry
+        .missing
+        .iter()
+        .map(|m| format!("pending: {} names `{}`, which dp-core does not have ({})", m.requirement, m.function, m.reason))
+        .collect()
+}
+
+/// The functions that the Traceability_Table names for the requirements
+/// in scope: requirement and function name.
+pub fn functions_in_scope(table: &str) -> Result<Vec<(String, String)>, String> {
+    #[derive(Deserialize)]
+    struct Table {
+        #[serde(default)]
+        row: Vec<Row>,
+    }
+    #[derive(Deserialize)]
+    struct Row {
+        req: String,
+        scope: String,
+        #[serde(default)]
+        functions: Vec<String>,
+    }
+    let table: Table = toml::from_str(table).map_err(|e| format!("docs/traceability.toml: {e}"))?;
+    Ok(table
+        .row
+        .into_iter()
+        .filter(|row| row.scope == "in scope")
+        .flat_map(|row| row.functions.into_iter().map(move |f| (row.req.clone(), f)))
+        .collect())
+}
+
+/// The registry of the repository at `root`.
+pub fn registry(root: &Path) -> Result<Registry, String> {
+    let path = root.join("tools/purity-check/registry.toml");
+    let text = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    toml::from_str(&text).map_err(|e| format!("registry.toml: {e}"))
 }
 
 /// The crates of the closure that the allow-list does not hold.
@@ -240,6 +343,8 @@ pub fn check(root: &Path) -> Result<Vec<String>, String> {
         public.extend(public_functions(&module, &source));
     }
     problems.extend(check_registry(&registry, &public));
+    let named = functions_in_scope(&read(&root.join("docs/traceability.toml"))?)?;
+    problems.extend(check_scope(&registry, &public, &named));
     Ok(problems)
 }
 
@@ -296,13 +401,14 @@ mod tests {
         };
         let good = Registry {
             function: vec![entry("verdict::label", "decision", Some("the label")), entry("verdict::rank", "helper", None)],
+            missing: vec![],
         };
         assert!(check_registry(&good, &public).is_empty());
         // An entry that names no public function.
-        let stale = Registry { function: vec![entry("verdict::gone", "helper", None)] };
+        let stale = Registry { function: vec![entry("verdict::gone", "helper", None)], missing: vec![] };
         assert!(check_registry(&stale, &public).iter().any(|p| p.contains("`verdict::gone` is no public function")));
         // A public function without an entry.
-        let missing = Registry { function: vec![entry("verdict::rank", "helper", None)] };
+        let missing = Registry { function: vec![entry("verdict::rank", "helper", None)], missing: vec![] };
         assert!(check_registry(&missing, &public).iter().any(|p| p.contains("`verdict::label` of dp-core has no entry")));
         // A decision function that does not say what it decides, an
         // unknown kind, and an entry that is there twice.
@@ -312,7 +418,71 @@ mod tests {
                 entry("verdict::rank", "other", None),
                 entry("verdict::rank", "helper", None),
             ],
+            missing: vec![],
         };
         assert_eq!(check_registry(&vague, &public).len(), 3);
+    }
+
+    // P-ID: P7.3.4
+    #[test]
+    fn a_function_of_a_row_in_scope_is_a_registered_decision_function() {
+        let public = vec!["verdict::label".to_string(), "verdict::rank".to_string(), "labels::classify".to_string()];
+        let entry = |path: &str, kind: &str| Entry {
+            path: path.to_string(),
+            kind: kind.to_string(),
+            decides: (kind == "decision").then(|| "something".to_string()),
+        };
+        let owed = |function: &str, requirement: &str, reason: &str| Missing {
+            function: function.to_string(),
+            requirement: requirement.to_string(),
+            reason: reason.to_string(),
+        };
+        let named = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
+            pairs.iter().map(|(r, f)| (r.to_string(), f.to_string())).collect()
+        };
+        let registry = |missing: Vec<Missing>| Registry {
+            function: vec![entry("verdict::label", "decision"), entry("verdict::rank", "helper"), entry("labels::classify", "decision")],
+            missing,
+        };
+        let scope = named(&[("R7.1", "label"), ("R7.2", "classify")]);
+        assert_eq!(check_scope(&registry(vec![]), &public, &scope), Vec::<String>::new());
+        // A function in scope that is registered as a helper only.
+        let problems = check_scope(&registry(vec![]), &public, &named(&[("R7.1", "rank")]));
+        assert_eq!(problems, ["registry: R7.1 is in scope and names `rank`, which is not registered as a decision function"]);
+        // A function in scope that dp-core does not have: a problem, unless
+        // it is recorded as missing for that requirement, with a reason.
+        let with_gone = named(&[("R7.1", "label"), ("R5.3", "fragment_ok")]);
+        let problems = check_scope(&registry(vec![]), &public, &with_gone);
+        assert_eq!(problems.len(), 1);
+        assert!(problems[0].contains("R5.3 is in scope and names `fragment_ok`, which is no public function of dp-core"));
+        let recorded = registry(vec![owed("fragment_ok", "R5.3", "not written")]);
+        assert_eq!(check_scope(&recorded, &public, &with_gone), Vec::<String>::new());
+        assert_eq!(pending(&recorded), ["pending: R5.3 names `fragment_ok`, which dp-core does not have (not written)"]);
+        // Recorded for another requirement, or without a reason.
+        assert_eq!(check_scope(&registry(vec![owed("fragment_ok", "R5.2", "not written")]), &public, &with_gone).len(), 2);
+        assert!(check_scope(&registry(vec![owed("fragment_ok", "R5.3", " ")]), &public, &with_gone)[0].contains("without a reason"));
+        // Recorded as missing although dp-core has it, and recorded for a
+        // requirement that is not in scope or no longer names it.
+        let problems = check_scope(&registry(vec![owed("classify", "R7.2", "x")]), &public, &scope);
+        assert_eq!(problems, ["registry: `classify` is recorded as missing, and dp-core has it: register it"]);
+        let problems = check_scope(&recorded, &public, &scope);
+        assert_eq!(problems, ["registry: `fragment_ok` is recorded as missing for R5.3, which is not in scope or does not name it"]);
+        // The functions of rows in scope, from the table.
+        let table = "[[row]]\nreq = \"R1\"\nscope = \"in scope\"\nfunctions = [\"a\", \"b\"]\nclass = \"x\"\n\n[[row]]\nreq = \"R2\"\nscope = \"deferred\"\nfunctions = [\"c\"]\n\n[[row]]\nreq = \"R3\"\nscope = \"in scope\"\n";
+        assert_eq!(functions_in_scope(table).unwrap(), named(&[("R1", "a"), ("R1", "b")]));
+    }
+
+    // The repository: every function of a row in scope is registered.
+    #[test]
+    fn the_functions_of_the_rows_in_scope_are_registered() {
+        let root = root();
+        let named = functions_in_scope(&fs::read_to_string(root.join("docs/traceability.toml")).unwrap()).unwrap();
+        assert!(named.len() >= 7, "{named:?}");
+        let registry = registry(&root).unwrap();
+        for (req, name) in &named {
+            let registered = registry.function.iter().any(|e| e.kind == "decision" && e.path.rsplit("::").next() == Some(name));
+            let owed = registry.missing.iter().any(|m| &m.function == name && &m.requirement == req);
+            assert!(registered || owed, "{req}: {name}");
+        }
     }
 }

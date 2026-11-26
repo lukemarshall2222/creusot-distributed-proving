@@ -15,6 +15,9 @@
 //! - a Verification line of a row in scope lacks an assurance level, an
 //!   artifact path or a CI job (criterion 6), or the lines of the row lack
 //!   the levels that its class needs (criterion 4);
+//! - an exchanged format that a requirement in scope is cited for has no
+//!   entry in the format registry, or an entry names something that does
+//!   not exist (R7.10 criterion 7; `formats.rs`);
 //! - the workflows do not define exactly the CI job list, `ci/traceability`
 //!   does not come after every other `ci/` job, or a `sched/` job declares
 //!   no input paths (criteria 9 and 10).
@@ -23,8 +26,8 @@
 //! exists when it is a tracked file, or a directory that holds one.
 //!
 //! Not checked yet: the outcomes of the CI jobs on the commit (criterion
-//! 3) and with them the pending report (criterion 8), the format registry
-//! and the mutation targets.
+//! 3) and with them the pending report (criterion 8), and the mutation
+//! targets.
 //!
 //! `traceability-check --write` rewrites the derived fields and keeps the
 //! scope statuses; a new row starts deferred.
@@ -56,7 +59,26 @@ pub struct Row {
     pub functions: Vec<String>,
     pub artifacts: Vec<String>,
     pub jobs: Vec<String>,
+    /// The trust items that the Trust subsection cites (TB, AS, NG, F).
+    #[serde(default)]
+    pub trust: Vec<String>,
+    /// The Verification lines: the assurance levels of each with its
+    /// artifact paths and CI jobs. The triples of a row (criterion 7) are
+    /// the combinations within each line.
+    #[serde(default)]
+    pub verification: Vec<Triples>,
 }
+
+/// One Verification line as the table holds it.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Triples {
+    pub levels: Vec<String>,
+    pub artifacts: Vec<String>,
+    pub jobs: Vec<String>,
+}
+
+pub mod formats;
 
 pub const SCOPES: [&str; 3] = ["deferred", "in scope", "dropped"];
 
@@ -110,6 +132,8 @@ pub fn rows_of(requirements: &str) -> Vec<Row> {
                     functions,
                     artifacts: Vec::new(),
                     jobs: Vec::new(),
+                    trust: Vec::new(),
+                    verification: Vec::new(),
                 });
             }
             section = "";
@@ -123,6 +147,7 @@ pub fn rows_of(requirements: &str) -> Vec<Row> {
                 section = match name.trim() {
                     "Properties" => "properties",
                     "Verification" => "verification",
+                    "Trust" => "trust",
                     _ => "",
                 };
             }
@@ -151,11 +176,43 @@ pub fn rows_of(requirements: &str) -> Vec<Row> {
                         }
                     }
                 }
+                "trust" => {
+                    for item in trust_items(line) {
+                        if !row.trust.contains(&item) {
+                            row.trust.push(item);
+                        }
+                    }
+                }
                 _ => {}
             }
         }
     }
+    let lines = lines_of(requirements);
+    for row in &mut rows {
+        row.verification = lines
+            .get(&row.req)
+            .map(|lines| {
+                lines
+                    .iter()
+                    .map(|l| Triples { levels: l.levels.clone(), artifacts: l.artifacts.clone(), jobs: l.jobs.clone() })
+                    .collect()
+            })
+            .unwrap_or_default();
+    }
     rows
+}
+
+/// The trust items that a line names: `TB-1`, `AS-12`, `NG-3`, `F2`.
+pub fn trust_items(line: &str) -> Vec<String> {
+    let mut items = Vec::new();
+    for word in line.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-')) {
+        let digits = |rest: &str| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit());
+        let item = ["TB-", "AS-", "NG-", "F"].iter().any(|prefix| word.strip_prefix(prefix).is_some_and(digits));
+        if item && !items.iter().any(|i| i == word) {
+            items.push(word.to_string());
+        }
+    }
+    items
 }
 
 /// One Verification line of a requirement: its assurance levels, artifact
@@ -279,6 +336,7 @@ pub fn check(table: &Table, requirements: &str, tracked: &BTreeSet<String>, jobs
             ("functions", &row.functions, &w.functions),
             ("artifacts", &row.artifacts, &w.artifacts),
             ("jobs", &row.jobs, &w.jobs),
+            ("trust items", &row.trust, &w.trust),
         ] {
             if ours != theirs {
                 let missing: Vec<_> = theirs.iter().filter(|t| !ours.contains(t)).collect();
@@ -288,6 +346,12 @@ pub fn check(table: &Table, requirements: &str, tracked: &BTreeSet<String>, jobs
                     row.req
                 ));
             }
+        }
+        if row.verification != w.verification {
+            problems.push(format!(
+                "{}: the levels, artifacts and jobs of its Verification lines differ from requirements.md",
+                row.req
+            ));
         }
         let missing: Vec<&String> = row.artifacts.iter().filter(|a| !exists(a, tracked)).collect();
         match row.scope.as_str() {
@@ -510,6 +574,8 @@ pub struct Inputs {
     pub workflows: Vec<String>,
     /// The files that git tracks, and those that are staged to be.
     pub tracked: BTreeSet<String>,
+    /// `docs/formats/index.toml`, the format registry.
+    pub formats: String,
 }
 
 impl Inputs {
@@ -527,6 +593,7 @@ impl Inputs {
             rendered: read(&root.join("docs/traceability.md")).unwrap_or_default(),
             workflows: paths.iter().map(|p| read(p)).collect::<Result<_, _>>()?,
             tracked: tracked_files(root)?,
+            formats: read(&root.join("docs/formats/index.toml"))?,
         })
     }
 }
@@ -541,6 +608,10 @@ pub fn check_all(inputs: &Inputs) -> Result<Vec<String>, String> {
     let mut problems = check(&table, requirements, tracked, &jobs);
     problems.extend(check_jobs(requirements, &jobs));
     problems.extend(check_order(&groups));
+    let registry: formats::Registry =
+        toml::from_str(&inputs.formats).map_err(|e| format!("docs/formats/index.toml: {e}"))?;
+    let in_scope: BTreeSet<&str> = table.row.iter().filter(|r| r.scope == "in scope").map(|r| r.req.as_str()).collect();
+    problems.extend(formats::check(&registry, tracked, &in_scope));
     // Every job has its script, and every script is a job (R7.11: one
     // script per job under ci/jobs).
     for job in &jobs {

@@ -1,0 +1,29 @@
+; The manifest of an entry of the Certificate_Store (R5.4). Codec:
+; crates/dp-cert/src/lib.rs (`Certificate`). The entry is the directory
+; named by the hash of its manifest, with the files `goal`, `proof` and
+; `manifest`; an entry whose files do not have the hashes that the
+; manifest names, or whose manifest is not canonical, is damaged.
+
+manifest        = "(" %s"14:dp-certificate"
+                      hash                 ; the hash of the file `goal`, the reference of the check
+                      text                 ; the extension of the goal's file
+                      hash                 ; the hash of the file `proof`
+                      hash                 ; the Task_Hash
+                      bytes                ; the Driver
+                      text                 ; the prover that produced the proof
+                      hash                 ; the hash of the checker binary
+                      hash                 ; the hash of the signature files
+                  ")"
+
+; Shared rules. Every value is a canonical S-expression
+; (canonical-sexp.abnf): an atom is its length in decimal, a colon and
+; that many octets; a list has no whitespace between its items.
+
+hash    = %s"32:" 32OCTET
+number  = atom                        ; its octets are a decimal number below 2^64 without leading zeros
+text    = atom                        ; its octets are UTF-8
+bytes   = atom
+atom    = length ":" *OCTET           ; exactly <length> octets follow the colon
+length  = "0" / (%x31-39 *DIGIT)
+DIGIT   = %x30-39
+OCTET   = %x00-FF

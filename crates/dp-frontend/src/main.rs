@@ -62,13 +62,16 @@ fn main() -> ExitCode {
         local_racer: options.local_racer,
         certification: match options.checker {
             // The signature files are hashed once, at the start.
-            Some(checker) => match checker.signature_hash() {
-                Ok(signature_hash) => Some(session::Certification {
+            // The signature files are hashed once, at the start, and the
+            // rules that they declare are read then.
+            Some(checker) => match checker.signature_hash().and_then(|hash| Ok((hash, checker.rules()?))) {
+                Ok((signature_hash, rules)) => Some(session::Certification {
                     ethos: checker.ethos.to_string_lossy().into_owned(),
                     signature: checker.signature,
                     signature_hash,
                     check_micros: options.check_limit.map(|d| d.as_micros() as u64),
                     proof_limit: options.proof_limit,
+                    rules: std::sync::Arc::new(rules),
                 }),
                 Err(e) => return fail(format!("the signature files of the checker: {e}")),
             },

@@ -36,6 +36,53 @@ jobs = [
     "ci/test",
     "ci/sim",
 ]
+trust = [
+    "AS-2",
+    "AS-3",
+    "AS-4",
+    "AS-33",
+    "NG-7",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/integration/cluster/"]
+jobs = ["ci/integration-cluster"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/integration/cluster/cluster_off.rs"]
+jobs = ["ci/integration-cluster"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/integration/cluster/fallback.rs"]
+jobs = ["ci/integration-cluster"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/integration/cluster/config.rs"]
+jobs = ["ci/integration-cluster"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/diff/dist_vs_local/"]
+jobs = ["ci/diff"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-core/tests/prop_assign.rs"]
+jobs = ["ci/test"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-formats/tests/prop_config.rs"]
+jobs = ["ci/test"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/sim/"]
+jobs = ["ci/sim"]
 
 [[row]]
 req = "R1.2"
@@ -67,6 +114,41 @@ jobs = [
     "ci/integration-cluster",
     "sched/eval",
 ]
+trust = [
+    "NG-3",
+    "AS-22",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["crates/dp-core/src/escalation.rs"]
+jobs = ["ci/creusot"]
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = ["verification/tla/Coordinator.tla"]
+jobs = ["ci/tlc"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-core/tests/prop_escalation.rs",
+    "tests/sim/",
+]
+jobs = [
+    "ci/test",
+    "ci/sim",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/integration/fast_pass/"]
+jobs = ["ci/integration-cluster"]
+
+[[row.verification]]
+levels = ["A5"]
+artifacts = ["eval/scripts/rq7_escalation/"]
+jobs = ["sched/eval"]
 
 [[row]]
 req = "R1.3"
@@ -105,6 +187,59 @@ jobs = [
     "sched/sim-nightly",
     "sched/mutants-weekly",
 ]
+trust = [
+    "TB-1",
+    "TB-2",
+    "TB-13",
+    "AS-9",
+    "AS-3",
+    "AS-37",
+    "TB-23",
+    "NG-7",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["crates/dp-core/src/verdict.rs"]
+jobs = ["ci/creusot"]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = ["crates/dp-frontend/src/accept.rs"]
+jobs = [
+    "ci/sim",
+    "ci/canaries",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-core/tests/prop_accept.rs"]
+jobs = ["ci/test"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["fuzz/result_message/"]
+jobs = [
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tests/sim/adversarial_coordinator.rs",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/sim",
+    "sched/sim-nightly",
+    "sched/mutants-weekly",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/canaries/"]
+jobs = ["ci/canaries"]
 
 [[row]]
 req = "R1.4"
@@ -133,6 +268,37 @@ jobs = [
     "ci/sim",
     "sched/eval",
 ]
+trust = [
+    "AS-4",
+    "AS-20",
+    "AS-21",
+    "AS-39",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-core/tests/prop_calibration.rs"]
+jobs = ["ci/test"]
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = ["verification/kani/calibration.rs"]
+jobs = ["ci/kani"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/integration/cluster/calibration.rs"]
+jobs = ["ci/integration-cluster"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/sim/adversarial_coordinator.rs"]
+jobs = ["ci/sim"]
+
+[[row.verification]]
+levels = ["A5"]
+artifacts = ["eval/scripts/rq6_instability/"]
+jobs = ["sched/eval"]
 
 [[row]]
 req = "R1.5"
@@ -177,6 +343,69 @@ jobs = [
     "ci/integration-cluster",
     "ci/test",
 ]
+trust = [
+    "F1",
+    "F4",
+    "F3",
+    "AS-14",
+    "AS-21",
+    "TB-7",
+    "TB-8",
+]
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = [
+    "verification/tla/Coordinator.tla",
+    "verification/tla/Coordinator.tla",
+]
+jobs = [
+    "ci/tlc",
+    "sched/apalache-nightly",
+]
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = ["verification/tla/traces/"]
+jobs = ["ci/trace-validation"]
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = ["verification/kani/coordinator.rs"]
+jobs = ["ci/kani"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/sim/"]
+jobs = [
+    "ci/sim",
+    "sched/sim-nightly",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/integration/cluster/cancel.rs"]
+jobs = ["ci/integration-cluster"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/integration/cluster/deadline.rs"]
+jobs = ["ci/integration-cluster"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-core/tests/prop_cancel.rs"]
+jobs = ["ci/test"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-shell/"]
+jobs = ["ci/test"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-core/tests/prop_record.rs"]
+jobs = ["ci/test"]
 
 [[row]]
 req = "R1.6"
@@ -215,6 +444,43 @@ jobs = [
     "ci/test",
     "ci/integration-cluster",
 ]
+trust = [
+    "F1",
+    "F3",
+    "NG-8",
+    "AS-3",
+]
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = ["verification/tla/Coordinator.tla"]
+jobs = [
+    "ci/tlc",
+    "sched/apalache-nightly",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/sim/faults/"]
+jobs = [
+    "ci/sim",
+    "sched/sim-nightly",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-core/tests/heartbeat_margin.rs"]
+jobs = ["ci/test"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-core/tests/prop_idempotent.rs"]
+jobs = ["ci/test"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/integration/cluster/faults.rs"]
+jobs = ["ci/integration-cluster"]
 
 [[row]]
 req = "R1.7"
@@ -247,6 +513,42 @@ jobs = [
     "ci/integration-cluster",
     "ci/sim",
 ]
+trust = [
+    "TB-13",
+    "AS-3",
+    "NG-7",
+]
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = ["verification/tla/Coordinator.tla"]
+jobs = ["ci/tlc"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-core/tests/prop_operator.rs"]
+jobs = ["ci/test"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/integration/cluster/operator.rs"]
+jobs = ["ci/integration-cluster"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-formats/tests/"]
+jobs = ["ci/test"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tests/sim/",
+    "tests/sim/adversarial_coordinator.rs",
+]
+jobs = [
+    "ci/sim",
+    "ci/sim",
+]
 
 [[row]]
 req = "R2.1"
@@ -273,6 +575,30 @@ jobs = [
     "ci/integration-cluster",
     "ci/sim",
 ]
+trust = ["TB-12"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-formats/tests/prop_config.rs"]
+jobs = ["ci/test"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["fuzz/config_parser/"]
+jobs = [
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/integration/config/"]
+jobs = ["ci/integration-cluster"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/sim/"]
+jobs = ["ci/sim"]
 
 [[row]]
 req = "R2.2"
@@ -320,6 +646,57 @@ jobs = [
     "ci/integration-cluster",
     "sched/eval",
 ]
+trust = [
+    "F1",
+    "F4",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["crates/dp-core/src/race.rs"]
+jobs = ["ci/creusot"]
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = ["verification/tla/Coordinator.tla"]
+jobs = [
+    "ci/tlc",
+    "sched/apalache-nightly",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-core/tests/prop_race.rs"]
+jobs = ["ci/test"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tests/sim/",
+    "tests/sim/faults/",
+]
+jobs = [
+    "ci/sim",
+    "sched/sim-nightly",
+    "ci/sim",
+    "sched/sim-nightly",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tests/integration/cluster/race.rs",
+    "tests/integration/config/",
+]
+jobs = [
+    "ci/integration-cluster",
+    "ci/integration-cluster",
+]
+
+[[row.verification]]
+levels = ["A5"]
+artifacts = ["eval/scripts/rq2_portfolio/"]
+jobs = ["sched/eval"]
 
 [[row]]
 req = "R2.3"
@@ -346,6 +723,29 @@ jobs = [
     "ci/replay",
     "ci/diff",
 ]
+trust = ["AS-19"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-formats/tests/prop_proofjson.rs"]
+jobs = ["ci/test"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tests/replay/",
+    "tests/replay/tamper/",
+]
+jobs = [
+    "ci/integration-cluster",
+    "ci/replay",
+    "ci/replay",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/diff/legacy_reader/"]
+jobs = ["ci/diff"]
 
 [[row]]
 req = "R3.1"
@@ -388,6 +788,55 @@ jobs = [
     "sched/sim-nightly",
     "sched/eval",
 ]
+trust = [
+    "AS-7",
+    "AS-10",
+    "NG-8",
+    "NG-7",
+    "TB-2",
+]
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = ["verification/tla/Sharing.tla"]
+jobs = ["ci/tlc"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-core/tests/prop_forward.rs"]
+jobs = ["ci/test"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-core/tests/prop_pending.rs"]
+jobs = ["ci/test"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/diff/sharing_on_off/"]
+jobs = ["ci/diff"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tests/sim/faults/",
+    "tests/sim/hostile_pool.rs",
+    "tests/sim/two_job_default_deps.rs",
+    "tests/sim/forwarding.rs",
+]
+jobs = [
+    "ci/sim",
+    "sched/sim-nightly",
+    "ci/sim",
+    "sched/sim-nightly",
+    "ci/sim",
+    "sched/sim-nightly",
+]
+
+[[row.verification]]
+levels = ["A5"]
+artifacts = ["eval/scripts/rq3_within_goal/"]
+jobs = ["sched/eval"]
 
 [[row]]
 req = "R3.2"
@@ -437,6 +886,82 @@ jobs = [
     "ci/integration-cluster",
     "ci/replay",
 ]
+trust = [
+    "TB-3",
+    "TB-4",
+    "TB-11",
+    "AS-30",
+    "AS-23",
+    "AS-24",
+    "AS-11",
+    "TB-2",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["crates/dp-core/src/provenance.rs"]
+jobs = ["ci/creusot"]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["proofs/lean/DP/Admission.lean"]
+jobs = ["ci/lean"]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = [
+    "crates/dp-core/src/compose_plan.rs",
+    "crates/dp-core/src/admission.rs",
+]
+jobs = ["ci/creusot"]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = ["crates/dp-cert/src/check.rs"]
+jobs = [
+    "ci/certs",
+    "ci/canaries",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-formats/tests/",
+    "fuzz/provenance/",
+    "crates/dp-core/tests/prop_provenance.rs",
+    "crates/dp-core/tests/prop_admission.rs",
+    "crates/dp-cert/tests/prop_compose.rs",
+    "crates/dp-pool/tests/prop_pool.rs",
+]
+jobs = [
+    "ci/test",
+    "ci/fuzz-smoke",
+    "ci/test",
+    "ci/test",
+    "ci/test",
+    "ci/test",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tests/sim/lying_provenance.rs",
+    "tests/canaries/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/sim",
+    "ci/canaries",
+    "sched/mutants-weekly",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/replay/"]
+jobs = [
+    "ci/integration-cluster",
+    "ci/replay",
+]
 
 [[row]]
 req = "R3.3"
@@ -468,6 +993,57 @@ jobs = [
     "ci/certs",
     "ci/canaries",
     "ci/kani",
+    "ci/test",
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+    "sched/mutants-weekly",
+]
+trust = [
+    "TB-14",
+    "TB-3",
+    "TB-4",
+    "TB-11",
+    "AS-30",
+    "AS-40",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["crates/dp-core/src/admission.rs"]
+jobs = ["ci/creusot"]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["proofs/lean/DP/Admission.lean"]
+jobs = ["ci/lean"]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = [
+    "crates/dp-frontend/src/accept.rs",
+    "crates/dp-cert/src/check.rs",
+]
+jobs = [
+    "ci/certs",
+    "ci/canaries",
+    "ci/certs",
+]
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = ["verification/kani/parsers.rs"]
+jobs = ["ci/kani"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-core/tests/prop_hygiene.rs",
+    "crates/dp-formats/tests/",
+    "fuzz/lemma_parser/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/test",
     "ci/test",
     "ci/fuzz-smoke",
     "sched/fuzz-nightly",
@@ -516,6 +1092,60 @@ jobs = [
     "ci/sim",
     "sched/mutants-weekly",
 ]
+trust = [
+    "TB-5",
+    "AS-12",
+    "TB-1",
+    "TB-3",
+    "TB-4",
+    "TB-11",
+    "AS-30",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["proofs/lean/DP/Admission.lean"]
+jobs = ["ci/lean"]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["proofs/lean/DP/ModelSanity.lean"]
+jobs = ["ci/lean"]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["crates/dp-core/src/admission.rs"]
+jobs = ["ci/creusot"]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = [
+    "crates/dp-frontend/src/accept.rs",
+    "crates/dp-cert/src/check.rs",
+]
+jobs = [
+    "ci/certs",
+    "ci/canaries",
+    "ci/certs",
+    "ci/canaries",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tests/diff/admission_lean_vs_rust/",
+    "crates/dp-core/tests/prop_admission.rs",
+    "tests/canaries/",
+    "tests/sim/lying_provenance.rs",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/diff",
+    "ci/test",
+    "ci/canaries",
+    "ci/sim",
+    "sched/mutants-weekly",
+]
 
 [[row]]
 req = "R3.5"
@@ -561,6 +1191,58 @@ jobs = [
     "ci/test",
     "sched/mutants-weekly",
 ]
+trust = [
+    "TB-3",
+    "TB-4",
+    "AS-6",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["proofs/lean/DP/Partition.lean"]
+jobs = [
+    "ci/lean-partition",
+    "ci/lean",
+]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = [
+    "crates/dp-cert/src/partition.rs",
+    "crates/dp-frontend/src/accept.rs",
+]
+jobs = [
+    "ci/certs",
+    "ci/sim",
+    "ci/canaries",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = [
+    "crates/dp-core/src/race.rs",
+    "crates/dp-core/src/verdict.rs",
+]
+jobs = ["ci/creusot"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-cert/tests/prop_partition.rs",
+    "tests/canaries/partition/",
+    "crates/dp-core/tests/prop_race.rs",
+    "tests/sim/adversarial_coordinator.rs",
+    "crates/dp-formats/tests/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/test",
+    "ci/canaries",
+    "ci/test",
+    "ci/sim",
+    "ci/test",
+    "sched/mutants-weekly",
+]
 
 [[row]]
 req = "R3.6"
@@ -587,6 +1269,36 @@ jobs = [
     "ci/fuzz-smoke",
     "sched/fuzz-nightly",
     "ci/test",
+    "ci/sim",
+    "sched/sim-nightly",
+]
+trust = []
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = ["verification/kani/pool.rs"]
+jobs = ["ci/kani"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["fuzz/lemma_pool_ingest/"]
+jobs = [
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-pool/tests/prop_pool.rs"]
+jobs = ["ci/test"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tests/sim/hostile_pool.rs",
+    "tests/sim/faults/",
+]
+jobs = [
     "ci/sim",
     "sched/sim-nightly",
 ]
@@ -649,6 +1361,83 @@ jobs = [
     "ci/sim",
     "sched/mutants-weekly",
 ]
+trust = [
+    "TB-1",
+    "AS-9",
+    "AS-24",
+    "AS-27",
+    "AS-26",
+    "AS-25",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["proofs/lean/DP/Canon.lean"]
+jobs = ["ci/lean"]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["crates/dp-core/src/admission.rs"]
+jobs = ["ci/creusot"]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = [
+    "crates/dp-frontend/src/accept.rs",
+    "crates/dp-cert/src/check.rs",
+]
+jobs = [
+    "ci/certs",
+    "ci/canaries",
+    "ci/certs",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-canon/tests/",
+    "crates/dp-canon/tests/",
+    "crates/dp-worker/tests/prop_rename.rs",
+]
+jobs = [
+    "ci/test",
+    "ci/test",
+    "ci/test",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tests/diff/canon_equisat/",
+    "tests/diff/canon_determinism/",
+    "tests/diff/canon_lean_vs_rust/",
+]
+jobs = [
+    "ci/diff",
+    "ci/diff",
+    "ci/diff",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/diff/solver_names/"]
+jobs = ["ci/diff"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "fuzz/canonicalizer/",
+    "tests/sim/lying_provenance.rs",
+    "tests/canaries/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+    "ci/sim",
+    "ci/canaries",
+    "sched/mutants-weekly",
+]
 
 [[row]]
 req = "R4.2"
@@ -685,6 +1474,46 @@ jobs = [
     "ci/canaries",
     "sched/eval",
 ]
+trust = [
+    "AS-29",
+    "AS-11",
+]
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = ["verification/tla/Sharing.tla"]
+jobs = ["ci/tlc"]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = [
+    "proofs/lean/DP/Admission.lean",
+    "crates/dp-core/src/admission.rs",
+]
+jobs = [
+    "ci/lean",
+    "ci/creusot",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-core/tests/prop_scope.rs",
+    "tests/diff/cross_goal_on_off/",
+    "tests/integration/config/",
+    "tests/canaries/",
+]
+jobs = [
+    "ci/test",
+    "ci/diff",
+    "ci/integration-cluster",
+    "ci/canaries",
+]
+
+[[row.verification]]
+levels = ["A5"]
+artifacts = ["eval/scripts/rq4_cross_goal/"]
+jobs = ["sched/eval"]
 
 [[row]]
 req = "R4.3"
@@ -720,6 +1549,48 @@ jobs = [
     "ci/canaries",
     "ci/test",
     "ci/diff",
+    "sched/mutants-weekly",
+]
+trust = [
+    "AS-12",
+    "AS-27",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = [
+    "proofs/lean/DP/Admission.lean",
+    "crates/dp-core/src/admission.rs",
+]
+jobs = [
+    "ci/lean",
+    "ci/creusot",
+]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = [
+    "crates/dp-frontend/src/accept.rs",
+    "crates/dp-cert/src/check.rs",
+]
+jobs = [
+    "ci/certs",
+    "ci/canaries",
+    "ci/certs",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-core/tests/prop_ground.rs",
+    "tests/diff/cross_goal_on_off/",
+    "tests/canaries/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/test",
+    "ci/diff",
+    "ci/canaries",
     "sched/mutants-weekly",
 ]
 
@@ -777,6 +1648,82 @@ jobs = [
     "sched/mutants-weekly",
     "sched/eval",
 ]
+trust = [
+    "AS-8",
+    "AS-28",
+    "AS-6",
+    "AS-12",
+    "AS-40",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = [
+    "proofs/lean/DP/Hints.lean",
+    "crates/dp-core/src/hints.rs",
+]
+jobs = [
+    "ci/lean",
+    "ci/creusot",
+]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = [
+    "crates/dp-frontend/src/accept.rs",
+    "crates/dp-cert/src/check.rs",
+]
+jobs = [
+    "ci/certs",
+    "ci/canaries",
+    "ci/certs",
+]
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = ["verification/kani/parsers.rs"]
+jobs = ["ci/kani"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-core/tests/prop_hints.rs",
+    "tests/diff/hints_lean_vs_rust/",
+    "tests/diff/hints_on_off/",
+]
+jobs = [
+    "ci/test",
+    "ci/diff",
+    "ci/diff",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/integration/certs/"]
+jobs = ["ci/certs"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-formats/tests/",
+    "fuzz/hint_parser/",
+    "tests/canaries/",
+    "tests/sim/lying_provenance.rs",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/test",
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+    "ci/canaries",
+    "ci/sim",
+    "sched/mutants-weekly",
+]
+
+[[row.verification]]
+levels = ["A5"]
+artifacts = ["eval/scripts/rq4_cross_goal/"]
+jobs = ["sched/eval"]
 
 [[row]]
 req = "R5.1"
@@ -820,6 +1767,54 @@ jobs = [
     "sched/mutants-weekly",
     "sched/eval",
 ]
+trust = [
+    "AS-5",
+    "AS-34",
+    "AS-36",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["crates/dp-core/src/certification.rs"]
+jobs = ["ci/creusot"]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = ["crates/dp-cert/src/check.rs"]
+jobs = ["ci/certs"]
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = ["verification/tla/Coordinator.tla"]
+jobs = ["ci/tlc"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-core/tests/prop_certification.rs",
+    "tests/sim/",
+]
+jobs = [
+    "ci/test",
+    "ci/sim",
+    "sched/sim-nightly",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tests/integration/certs/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/certs",
+    "sched/mutants-weekly",
+]
+
+[[row.verification]]
+levels = ["A5"]
+artifacts = ["eval/scripts/rq5_certificates/"]
+jobs = ["sched/eval"]
 
 [[row]]
 req = "R5.2"
@@ -873,6 +1868,83 @@ jobs = [
     "sched/fuzz-nightly",
     "sched/mutants-weekly",
 ]
+trust = [
+    "AS-6",
+    "AS-23",
+    "AS-34",
+    "AS-36",
+    "AS-12",
+    "TB-3",
+    "TB-4",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["proofs/lean/DP/Compose.lean"]
+jobs = ["ci/lean"]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = [
+    "crates/dp-core/src/compose_plan.rs",
+    "crates/dp-core/src/fragment.rs",
+]
+jobs = [
+    "ci/creusot",
+    "ci/creusot",
+]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = ["crates/dp-cert/src/check.rs"]
+jobs = [
+    "ci/certs",
+    "ci/canaries",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-cert/tests/prop_compose.rs",
+    "tests/diff/compose_lean_vs_rust/",
+    "crates/dp-cert/tests/prop_partition.rs",
+    "crates/dp-core/tests/prop_fragment.rs",
+]
+jobs = [
+    "ci/test",
+    "ci/diff",
+    "ci/test",
+    "ci/test",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-formats/tests/",
+    "fuzz/cpc_proof/",
+    "fuzz/alethe_proof/",
+]
+jobs = [
+    "ci/test",
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/integration/certs/"]
+jobs = ["ci/certs"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tests/canaries/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/canaries",
+    "sched/mutants-weekly",
+]
 
 [[row]]
 req = "R5.3"
@@ -920,6 +1992,69 @@ jobs = [
     "sched/fuzz-nightly",
     "sched/mutants-weekly",
 ]
+trust = [
+    "TB-3",
+    "TB-4",
+    "TB-11",
+    "AS-6",
+    "AS-23",
+    "AS-30",
+    "AS-38",
+]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = ["crates/dp-cert/src/check.rs"]
+jobs = [
+    "ci/certs",
+    "ci/canaries",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["crates/dp-core/src/labels.rs"]
+jobs = ["ci/creusot"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-core/tests/prop_verdict.rs",
+    "tests/diff/label_lean_vs_rust/",
+]
+jobs = [
+    "ci/test",
+    "ci/diff",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/certs/tamper/"]
+jobs = ["ci/certs"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/canaries/"]
+jobs = ["ci/canaries"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "docs/tcb.toml",
+    "tests/integration/certs/",
+]
+jobs = ["ci/certs"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "fuzz/checker_output/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+    "sched/mutants-weekly",
+]
 
 [[row]]
 req = "R5.4"
@@ -953,6 +2088,42 @@ jobs = [
     "ci/integration-cluster",
     "ci/certs",
 ]
+trust = ["TB-1"]
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = ["verification/tla/Coordinator.tla"]
+jobs = ["ci/tlc"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-cert/tests/prop_store.rs",
+    "crates/dp-formats/tests/",
+    "fuzz/cert_manifest/",
+]
+jobs = [
+    "ci/test",
+    "ci/test",
+    "ci/fuzz-smoke",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tests/replay/tamper/",
+    "tests/replay/",
+]
+jobs = [
+    "ci/replay",
+    "ci/integration-cluster",
+    "ci/replay",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/integration/certs/store_faults.rs"]
+jobs = ["ci/certs"]
 
 [[row]]
 req = "R5.5"
@@ -988,6 +2159,47 @@ jobs = [
     "sched/mutants-weekly",
     "sched/eval",
 ]
+trust = [
+    "TB-3",
+    "TB-4",
+    "TB-11",
+    "NG-1",
+    "NG-2",
+    "NG-4",
+    "AS-12",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["crates/dp-core/src/verdict.rs"]
+jobs = ["ci/creusot"]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = ["crates/dp-cert/src/check.rs"]
+jobs = ["ci/certs"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-core/tests/prop_verdict.rs",
+    "tests/diff/certify_all_on_off/",
+    "tests/integration/config/",
+    "tests/canaries/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/test",
+    "ci/diff",
+    "ci/integration-cluster",
+    "ci/canaries",
+    "sched/mutants-weekly",
+]
+
+[[row.verification]]
+levels = ["A5"]
+artifacts = ["eval/scripts/rq5_certificates/"]
+jobs = ["sched/eval"]
 
 [[row]]
 req = "R6.1"
@@ -1018,6 +2230,47 @@ jobs = [
     "ci/test",
     "ci/fuzz-smoke",
 ]
+trust = [
+    "AS-15",
+    "AS-16",
+    "AS-17",
+    "NG-11",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "eval/corpus/tests/",
+    "eval/corpus/tests/",
+]
+jobs = [
+    "ci/corpus-check",
+    "sched/eval",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/diff/export_vs_why3find/"]
+jobs = ["ci/diff"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-formats/tests/",
+    "fuzz/corpus_metadata/",
+]
+jobs = [
+    "ci/test",
+    "ci/fuzz-smoke",
+]
+
+[[row.verification]]
+levels = ["A5"]
+artifacts = [
+    "eval/scripts/corpus_hardness/",
+    "eval/rq/corpus.toml",
+]
+jobs = ["sched/eval"]
 
 [[row]]
 req = "R6.2"
@@ -1055,6 +2308,46 @@ jobs = [
     "ci/eval-smoke",
     "ci/eval-report",
 ]
+trust = [
+    "NG-11",
+    "TB-21",
+    "AS-39",
+]
+
+[[row.verification]]
+levels = ["A5"]
+artifacts = [
+    "eval/scripts/rq1_distribution/",
+    "eval/scripts/rq2_portfolio/",
+    "eval/scripts/rq3_within_goal/",
+    "eval/scripts/rq4_cross_goal/",
+    "eval/scripts/rq5_certificates/",
+    "eval/scripts/rq6_instability/",
+    "eval/scripts/rq7_escalation/",
+    "eval/rq/",
+]
+jobs = ["sched/eval"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "eval/rq/corpus.toml",
+    "eval/tests/",
+]
+jobs = ["ci/eval-smoke"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["eval/tests/"]
+jobs = [
+    "ci/eval-smoke",
+    "ci/eval-report",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["eval/tests/metrics/"]
+jobs = ["ci/eval-smoke"]
 
 [[row]]
 req = "R6.3"
@@ -1090,6 +2383,50 @@ jobs = [
     "ci/eval-report",
     "ci/test",
 ]
+trust = [
+    "AS-17",
+    "TB-20",
+    "NG-11",
+]
+
+[[row.verification]]
+levels = ["A5"]
+artifacts = ["eval/scripts/"]
+jobs = ["sched/eval"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["eval/tests/"]
+jobs = ["ci/eval-smoke"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "eval/raw/",
+    "eval/report/check/",
+]
+jobs = ["ci/eval-report"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "eval/tests/canary_gate/",
+    "eval/report/check/",
+]
+jobs = [
+    "ci/eval-smoke",
+    "ci/eval-report",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["eval/tests/canary_gate/"]
+jobs = ["ci/eval-smoke"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["crates/dp-formats/tests/"]
+jobs = ["ci/test"]
 
 [[row]]
 req = "R6.4"
@@ -1116,6 +2453,30 @@ artifacts = [
 ]
 jobs = [
     "ci/eval-report",
+    "sched/eval",
+]
+trust = ["TB-15"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["eval/report/"]
+jobs = ["ci/eval-report"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["eval/report/check/"]
+jobs = ["ci/eval-report"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["eval/tests/report_check/"]
+jobs = ["ci/eval-report"]
+
+[[row.verification]]
+levels = ["A5"]
+artifacts = ["eval/report/"]
+jobs = [
+    "sched/eval",
     "sched/eval",
 ]
 
@@ -1164,6 +2525,88 @@ jobs = [
     "sched/sim-nightly",
     "sched/mutants-weekly",
 ]
+trust = [
+    "NG-3",
+    "NG-7",
+    "TB-12",
+    "TB-22",
+    "TB-3",
+    "TB-4",
+    "TB-11",
+    "NG-2",
+    "NG-1",
+    "TB-5",
+    "TB-6",
+    "NG-4",
+    "TB-9",
+    "TB-1",
+    "TB-2",
+    "TB-10",
+    "AS-12",
+    "AS-30",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = [
+    "proofs/lean/DP/Verdict.lean",
+    "proofs/lean/DP/Certifiable.lean",
+]
+jobs = [
+    "ci/lean",
+    "ci/lean",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["crates/dp-core/src/verdict.rs"]
+jobs = ["ci/creusot"]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = ["crates/dp-frontend/src/accept.rs"]
+jobs = [
+    "ci/sim",
+    "ci/canaries",
+]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = ["crates/dp-cert/src/check.rs"]
+jobs = [
+    "ci/certs",
+    "ci/canaries",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-core/tests/prop_verdict.rs",
+    "tests/diff/label_lean_vs_rust/",
+    "tests/diff/cache_on_off/",
+]
+jobs = [
+    "ci/test",
+    "ci/diff",
+    "ci/diff",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tests/canaries/",
+    "tests/sim/adversarial_coordinator.rs",
+    "tests/sim/lying_provenance.rs",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/canaries",
+    "sched/canaries-full",
+    "ci/sim",
+    "sched/sim-nightly",
+    "ci/sim",
+    "sched/mutants-weekly",
+]
 
 [[row]]
 req = "R7.2"
@@ -1205,6 +2648,54 @@ jobs = [
     "ci/diff",
     "ci/integration-cluster",
 ]
+trust = [
+    "AS-19",
+    "AS-31",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = [
+    "crates/dp-formats/src/proofjson.rs",
+    "crates/dp-core/src/labels.rs",
+]
+jobs = [
+    "ci/creusot",
+    "ci/creusot",
+]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = ["crates/dp-replay/"]
+jobs = ["ci/replay"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-formats/tests/prop_proofjson.rs",
+    "fuzz/proofjson/",
+    "crates/dp-core/tests/prop_verdict.rs",
+]
+jobs = [
+    "ci/test",
+    "ci/fuzz-smoke",
+    "ci/test",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tests/diff/legacy_reader/",
+    "tests/integration/cluster/race.rs",
+    "tests/integration/cli_labels/",
+    "tests/replay/tamper/",
+]
+jobs = [
+    "ci/diff",
+    "ci/integration-cluster",
+    "ci/integration-cluster",
+    "ci/replay",
+]
 
 [[row]]
 req = "R7.3"
@@ -1229,6 +2720,40 @@ jobs = [
     "ci/purity",
     "ci/creusot",
     "ci/kani",
+    "ci/test",
+    "sched/mutants-weekly",
+]
+trust = [
+    "AS-13",
+    "TB-6",
+    "TB-7",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "docs/traceability.toml",
+    "tools/purity-check/",
+]
+jobs = ["ci/purity"]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["crates/dp-core/"]
+jobs = ["ci/creusot"]
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = ["verification/kani/"]
+jobs = ["ci/kani"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-core/tests/",
+    "tools/mutants/",
+]
+jobs = [
     "ci/test",
     "sched/mutants-weekly",
 ]
@@ -1266,6 +2791,46 @@ jobs = [
     "ci/eval-smoke",
     "sched/mutants-weekly",
 ]
+trust = [
+    "AS-18",
+    "TB-3",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/canaries/"]
+jobs = [
+    "ci/canaries",
+    "sched/canaries-full",
+]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = ["tests/canaries/witness.rs"]
+jobs = ["ci/canaries"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tests/certs/tamper/"]
+jobs = ["ci/certs"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["eval/tests/canary_gate/"]
+jobs = ["ci/eval-smoke"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "docs/traceability.toml",
+    "tests/canaries/modes.toml",
+]
+jobs = ["ci/canaries"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tools/mutants/"]
+jobs = ["sched/mutants-weekly"]
 
 [[row]]
 req = "R7.5"
@@ -1305,6 +2870,49 @@ jobs = [
     "ci/canaries",
     "sched/mutants-weekly",
 ]
+trust = [
+    "TB-10",
+    "TB-1",
+    "AS-35",
+]
+
+[[row.verification]]
+levels = ["A1"]
+artifacts = ["crates/dp-core/src/cache_key.rs"]
+jobs = ["ci/creusot"]
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = ["verification/kani/cache_key.rs"]
+jobs = ["ci/kani"]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = [
+    "crates/dp-frontend/src/accept.rs",
+    "crates/dp-cert/src/check.rs",
+]
+jobs = [
+    "ci/sim",
+    "ci/certs",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-core/tests/prop_cache_key.rs",
+    "tests/diff/cache_on_off/",
+    "tests/diff/legacy_reader/",
+    "tests/canaries/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/test",
+    "ci/diff",
+    "ci/diff",
+    "ci/canaries",
+    "sched/mutants-weekly",
+]
 
 [[row]]
 req = "R7.6"
@@ -1334,6 +2942,42 @@ jobs = [
     "sched/mutants-weekly",
     "sched/eval",
 ]
+trust = [
+    "NG-3",
+    "TB-3",
+    "TB-4",
+    "TB-11",
+    "AS-17",
+    "AS-20",
+    "AS-30",
+]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = ["crates/dp-replay/"]
+jobs = [
+    "ci/integration-cluster",
+    "ci/replay",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tests/replay/tamper/",
+    "tests/replay/",
+    "crates/dp-replay/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/replay",
+    "ci/replay",
+    "sched/mutants-weekly",
+]
+
+[[row.verification]]
+levels = ["A5"]
+artifacts = ["eval/scripts/rq6_instability/"]
+jobs = ["sched/eval"]
 
 [[row]]
 req = "R7.7"
@@ -1358,6 +3002,40 @@ artifacts = [
 jobs = [
     "ci/repro-build",
     "ci/patches",
+    "ci/integration-cluster",
+    "ci/certs",
+    "ci/test",
+]
+trust = [
+    "TB-16",
+    "TB-17",
+    "TB-22",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "deps/",
+    "deps/",
+]
+jobs = [
+    "ci/repro-build",
+    "ci/repro-build",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tools/patch-check/"]
+jobs = ["ci/patches"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tests/integration/pins/",
+    "tests/integration/certs/",
+    "crates/dp-core/tests/prop_verdict.rs",
+]
+jobs = [
     "ci/integration-cluster",
     "ci/certs",
     "ci/test",
@@ -1387,6 +3065,24 @@ jobs = [
     "ci/test",
     "ci/certs",
 ]
+trust = []
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tools/tcb-check/"]
+jobs = ["ci/tcb-check"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "docs/tcb.toml",
+    "crates/dp-core/tests/prop_verdict.rs",
+    "tests/integration/certs/",
+]
+jobs = [
+    "ci/test",
+    "ci/certs",
+]
 
 [[row]]
 req = "R7.9"
@@ -1397,6 +3093,15 @@ properties = [
     "P7.9.2",
 ]
 functions = []
+artifacts = ["tools/patch-check/"]
+jobs = ["ci/patches"]
+trust = [
+    "AS-37",
+    "AS-2",
+]
+
+[[row.verification]]
+levels = ["A4"]
 artifacts = ["tools/patch-check/"]
 jobs = ["ci/patches"]
 
@@ -1439,6 +3144,50 @@ jobs = [
     "ci/diff",
     "ci/traceability",
 ]
+trust = [
+    "TB-14",
+    "TB-3",
+    "TB-4",
+]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = ["crates/dp-formats/src/canonical_check.rs"]
+jobs = [
+    "ci/sim",
+    "ci/canaries",
+    "ci/replay",
+]
+
+[[row.verification]]
+levels = ["A3"]
+artifacts = [
+    "crates/dp-cert/src/check.rs",
+    "crates/dp-frontend/src/accept.rs",
+]
+jobs = ["ci/certs"]
+
+[[row.verification]]
+levels = ["A2"]
+artifacts = ["verification/kani/parsers.rs"]
+jobs = ["ci/kani"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "crates/dp-formats/tests/",
+    "crates/dp-canon/tests/",
+    "fuzz/",
+    "tests/diff/smtlib_parser/",
+    "tools/traceability-check/",
+]
+jobs = [
+    "ci/test",
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+    "ci/diff",
+    "ci/traceability",
+]
 
 [[row]]
 req = "R7.11"
@@ -1463,6 +3212,18 @@ artifacts = [
     "tools/traceability-check/",
 ]
 jobs = ["ci/traceability"]
+trust = ["TB-18"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "docs/traceability.toml",
+    "tools/traceability-check/",
+]
+jobs = [
+    "ci/traceability",
+    "ci/traceability",
+]
 
 [[row]]
 req = "R7.12"
@@ -1474,6 +3235,15 @@ properties = [
     "P7.12.3",
 ]
 functions = []
+artifacts = ["tests/diff/legacy_compat/"]
+jobs = ["ci/diff"]
+trust = [
+    "AS-17",
+    "AS-37",
+]
+
+[[row.verification]]
+levels = ["A4"]
 artifacts = ["tests/diff/legacy_compat/"]
 jobs = ["ci/diff"]
 
@@ -1501,3 +3271,22 @@ jobs = [
     "sched/mutants-weekly",
     "ci/traceability",
 ]
+trust = [
+    "TB-19",
+    "AS-32",
+]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = ["tools/mutants/"]
+jobs = ["sched/mutants-weekly"]
+
+[[row.verification]]
+levels = ["A4"]
+artifacts = [
+    "tools/mutants/targets.toml",
+    "docs/traceability.toml",
+    "tools/mutants/exclusions.toml",
+    "tools/traceability-check/",
+]
+jobs = ["ci/traceability"]

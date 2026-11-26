@@ -11,6 +11,7 @@ pub mod cache_key;
 pub mod calibration;
 pub mod config;
 pub mod coord;
+pub mod fragment;
 pub mod frontend;
 pub mod labels;
 pub mod machine;

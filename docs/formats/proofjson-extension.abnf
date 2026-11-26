@@ -1,0 +1,46 @@
+; The extension of a goal entry of `proof.json` (R2.3, R7.2): the member
+; "dp", whose value is the base64 text (RFC 4648 section 4, with padding)
+; of one canonical S-expression. Codec: crates/dp-formats/src/proofjson.rs
+; (`DpEntry`). A member that is not the base64 of the canonical print of
+; the value that it parses to is rejected (R7.10 criterion 8).
+
+dp-entry        = "(" %s"8:dp-entry"
+                      text                 ; the Assurance_Label
+                      "(" *replay ")"      ; the Replay_Fields of the Results that the label rests on
+                      "()"                 ; the imports; always empty in this stage
+                      hash                 ; the hash of the import set
+                      certificate
+                      absent               ; the hash of the Partition tree; never present in this stage
+                      conflict
+                      "(" *invalid ")"     ; runs that answered Invalid
+                  ")"
+replay          = "(" hash                 ; the Task_Hash
+                      bytes                ; the Driver
+                      text                 ; the prover
+                      text                 ; its version
+                      hash                 ; the hash of the solver binary
+                      place
+                      optional             ; the seed
+                      optional             ; the Calibration
+                      optional             ; the local time limit in microseconds
+                      number               ; the reference time limit in microseconds
+                  ")"
+place           = "(" %s"5:local" ")" / "(" %s"6:worker" text ")" / absent
+optional        = "(" number ")" / absent
+certificate     = "(" hash ")" / absent    ; the content hash of the Certificate_Store entry
+conflict        = "(" %s"8:conflict" ")" / absent
+invalid         = "(" text text hash place ")"   ; prover, version, binary hash, where it ran
+absent          = %s"6:absent"
+
+; Shared rules. Every value is a canonical S-expression
+; (canonical-sexp.abnf): an atom is its length in decimal, a colon and
+; that many octets; a list has no whitespace between its items.
+
+hash    = %s"32:" 32OCTET
+number  = atom                        ; its octets are a decimal number below 2^64 without leading zeros
+text    = atom                        ; its octets are UTF-8
+bytes   = atom
+atom    = length ":" *OCTET           ; exactly <length> octets follow the colon
+length  = "0" / (%x31-39 *DIGIT)
+DIGIT   = %x30-39
+OCTET   = %x00-FF

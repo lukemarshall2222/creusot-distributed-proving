@@ -1,0 +1,9 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_eq_Command": { "prover": "alt-ergo", "time": 0.013 },
+      "vc_eq_CommandKind": { "prover": "alt-ergo", "time": 0.01 }
+    }
+  }
+}

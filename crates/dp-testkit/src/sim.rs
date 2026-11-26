@@ -67,11 +67,14 @@ pub fn script(input: &[u8]) -> Behaviour {
 /// The certificate that the scripted proof producer writes for an input,
 /// and that the scripted checker accepts for that input as its reference.
 pub fn scripted_proof(input: &[u8]) -> Vec<u8> {
-    let mut proof = b"(step proof-of ".to_vec();
+    let mut proof = format!("(step proof-of :rule {SCRIPTED_RULE} :args (").into_bytes();
     proof.extend_from_slice(input);
-    proof.extend_from_slice(b")\n");
+    proof.extend_from_slice(b"))\n");
     proof
 }
+
+/// The one rule of the scripted checker's signature.
+pub const SCRIPTED_RULE: &str = "scripted";
 
 struct Connection {
     /// The two ends: node and the peer number that the node knows it by.

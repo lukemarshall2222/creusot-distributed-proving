@@ -18,6 +18,7 @@ use std::{
 };
 
 pub mod check;
+pub mod fragment;
 
 pub use check::{accepted, check_command, has_trusted_step, tree_hash, Checker};
 

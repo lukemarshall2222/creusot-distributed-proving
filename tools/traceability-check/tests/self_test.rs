@@ -424,3 +424,81 @@ fn a_table_that_differs_from_the_requirements_fails() {
         copy.tracked.remove("ci/jobs/sim.sh");
     }), "ci/sim: no script ci/jobs/sim.sh");
 }
+
+// R7.10 criterion 7, on copies of this repository's format registry: each
+// artifact of each entry removed in turn; each format that is owed taken
+// out of the registry; and a requirement switched to in scope that brings
+// formats with it.
+#[test]
+fn the_format_registry_names_what_exists_for_every_format_that_is_owed() {
+    use traceability_check::formats::{Registry, EXCHANGED};
+    let inputs = repository();
+    let registry: Registry = toml::from_str(&inputs.formats).unwrap();
+    assert!(registry.format.len() >= 4 && !registry.pending.is_empty());
+    for entry in &registry.format {
+        for path in [&entry.grammar, &entry.codec, &entry.roundtrip, &entry.fuzz] {
+            let problems = changed(|copy| {
+                copy.tracked.retain(|f| if path.ends_with('/') { !f.starts_with(path.as_str()) } else { f != path });
+                render_again(copy);
+            });
+            fails(&problems, &format!("format {}: its ", entry.name));
+            fails(&problems, &format!("{path} does not exist"));
+        }
+    }
+    // A format that is owed is neither registered nor pending.
+    let scope: BTreeSet<String> = in_scope(&inputs).into_iter().map(|r| r.req).collect();
+    let mut owed = 0;
+    for (format, cited) in EXCHANGED.iter().filter(|(_, cited)| cited.iter().any(|r| scope.contains(*r))) {
+        let header = format!("name = \"{format}\"\n");
+        let problems = changed(|copy| {
+            // The record or entry, from its table header to the next one.
+            let at = copy.formats.find(&header).unwrap_or_else(|| panic!("{format} is in the registry"));
+            let start = copy.formats[..at].rfind("[[").unwrap();
+            let end = copy.formats[at..].find("\n[[").map(|e| at + e + 1).unwrap_or(copy.formats.len());
+            copy.formats.replace_range(start..end, "");
+        });
+        assert_eq!(problems.len(), 1, "{format}: {problems:#?}");
+        fails(&problems, &format!("format {format}: no entry in docs/formats/index.toml"));
+        assert!(cited.iter().any(|r| problems[0].contains(r)));
+        owed += 1;
+    }
+    assert!(owed >= 8, "{owed} formats are owed");
+    // A format that no requirement in scope is cited for is not owed.
+    let free = EXCHANGED.iter().find(|(_, cited)| !cited.iter().any(|r| scope.contains(*r))).unwrap();
+    assert!(!inputs.formats.contains(&format!("name = \"{}\"", free.0)), "{} is not owed and not registered", free.0);
+}
+
+// R7.11 criteria 1 and 7: the trust items and the level, artifact and job
+// triples of a row are those of the requirements.
+#[test]
+fn trust_items_and_triples_that_differ_from_the_requirements_fail() {
+    let inputs = repository();
+    let row = in_scope(&inputs).into_iter().find(|r| r.trust.len() > 1 && r.verification.len() > 1).expect("a row with both");
+    let edit = |change: &dyn Fn(&mut Row)| {
+        changed(|copy| edit_table(copy, |t| change(t.row.iter_mut().find(|r| r.req == row.req).unwrap())))
+    };
+    assert_eq!(edit(&|r| drop(r.trust.pop())), [format!("{}: trust items differ from requirements.md (missing [{:?}], not there [], or another order)", row.req, row.trust.last().unwrap())]);
+    fails(&edit(&|r| r.trust.push("TB-999".into())), &format!("{}: trust items differ", row.req));
+    let triples = format!("{}: the levels, artifacts and jobs of its Verification lines differ from requirements.md", row.req);
+    assert_eq!(edit(&|r| r.verification[0].levels = vec!["A5".into()]), [triples.clone()]);
+    assert_eq!(edit(&|r| drop(r.verification.remove(0))), [triples.clone()]);
+    assert_eq!(edit(&|r| r.verification[0].jobs.clear()), [triples.clone()]);
+    // An artifact that moves from one line to another: the flat list of the
+    // row is the same, the triples are not.
+    let problems = edit(&|r| {
+        let moved = r.verification[0].artifacts.pop();
+        r.verification[1].artifacts.extend(moved);
+    });
+    if row.verification[0].artifacts.is_empty() {
+        assert_eq!(problems, Vec::<String>::new());
+    } else {
+        assert_eq!(problems, [triples]);
+    }
+    // The requirements cite one more item.
+    let problems = changed(|copy| {
+        let (start, end) = section(&copy.requirements, &row.req);
+        let at = start + copy.requirements[start..end].find("#### Trust\n\n").expect("a Trust subsection") + "#### Trust\n\n".len();
+        copy.requirements.insert_str(at, "- TB-999 (one more).\n");
+    });
+    fails(&problems, &format!("{}: trust items differ from requirements.md (missing [\"TB-999\"]", row.req));
+}

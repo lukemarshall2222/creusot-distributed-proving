@@ -1,0 +1,71 @@
+# The format registry (R7.10): for each exchanged format its grammar file,
+# its codec module, its round-trip test, its fuzz target and its size
+# limit in bytes. `ci/traceability` fails when an entry names something
+# that does not exist, and when a format that a requirement in scope is
+# cited for is neither registered nor pending.
+#
+# [[pending]] names a format that is owed and cannot be registered yet,
+# with the parts that do not exist and the reason. Pending records do not
+# fail the check; every run prints them.
+
+[[format]]
+name = "result-message"
+grammar = "docs/formats/result-message.abnf"
+codec = "crates/dp-formats/src/cluster.rs"
+roundtrip = "crates/dp-formats/tests/prop_cluster.rs"
+fuzz = "fuzz/result_message/"
+size_limit = "268435456"
+
+[[format]]
+name = "cache-entry"
+grammar = "docs/formats/cache-entry.abnf"
+codec = "crates/dp-formats/src/cache.rs"
+roundtrip = "crates/dp-formats/tests/prop_cache.rs"
+fuzz = "fuzz/cache_entry/"
+size_limit = "16777216"
+
+[[format]]
+name = "proofjson-extension"
+grammar = "docs/formats/proofjson-extension.abnf"
+codec = "crates/dp-formats/src/proofjson.rs"
+roundtrip = "crates/dp-formats/tests/prop_proofjson.rs"
+fuzz = "fuzz/proofjson/"
+size_limit = "1048576"
+
+[[format]]
+name = "certificate-manifest"
+grammar = "docs/formats/certificate-manifest.abnf"
+codec = "crates/dp-cert/src/lib.rs"
+roundtrip = "crates/dp-cert/tests/prop_store.rs"
+fuzz = "fuzz/cert_manifest/"
+size_limit = "65536"
+
+[[pending]]
+name = "protocol-messages"
+missing = ["grammar"]
+reason = "R1.7 is in scope. The codec, the round-trip test and the fuzz target of the Result message cover every message of the protocol; only the Result message has its grammar."
+
+[[pending]]
+name = "status-report"
+missing = ["grammar"]
+reason = "R1.7 is in scope. The report is one of the protocol messages and shares their codec, round-trip test and fuzz target."
+
+[[pending]]
+name = "worker-registry"
+missing = ["grammar", "fuzz"]
+reason = "R1.3 is in scope. The registry is read and its signature checked in crates/dp-formats/src/cluster.rs, with a property test; plan task 13 adds the grammar and fuzz/worker_registry/."
+
+[[pending]]
+name = "checker-output"
+missing = ["grammar", "roundtrip"]
+reason = "R5.3 and R5.4 are in scope. The classifier of the checker's output is fuzzed (fuzz/checker_output/); the checker-output record of the Certificate_Store, which is what round-trips, is not written yet."
+
+[[pending]]
+name = "lock-file"
+missing = ["grammar", "roundtrip", "fuzz"]
+reason = "R7.7 is in scope. The Lock_File is TOML with a strict reader (crates/dp-formats/src/lockfile.rs) and no canonical printer yet, so there is nothing to round-trip."
+
+[[pending]]
+name = "tcb-checker-entries"
+missing = ["grammar", "codec", "roundtrip", "fuzz"]
+reason = "R7.8 is in scope. docs/tcb.toml is read by tools/tcb-check only; its checker entries have no codec in dp-formats."

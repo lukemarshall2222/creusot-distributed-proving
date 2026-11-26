@@ -50,6 +50,12 @@ impl Checker {
     /// Runs the checker on a proof with `goal` as the reference. True only
     /// if the checker ended normally and said `correct`.
     pub fn check(&self, goal: &[u8], extension: &str, proof: &[u8], limit: Duration, tmp: &Path) -> io::Result<bool> {
+        // A proof outside the supported fragment is not run: the checker
+        // takes its input as a script, and a script can declare the rule
+        // that it then applies (R5.3 criterion 19).
+        if !crate::fragment::in_fragment(proof, &self.rules()?) {
+            return Ok(false);
+        }
         let reference = tmp.join(format!("reference{extension}"));
         let certificate = tmp.join("proof.cpc");
         fs::write(&reference, goal)?;
@@ -70,6 +76,12 @@ impl Checker {
 
     pub fn signature_hash(&self) -> io::Result<Hash> {
         tree_hash(&self.signature)
+    }
+
+    /// The rules that the signature files declare: a step of a
+    /// certificate may name one of these and no other (R5.2).
+    pub fn rules(&self) -> io::Result<std::collections::BTreeSet<String>> {
+        crate::fragment::rules(&self.signature)
     }
 }
 

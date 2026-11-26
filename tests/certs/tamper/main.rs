@@ -85,3 +85,59 @@ fn a_changed_proof_is_not_accepted() {
     assert!(has_trusted_step(b"(step @p1 false :rule trust)\n"));
     std::fs::remove_dir_all(&t.tmp).unwrap();
 }
+
+// P-ID: P5.2.11, P5.3.1
+//
+// R5.3 criterion 19. The checker takes a proof file as a script, and a
+// script can declare the rule that it then applies: left to itself, the
+// pinned checker says `correct` to two lines that prove false from
+// nothing, for a satisfiable reference (found 2026-11-26). A certificate
+// is therefore read first, and one with any command outside the supported
+// fragment is not run at all.
+#[test]
+fn a_proof_that_declares_its_own_rule_is_not_given_to_the_checker() {
+    let Some(t) = tools("fragment") else { return };
+    let satisfiable = "(set-logic ALL)\n(declare-const x Int)\n(assert (> x 0))\n(check-sat)\n";
+    let forged = "(declare-rule dp_bad () :conclusion false)\n(step @p1 false :rule dp_bad)\n";
+    // The checker alone, as it was run before the screen existed.
+    let reference = t.tmp.join("alone.smt2");
+    let proof_file = t.tmp.join("alone.cpc");
+    std::fs::write(&reference, satisfiable).unwrap();
+    std::fs::write(&proof_file, forged).unwrap();
+    let alone = std::process::Command::new(&t.checker.ethos)
+        .arg(format!("--include={}", t.checker.signature.join("Cpc.eo").display()))
+        .arg(format!("--reference={}", reference.display()))
+        .arg("--require-proof-of-false")
+        .arg(&proof_file)
+        .output()
+        .unwrap();
+    assert!(
+        dp_cert::accepted(alone.status.code().map(|c| c as u32), &alone.stdout),
+        "the pinned checker no longer accepts a proof with its own rule; the screen is still required by R5.3"
+    );
+    // With the screen, it is not accepted, for any reference.
+    let rules = t.checker.rules().unwrap();
+    assert!(rules.len() > 100, "{} rules in the signature", rules.len());
+    assert!(!dp_cert::fragment::in_fragment(forged.as_bytes(), &rules));
+    assert!(!check(&t, satisfiable, forged.as_bytes()));
+    assert!(!check(&t, PROBLEM, forged.as_bytes()));
+    // The honest proof is in the fragment: every rule that cvc5 used is a
+    // rule of the pinned signature.
+    let honest = proof(&t);
+    assert!(dp_cert::fragment::in_fragment(&honest, &rules), "{}", String::from_utf8_lossy(&honest));
+    assert!(check(&t, PROBLEM, &honest));
+    // The forged lines hidden in an honest proof: behind its first
+    // command on the same line, in front, and at its end.
+    let text = String::from_utf8(honest).unwrap();
+    let declare = "(declare-rule dp_bad () :conclusion false)";
+    for hidden in [
+        text.replacen('\n', &format!(" {declare}\n"), 1),
+        format!("{declare}\n{text}"),
+        format!("{text}{declare}\n(step @p999 false :rule dp_bad)\n"),
+        format!("{text}(program dp_p ((x Bool)) (Bool) Bool (((dp_p x) x)))\n"),
+        format!("(define @dp_t () false)\n{text}"),
+    ] {
+        assert!(!check(&t, PROBLEM, hidden.as_bytes()), "accepted: {hidden}");
+    }
+    std::fs::remove_dir_all(&t.tmp).unwrap();
+}

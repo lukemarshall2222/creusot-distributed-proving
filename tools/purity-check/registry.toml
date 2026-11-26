@@ -6,6 +6,12 @@
 # kind = "decision": the result decides a label, an acceptance, an
 #                    assignment or a configuration; `decides` says which.
 # kind = "helper":   anything else.
+#
+# A function that the Traceability_Table names for a requirement in scope
+# is registered here as a decision function (R7.3 criterion 4). One that
+# dp-core does not have yet is recorded under [[missing]] with the reason;
+# `ci/purity` prints these on every run and fails once the function exists
+# without being registered.
 
 [[function]]
 path = "verdict::accept_result"
@@ -140,3 +146,13 @@ decides = "every transition of a Worker (R1.5)"
 [[function]]
 path = "trace::name"
 kind = "helper"
+
+[[function]]
+path = "fragment::fragment_ok"
+kind = "decision"
+decides = "whether a certificate may be given to the checker: every command is in the supported fragment (R5.2, R5.3 criterion 19)"
+
+[[function]]
+path = "fragment::command_ok"
+kind = "decision"
+decides = "whether one proof command is in the supported fragment (R5.2)"

@@ -89,6 +89,9 @@ pub struct Certification {
     pub check_micros: Option<u64>,
     /// The largest certificate taken, in bytes.
     pub proof_limit: usize,
+    /// The rules that the signature files declare; a certificate with a
+    /// step of another rule is not given to the checker (R5.3 criterion 19).
+    pub rules: std::sync::Arc<BTreeSet<String>>,
 }
 
 /// A member of the Portfolio: a Solver_Configuration by name.
@@ -1178,6 +1181,18 @@ impl<E: Env, W: Why3find> Session<E, W> {
             self.cert_finish(cert);
             return Ok(());
         };
+        // R5.3 criterion 19: a certificate outside the supported fragment
+        // is not given to the checker, which would run it as a script; the
+        // Result stays unchecked.
+        if !dp_cert::fragment::in_fragment(&proof, &certification.rules) {
+            eprintln!(
+                "dp-frontend: goal {}: the certificate has a banned command (it is not in the supported fragment); it is not checked",
+                cert.gid
+            );
+            *self.cert_sources.entry("refused for a banned command").or_insert(0) += 1;
+            self.cert_finish(cert);
+            return Ok(());
+        }
         cert.facts.produced = true;
         cert.facts.complete = !dp_cert::has_trusted_step(&proof);
         // The checker binary is hashed as it is about to run.

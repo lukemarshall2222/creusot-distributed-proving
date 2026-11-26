@@ -25,7 +25,7 @@ Generated from `docs/traceability.toml` by `traceability-check --write`; do not 
 | R4.3 | Soundness-critical | deferred | 6 | 4 of 8 | `proofs/lean/DP/Admission.lean`, `crates/dp-core/src/admission.rs`, `crates/dp-core/tests/prop_ground.rs`, `tests/diff/cross_goal_on_off/` |
 | R4.4 | Soundness-critical | deferred | 13 | 6 of 15 | `proofs/lean/DP/Hints.lean`, `crates/dp-core/src/hints.rs`, `verification/kani/parsers.rs`, `crates/dp-core/tests/prop_hints.rs`, `tests/diff/hints_lean_vs_rust/`, `tests/diff/hints_on_off/`, `fuzz/hint_parser/`, `tests/sim/lying_provenance.rs`, `eval/scripts/rq4_cross_goal/` |
 | R5.1 | Soundness-critical | deferred | 12 | 5 of 8 | `crates/dp-core/src/certification.rs`, `crates/dp-core/tests/prop_certification.rs`, `eval/scripts/rq5_certificates/` |
-| R5.2 | Soundness-critical | deferred | 15 | 5 of 14 | `proofs/lean/DP/Compose.lean`, `crates/dp-core/src/compose_plan.rs`, `crates/dp-core/src/fragment.rs`, `crates/dp-cert/tests/prop_compose.rs`, `tests/diff/compose_lean_vs_rust/`, `crates/dp-cert/tests/prop_partition.rs`, `crates/dp-core/tests/prop_fragment.rs`, `fuzz/cpc_proof/`, `fuzz/alethe_proof/` |
+| R5.2 | Soundness-critical | deferred | 15 | 7 of 14 | `proofs/lean/DP/Compose.lean`, `crates/dp-core/src/compose_plan.rs`, `crates/dp-cert/tests/prop_compose.rs`, `tests/diff/compose_lean_vs_rust/`, `crates/dp-cert/tests/prop_partition.rs`, `fuzz/cpc_proof/`, `fuzz/alethe_proof/` |
 | R5.3 | Soundness-critical | in scope | 13 | 10 of 10 |  |
 | R5.4 | Functional | in scope | 8 | 7 of 7 |  |
 | R5.5 | Soundness-critical | deferred | 7 | 5 of 8 | `tests/diff/certify_all_on_off/`, `tests/integration/config/`, `eval/scripts/rq5_certificates/` |

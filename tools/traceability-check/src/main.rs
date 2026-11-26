@@ -15,6 +15,14 @@ fn main() -> ExitCode {
             root = PathBuf::from(arg);
         }
     }
+    // What the format registry still owes is said on every run.
+    if let Ok(text) = std::fs::read_to_string(root.join("docs/formats/index.toml")) {
+        if let Ok(registry) = toml::from_str::<traceability_check::formats::Registry>(&text) {
+            for line in traceability_check::formats::pending(&registry) {
+                eprintln!("ci/traceability: {line}");
+            }
+        }
+    }
     match traceability_check::run(&root, write) {
         Ok(problems) if problems.is_empty() => {
             println!("ci/traceability: docs/traceability.toml agrees with the requirements and with what exists");

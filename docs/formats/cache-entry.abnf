@@ -1,0 +1,49 @@
+; An entry of the Result_Cache (R7.5). Codec:
+; crates/dp-formats/src/cache.rs (`Entry`). The file of an entry is named
+; by the hash of its lookup fields. An input that is not the canonical
+; print of the value that it parses to is a miss (R7.5 criterion 5).
+
+cache-entry     = "(" %s"11:cache-entry" lookup run answer origin ")"
+lookup          = "(" *lookup-field ")"   ; the fields that the key is the hash of, in their order
+lookup-field    = "(" %s"1:b" bytes ")" / "(" %s"1:n" number ")"
+run             = "(" hash            ; the hash of the solver binary
+                      number          ; the Calibration of the machine that ran
+                      number          ; the local time limit in microseconds
+                      hash            ; the hash of the import set
+                  ")"
+answer          = "(" answer-name number ")"   ; with the time of the run in microseconds
+answer-name     = %s"5:valid" / %s"7:invalid" / %s"7:timeout" / %s"11:outofmemory"
+                / %s"17:steplimitexceeded" / %s"7:unknown" / %s"7:failure" / %s"11:highfailure"
+origin          = "(" %s"5:local" ")"
+                / "(" %s"6:worker" result-fields signature ")"   ; the signed Result, as it arrived
+
+result-fields   = "(" text            ; the Job
+                      hash            ; the Task_Hash of the print that was run
+                      text            ; the prover
+                      optional-number ; the seed of a race member
+                      hash            ; the hash of the solver binary
+                      text            ; the Worker
+                      optional-number ; the exit status; none when the run was ended
+                      end
+                      bytes           ; what the solver printed
+                      number          ; elapsed microseconds
+                      number          ; the Worker's Calibration
+                      number          ; the local time limit in microseconds
+                      hash            ; the hash of the import set
+                  ")"
+optional-number = "(" [number] ")"
+end             = %s"9:timed-out" / %s"6:exited"
+signature       = %s"64:" 64OCTET     ; Ed25519, over the print of result-fields
+
+; Shared rules. Every value is a canonical S-expression
+; (canonical-sexp.abnf): an atom is its length in decimal, a colon and
+; that many octets; a list has no whitespace between its items.
+
+hash    = %s"32:" 32OCTET
+number  = atom                        ; its octets are a decimal number below 2^64 without leading zeros
+text    = atom                        ; its octets are UTF-8
+bytes   = atom
+atom    = length ":" *OCTET           ; exactly <length> octets follow the colon
+length  = "0" / (%x31-39 *DIGIT)
+DIGIT   = %x30-39
+OCTET   = %x00-FF

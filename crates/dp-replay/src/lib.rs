@@ -390,6 +390,9 @@ impl Replay {
         if dp_cert::has_trusted_step(&certificate.proof) {
             return no("the certificate has a step that is taken on trust");
         }
+        if !dp_cert::fragment::in_fragment(&certificate.proof, &checker.rules()?) {
+            return no("banned command: the certificate is not in the supported fragment");
+        }
         let start = std::time::Instant::now();
         let accepted = checker.check(
             &printed.bytes,

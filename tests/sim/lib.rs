@@ -444,6 +444,7 @@ impl Cluster {
                 signature_hash: BINARY_HASH,
                 check_micros: None,
                 proof_limit: 1 << 20,
+                rules: std::sync::Arc::new([dp_testkit::sim::SCRIPTED_RULE.to_string()].into()),
             }),
             certify_all: false,
             export: None,

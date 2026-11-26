@@ -1,0 +1,10 @@
+{
+  "profile": [],
+  "proofs": {
+    "Coma": {
+      "vc_command_ok": { "prover": "alt-ergo", "time": 0.011 },
+      "vc_fragment_ok": { "prover": "alt-ergo", "time": 0.019 },
+      "vc_len_Command": { "prover": "alt-ergo", "time": 0.011 }
+    }
+  }
+}

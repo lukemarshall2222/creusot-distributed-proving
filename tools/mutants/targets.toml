@@ -32,5 +32,8 @@ file = "crates/dp-core/src/cache_key.rs"
 file = "crates/dp-core/src/calibration.rs"
 
 [[target]]
+file = "crates/dp-core/src/fragment.rs"
+
+[[target]]
 file = "crates/dp-core/src/frontend.rs"
 function = "decide"
