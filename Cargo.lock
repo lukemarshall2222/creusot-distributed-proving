@@ -240,6 +240,14 @@ version = "0.0.0"
 dependencies = [
  "dp-core",
  "dp-formats",
+ "proptest",
+]
+
+[[package]]
+name = "dp-certs-tests"
+version = "0.0.0"
+dependencies = [
+ "dp-cert",
 ]
 
 [[package]]
@@ -305,6 +313,7 @@ dependencies = [
 name = "dp-integration"
 version = "0.0.0"
 dependencies = [
+ "dp-cert",
  "dp-coordinator",
  "dp-core",
  "dp-formats",
@@ -580,6 +589,13 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "patch-check"
+version = "0.0.0"
+dependencies = [
+ "dp-formats",
+]
 
 [[package]]
 name = "pearlite-syn"

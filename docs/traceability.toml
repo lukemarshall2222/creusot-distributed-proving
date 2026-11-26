@@ -219,7 +219,7 @@ jobs = [
 [[row]]
 req = "R1.7"
 class = "Functional"
-scope = "deferred"
+scope = "in scope"
 properties = [
     "P1.7.1",
     "P1.7.2",
@@ -877,7 +877,7 @@ jobs = [
 [[row]]
 req = "R5.3"
 class = "Soundness-critical"
-scope = "deferred"
+scope = "in scope"
 properties = [
     "P5.3.1",
     "P5.3.2",
@@ -924,7 +924,7 @@ jobs = [
 [[row]]
 req = "R5.4"
 class = "Functional"
-scope = "deferred"
+scope = "in scope"
 properties = [
     "P5.4.1",
     "P5.4.2",
@@ -1209,7 +1209,7 @@ jobs = [
 [[row]]
 req = "R7.3"
 class = "Process"
-scope = "deferred"
+scope = "in scope"
 properties = [
     "P7.3.1",
     "P7.3.2",
@@ -1270,7 +1270,7 @@ jobs = [
 [[row]]
 req = "R7.5"
 class = "Soundness-critical"
-scope = "deferred"
+scope = "in scope"
 properties = [
     "P7.5.1",
     "P7.5.2",
@@ -1338,7 +1338,7 @@ jobs = [
 [[row]]
 req = "R7.7"
 class = "Process"
-scope = "deferred"
+scope = "in scope"
 properties = [
     "P7.7.1",
     "P7.7.2",
@@ -1391,7 +1391,7 @@ jobs = [
 [[row]]
 req = "R7.9"
 class = "Process"
-scope = "deferred"
+scope = "in scope"
 properties = [
     "P7.9.1",
     "P7.9.2",

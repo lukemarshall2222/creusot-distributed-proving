@@ -1460,6 +1460,17 @@ impl<E: Env, W: Why3find> Session<E, W> {
             }
         };
         *self.counts.entry(name.clone()).or_insert(0) += 1;
+        // The outcome of a certificate that gave no proof label is an
+        // outcome of its Goal: checked-incomplete when the checker
+        // accepted and the certificate has a trusted step or is not stored
+        // (R7.2 criterion 5). It comes with no run.
+        if let (LogEntry::Lost { outcome, .. }, Input::Certificate { .. }) = (&entry, input) {
+            if let Some(gid) = self.calls.get(&call).map(|c| c.gid.clone()) {
+                if let Some(goal) = self.goals.get_mut(&gid) {
+                    goal.outcomes.push(*outcome);
+                }
+            }
+        }
         let Some(finished) = finished else { return Ok(()) };
         let Some(c) = self.calls.get(&call) else { return Ok(()) };
         let (gid, prover, step, micros) = (c.gid.clone(), c.prover.clone(), c.step, c.micros);

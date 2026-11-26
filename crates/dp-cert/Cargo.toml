@@ -9,5 +9,8 @@ publish.workspace = true
 dp-core = { workspace = true }
 dp-formats = { workspace = true }
 
+[dev-dependencies]
+proptest = "1"
+
 [lints]
 workspace = true

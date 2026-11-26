@@ -10,6 +10,8 @@ set -eu
 status=0
 cargo run --quiet -p purity-check || status=1
 cargo run --quiet -p tcb-check || status=1
+# The static part of ci/patches (R7.9): headers, sizes, Lock_File entries.
+cargo run --quiet -p patch-check || status=1
 cargo run --quiet -p traceability-check || status=1
 # The static part of the mutation gate (R7.13 criterion 6): the functions
 # of the Soundness-critical rows are targets.

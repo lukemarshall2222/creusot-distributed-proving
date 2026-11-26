@@ -1,0 +1,12 @@
+[package]
+name = "patch-check"
+description = "ci/patches, static part: headers, sizes and Lock_File entries of the dependency patches (R7.9)"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dp-formats.workspace = true
+
+[lints]
+workspace = true

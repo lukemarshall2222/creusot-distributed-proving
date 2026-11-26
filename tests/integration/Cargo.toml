@@ -10,6 +10,7 @@ path = "lib.rs"
 
 [dev-dependencies]
 dp-core.workspace = true
+dp-cert.workspace = true
 dp-formats.workspace = true
 dp-coordinator = { path = "../../crates/dp-coordinator" }
 dp-shell = { workspace = true, features = ["cluster"] }
@@ -22,6 +23,14 @@ path = "cli_labels/main.rs"
 [[test]]
 name = "cluster"
 path = "cluster/main.rs"
+
+[[test]]
+name = "certs_store_faults"
+path = "certs/store_faults.rs"
+
+[[test]]
+name = "pins"
+path = "pins/main.rs"
 
 [lints]
 workspace = true

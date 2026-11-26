@@ -12,10 +12,14 @@
 use std::{
     fs,
     io::{self, Read},
-    path::{Path, PathBuf},
+    path::Path,
     process::{Command, Stdio},
     time::{Duration, Instant},
 };
+
+pub mod check;
+
+pub use check::{accepted, check_command, has_trusted_step, tree_hash, Checker};
 
 use dp_formats::{
     hash::{self, Hash},
@@ -59,21 +63,9 @@ pub fn proof_command(program: &str) -> String {
     format!("'{program}' --tlimit=%T {} %f", PROOF_OPTIONS.join(" "))
 }
 
-/// The command line of a check of a certificate, in the same form: `%r` is
-/// the reference and `%f` the proof.
-pub fn check_command(ethos: &str, signature: &Path) -> String {
-    format!("'{ethos}' '--include={}' --reference=%r --require-proof-of-false %f", signature.join("Cpc.eo").display())
-}
-
-/// Whether what the checker printed and its exit status are an acceptance.
-pub fn accepted(status: Option<u32>, output: &[u8]) -> bool {
-    let said = String::from_utf8_lossy(output);
-    status == Some(0) && said.lines().filter(|l| !l.trim().is_empty()).last() == Some("correct")
-}
-
 /// Runs a program with a time limit; returns its exit status and its
 /// standard output, or `None` if it was ended at the limit.
-fn run(command: &mut Command, limit: Duration, out: &Path) -> io::Result<Option<(Option<i32>, Vec<u8>)>> {
+pub(crate) fn run(command: &mut Command, limit: Duration, out: &Path) -> io::Result<Option<(Option<i32>, Vec<u8>)>> {
     let mut child = command.stdin(Stdio::null()).stdout(fs::File::create(out)?).stderr(Stdio::null()).spawn()?;
     let start = Instant::now();
     let status = loop {
@@ -116,12 +108,6 @@ pub fn extract_proof(output: &[u8]) -> Option<Vec<u8>> {
     proof.contains("(step ").then(|| proof.into_bytes())
 }
 
-/// Whether the proof has a step that a checker takes on trust.
-pub fn has_trusted_step(proof: &[u8]) -> bool {
-    let text = String::from_utf8_lossy(proof);
-    text.lines().any(|l| l.contains(":rule trust") || l.contains(":rule hole") || l.contains("(trust "))
-}
-
 /// Has cvc5 prove the goal again with a proof. The goal is the print for
 /// cvc5's driver; `extension` is that of the driver's input files.
 pub fn produce(cvc5: &Path, goal: &[u8], extension: &str, limit: Duration, tmp: &Path) -> io::Result<Option<Vec<u8>>> {
@@ -133,69 +119,6 @@ pub fn produce(cvc5: &Path, goal: &[u8], extension: &str, limit: Duration, tmp: 
     // does not.
     let result = run(&mut command, limit * 2 + Duration::from_secs(1), &tmp.join("cvc5.out"))?;
     Ok(result.and_then(|(_, output)| extract_proof(&output)))
-}
-
-/// The pinned checker and its signature files.
-#[derive(Clone, Debug)]
-pub struct Checker {
-    pub ethos: PathBuf,
-    /// The directory of the CPC signature; `Cpc.eo` is its entry file.
-    pub signature: PathBuf,
-}
-
-impl Checker {
-    /// Runs the checker on a proof with `goal` as the reference. True only
-    /// if the checker ended normally and said `correct`.
-    pub fn check(&self, goal: &[u8], extension: &str, proof: &[u8], limit: Duration, tmp: &Path) -> io::Result<bool> {
-        let reference = tmp.join(format!("reference{extension}"));
-        let certificate = tmp.join("proof.cpc");
-        fs::write(&reference, goal)?;
-        fs::write(&certificate, proof)?;
-        let mut command = Command::new(&self.ethos);
-        command
-            .arg(format!("--include={}", self.signature.join("Cpc.eo").display()))
-            .arg(format!("--reference={}", reference.display()))
-            .arg("--require-proof-of-false")
-            .arg(&certificate);
-        let Some((status, output)) = run(&mut command, limit, &tmp.join("ethos.out"))? else { return Ok(false) };
-        let said = String::from_utf8_lossy(&output);
-        Ok(status == Some(0) && said.lines().filter(|l| !l.trim().is_empty()).last() == Some("correct"))
-    }
-
-    pub fn binary_hash(&self) -> io::Result<Hash> {
-        Ok(hash::sha256(&fs::read(fs::canonicalize(&self.ethos)?)?))
-    }
-
-    pub fn signature_hash(&self) -> io::Result<Hash> {
-        tree_hash(&self.signature)
-    }
-}
-
-/// The hash of a directory of files: the SHA-256 of one line
-/// `<sha256 of the file>  ./<path>` per file, in the order of the paths.
-/// `deps/gen-lock.sh` computes the same value for the Lock_File.
-pub fn tree_hash(dir: &Path) -> io::Result<Hash> {
-    fn walk(dir: &Path, prefix: &str, out: &mut Vec<(String, Hash)>) -> io::Result<()> {
-        for entry in fs::read_dir(dir)? {
-            let entry = entry?;
-            let name = format!("{prefix}/{}", entry.file_name().to_string_lossy());
-            let path = entry.path();
-            if fs::metadata(&path)?.is_dir() {
-                walk(&path, &name, out)?;
-            } else {
-                out.push((name, hash::sha256(&fs::read(&path)?)));
-            }
-        }
-        Ok(())
-    }
-    let mut files = Vec::new();
-    walk(dir, ".", &mut files)?;
-    files.sort();
-    let mut listing = String::new();
-    for (name, hash) in files {
-        listing.push_str(&format!("{}  {name}\n", hash.to_hex()));
-    }
-    Ok(hash::sha256(listing.as_bytes()))
 }
 
 /// One entry of the Certificate_Store: the certificate, the print it was
@@ -340,6 +263,7 @@ impl Certificate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     fn certificate() -> Certificate {
         Certificate {

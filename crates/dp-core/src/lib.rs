@@ -17,3 +17,12 @@ pub mod machine;
 pub mod trace;
 pub mod verdict;
 pub mod worker;
+
+// The Kani harnesses (R7.3): modules of this crate, so that they can call
+// what is private to it; compiled only by `cargo kani`.
+#[cfg(kani)]
+#[path = "../../../verification/kani/cache_key.rs"]
+mod kani_cache_key;
+#[cfg(kani)]
+#[path = "../../../verification/kani/calibration.rs"]
+mod kani_calibration;

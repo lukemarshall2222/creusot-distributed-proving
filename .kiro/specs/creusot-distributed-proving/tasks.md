@@ -67,6 +67,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - Canonical TOML printer; generator of `docs/traceability.md`
     - As built (2026-11-25): `docs/traceability.toml` has one row per requirement (42). Every field but the scope status is derived from `requirements.md` by `traceability-check --write`: the class and the functions from the Initial Traceability Table, the Property IDs from the Properties subsection, the artifact paths and CI jobs from the Verification lines. `docs/traceability.md` shows per row which artifacts exist. Two rows are in scope (R7.11, R7.12); the others are deferred, mostly because their Verification lines name planned paths that the build did not follow (for example `crates/dp-frontend/src/accept.rs`, whose code is in `session.rs`). Open: the trust items and the levels of a row; either the paths in `requirements.md` or the code layout has to move before most rows can be switched
     - Since 2026-11-25 (later): seven rows are in scope (R1.3, R2.3, R7.2, R7.8, R7.11, R7.12, R7.13). To get there the code was moved to the paths that the Verification lines name: the acceptance facts to `crates/dp-frontend/src/accept.rs` and the Result_Cache directory to `cache.rs` (both out of `session.rs`, with unit tests), the replay tests to `tests/replay/` and `tests/replay/tamper/`, and the tests with a Cluster on one machine to `tests/integration/cluster/` with one file per topic; and the named property tests were written (`prop_verdict.rs`, `prop_accept.rs`, `prop_cache_key.rs`, `prop_calibration.rs` in dp-core). The CI steps carry the job names that the rows name; `sched.yml` has the scheduled jobs
+    - Since 2026-11-26: fourteen rows are in scope; R1.7, R5.3, R5.4, R7.3, R7.5, R7.7 and R7.9 were switched after `prop_operator.rs`, `crates/dp-cert/src/check.rs`, `tests/certs/tamper/`, `prop_store.rs`, `tests/integration/certs/store_faults.rs`, `verification/kani/`, `tests/integration/pins/` and `tools/patch-check/` were added
     - _Requirements: 40.1, 40.5, 40.11_
     - _Properties: 37_
 
@@ -109,6 +110,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [ ] 2.7 Implement `tools/patch-check/` (C20)
     - Patch headers (purpose, requirement IDs, upstream status), application to the pinned upstream version, build, changed lines per dependency at most `<TBD-21>`, Lock_File hashes of patched builds, no patched build marked Unpatched_Solver (R7.9, R7.7 criterion 8)
     - Switch row R7.9 to in scope with the switch step (Notes): `tools/patch-check/` is its only artifact (R7.11 criterion 12)
+    - As built (2026-11-26): `tools/patch-check/` does the static part: the header fields of each patch, at most 600 changed lines per dependency (a working value for `<TBD-21>`; the why3find patch has 402), every patch named by a Lock_File entry and every named patch there, and no patched build without a pinned hash or marked Unpatched_Solver; with unit tests of each seeded fault. It runs in `ci/jobs/trust.sh`. That a patch applies and builds stays in `ci/jobs/patches.sh`, which needs the Nix builds. Row R7.9 switched
     - _Requirements: 38.1, 38.2, 38.3, 38.4, 36.8_
     - _Properties: 36_
 
@@ -205,6 +207,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [ ] 4.7 Write property tests and run the Kani harness for the Cache_Key
     - **Property 29: Cache hits reuse only what nothing could have changed** (key part)
     - `crates/dp-core/tests/prop_cache_key.rs` with a weak test hash; fills `arb_cache_entry`
+    - As built: `prop_cache_key.rs` (2026-11-25: the encoding is a function of the fields, a changed field changes it, fields of one length and other contents are told apart, and an entry is valid only with every validation field) and, since 2026-11-26, the Kani harnesses `verification/kani/cache_key.rs` (`lookup_ok` is equality of encodings, for lists of up to three atoms and byte strings of up to two bytes) and `verification/kani/calibration.rs` (`scale` is the rounded-down product for limits up to 256 microseconds and velocities up to 2^21 millionths; Kani's solver does not decide larger bounds in minutes, and no harness over all of `u64`). `ci/jobs/kani.sh` runs them and requires every harness verified; in CI it is a job that does not gate yet, because the flake's Kani has not been built on Linux. No weak test hash
     - **Validates: Requirements 34.1, 34.2, 34.5, 34.9, 34.10, 34.11**
 
   - [ ] 4.8 Write property tests for configuration validation
@@ -380,6 +383,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [ ] 10.3 Write the configuration and pin integration tests
     - **Property 5: Invalid configurations and pin mismatches fail closed** (Session part)
     - `tests/integration/config/` and `tests/integration/pins/`: no solver process starts, the offending value or executable and both hashes are reported, the exit is non-zero, `proof.json` and `.why3find` stay byte-identical
+    - As built (2026-11-26): `tests/integration/pins/`: a solver or a why3find that is not the pinned one, and a Lock_File that is malformed, has a hash that is no hash, marks a patched build as an Unpatched_Solver or has no entry for the platform, each stop the Session with status 2; the tool and both hashes are named, no proof file and no cache entry is written, and for a why3find that is not started the project directory is byte for byte as it was. `tests/integration/config/` does not exist: the configuration cases are in `crates/dp-frontend/tests/config.rs`
     - **Validates: Requirements 1.6, 2.7, 6.7, 9.17, 25.5, 36.3**
 
   - [ ] 10.4 Extend the scope-switch self-test to the stage-1 rows
@@ -492,6 +496,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [ ] 15.7 Write the assignment and operator property tests
     - **Property 8: Coordinator protocol safety** (assignment and operator part)
     - `crates/dp-core/tests/prop_assign.rs`, `prop_operator.rs`; `prop_assign.rs` generates Lock_File entries that list several platform hashes (P1.1.10) besides the no-eligible-Worker cases (P1.1.2, P1.1.7)
+    - As built (2026-11-26): `prop_operator.rs` over generated input sequences of the Coordinator machine: a command is taken exactly with the operator's signature and a serial number above every one taken, the reply says which, a command that is not taken changes nothing, a drained Worker gets no new Job (the Job it has may be sent to it again), a removed or revoked Worker is gone and its connection closed, a revocation is announced to every Front_End, a revoked Worker does not join, and a serial number taken before a restart is not taken again. `prop_assign.rs` is not written. Row R1.7 switched
     - **Validates: Requirements 1.3, 1.4, 1.7, 1.11, 7.1, 7.2, 7.3, 7.4, 7.5, 7.7, 7.8, 7.9**
 
   - [ ] 15.8 Write the idempotence property tests for the Coordinator and operator handler
@@ -769,6 +774,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - **Property 27: Checker outcomes map to labels by one exact rule**
     - `prop_verdict.rs` checker-tuple cases with umbrella `property_27_checker_outcome_rule`; `fuzz/checker_output/` (`ci/fuzz-smoke`, `sched/fuzz-nightly`) with the registry entry of the Certificate_Checker output format; `tests/certs/tamper/` (other input, option list, signature file); table and option agreement with `docs/tcb.toml`; `label_lean_vs_rust/` extended to checker tuples; fills `arb_checker_tuple`
     - Switch row R5.3 to in scope with the switch step (Notes): `tests/certs/tamper/` and `fuzz/checker_output/` are its last artifacts, after `check.rs` (23.1) and `tests/integration/certs/` (23.4); `targets.toml` gains `label_from_checker_output`, `fragment_ok`, `label`; registry entries for these three (R7.11 criterion 12)
+    - As built: the checker cases of `prop_verdict.rs` and `fuzz/checker_output/` (2026-11-25), and since 2026-11-26 `crates/dp-cert/src/check.rs` (the checker's command line, what counts as its acceptance, trusted steps, and the checker itself, moved out of `lib.rs`) and `tests/certs/tamper/` with real cvc5 and Ethos: a proof is accepted for its own reference and for one with more assertions, and not for a reference with a missing, weaker, other or renamed assertion, nor for a satisfiable one; a proof that is empty, cut, reduced to its last step, has a step under another rule or an assumption that the reference lacks is not accepted. Row R5.3 switched
     - **Validates: Requirements 23.1, 23.2, 23.3, 23.4, 23.5, 23.6, 23.7, 23.8, 23.9, 23.11, 23.12, 23.13, 23.14, 23.16, 23.17, 23.18, 37.3, 37.4**
 
   - [-] 23.3 Implement the Certificate_Store `crates/dp-cert/src/store.rs` (C14)
@@ -782,6 +788,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - **Property 28: The Certificate_Store is content-addressed and crash-safe**
     - `crates/dp-cert/tests/prop_store.rs` with umbrella `property_28_store_crash_safe`; `tests/integration/certs/store_faults.rs` with crash points
     - Switch rows R5.4, R7.7 and R7.8 to in scope with the switch step (Notes): `store_faults.rs` creates `tests/integration/certs/`, the last artifact of R7.7 and R7.8 and, with `prop_store.rs`, of R5.4 (R7.11 criterion 12)
+    - As built (2026-11-26): `crates/dp-cert/tests/prop_store.rs` (an entry is read back and storing again changes nothing; entries that differ in any field have different names; any changed byte, a missing file and an entry under another name do not load; what an interrupted writer left is no entry) and `tests/integration/certs/store_faults.rs` with real tools (a store that cannot be written certifies nothing: the Goal is checked-incomplete and names no certificate; a temporary directory and an entry with a missing file are not used, and the certificate is produced again). Finding: the shell did not record the outcome of a certificate that gave no proof label, so such a Goal was reported as unchecked where dp-core decides checked-incomplete; fixed. Not crash points inside a write. Rows R5.4 and R7.7 switched
     - **Validates: Requirements 24.1, 24.2, 24.5, 24.7**
 
   - [-] 23.5 Wire certification and certify-all mode into the shells

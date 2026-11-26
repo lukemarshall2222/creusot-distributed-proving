@@ -58,6 +58,18 @@ jobs:
           path: ${{ runner.temp }}/lock.toml
           if-no-files-found: ignore
 
+  # Reported, not gating yet: Kani has not been built on Linux by this
+  # flake. Once this passes, it moves into the gating job.
+  kani:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: ci/kani
+        run: nix develop --command ci/jobs/kani.sh
+
   # Reported, not gating yet: whether the builds are bit-for-bit reproducible
   # on Linux is not known (they are not on macOS). Once this passes, it gates.
   repro-build:
