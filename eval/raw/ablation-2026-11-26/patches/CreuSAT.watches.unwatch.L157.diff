@@ -1,0 +1,13 @@
+diff --git a/CreuSAT/src/watches.rs b/CreuSAT/src/watches.rs
+index b396d502..d8a195e3 100644
+--- a/CreuSAT/src/watches.rs
++++ b/CreuSAT/src/watches.rs
+@@ -168,8 +168,6 @@ impl Watches {
+                 let old_w: Snapshot<&mut Watches> = snapshot! { self };
+                 match self.watches[watchidx].pop() {
+                     Some(w) => {
+-                        proof_assert!(^old_w.inner() == ^self);
+-                        proof_assert!(self.inv(*f));
+                     }
+                     None => unreachable!(),
+                 }

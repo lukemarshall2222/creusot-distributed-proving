@@ -1,0 +1,53 @@
+diff --git a/CreuSAT/src/unit_prop.rs b/CreuSAT/src/unit_prop.rs
+index 06e77f0f..983f8e99 100644
+--- a/CreuSAT/src/unit_prop.rs
++++ b/CreuSAT/src/unit_prop.rs
+@@ -69,48 +69,15 @@ fn swap(f: &mut Formula, trail: &Trail, watches: &Watches, cref: usize, j: usize
+ 
+     f.clauses[cref].lits.swap(j, k);
+ 
+-    proof_assert!(vars_in_range_inner(f.clauses@[cref@]@, f.num_vars@));
+-    proof_assert!(no_duplicate_indexes_inner(f.clauses@[cref@]@));
+ 
+-    proof_assert!(forall<a2: Seq<AssignedState>> a2.len() == f.num_vars@ && complete_inner(a2) && old_f.clauses@[cref@].sat_inner(a2) ==> f.clauses@[cref@].sat_inner(a2));
+-    proof_assert!(eventually_sat_complete(old_f@) ==> eventually_sat_complete(f@));
+-    proof_assert!(^f == ^old_f.inner());
+ 
+-    proof_assert!(forall<i: Int> 0 <= i && i < f.clauses@.len() && i != cref@ ==> old_f.clauses@[i] == f.clauses@[i]);
+ 
+     // trail inv inlined
+-    proof_assert!(
+-            trail.assignments.inv(*f)
+-            && trail_invariant(trail.trail@, *f)
+-            && trail.lit_to_level@.len() == f.num_vars@
+-            && lit_is_unique_inner(trail.trail@)
+-            && trail_entries_are_assigned_inner(trail.trail@, trail.assignments@)
+-            && crate::logic::logic_util::sorted(trail.decisions@)
+-            && unit_are_sat(trail.trail@, *f, trail.assignments)
+-            && (forall<i: Int> 0 <= i && i < trail.decisions@.len() ==> trail.decisions@[i]@ <= trail.trail@.len())
+-    );
+ 
+     // lit_not_in_less_inner inlined
+-    proof_assert! {
+-        forall<i: Int> 0 <= i && i < trail.trail@.len() ==>
+-            forall<j: Int> 0 <= j && j < i ==>
+-                match trail.trail@[j].reason {
+-                    Reason::Long(cref) => !(trail.trail@)[i].lit.lit_idx_in(f.clauses@[cref@]),
+-                    _ => true,
+-                }
+-    }
+-    proof_assert!(lit_not_in_less_inner(trail.trail@, *f));
+ 
+     // long_are_post_unit inlined
+-    proof_assert!(
+-        forall<j: Int> 0 <= j && j < trail.trail@.len() ==>
+-            match trail.trail@[j].reason {
+-                Reason::Long(k) => { clause_post_with_regards_to(f.clauses@[k@], trail.assignments, trail.trail@[j].lit.index_logic()) },
+-                    _ => true,
+-                }
+-    );
+ 
+-    proof_assert!(long_are_post_unit_inner(trail.trail@, *f, trail.assignments@));
+ }
+ 
+ // This has to do f.clauses[cref] and not f[cref]

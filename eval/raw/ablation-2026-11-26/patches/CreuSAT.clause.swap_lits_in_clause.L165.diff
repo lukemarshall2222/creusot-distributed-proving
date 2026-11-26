@@ -1,0 +1,13 @@
+diff --git a/CreuSAT/src/clause.rs b/CreuSAT/src/clause.rs
+index cced3306..d7ada1d9 100644
+--- a/CreuSAT/src/clause.rs
++++ b/CreuSAT/src/clause.rs
+@@ -165,8 +165,6 @@ impl Clause {
+     pub fn swap_lits_in_clause(&mut self, _f: &Formula, j: usize, k: usize) {
+         let old_c: Snapshot<&mut Clause> = snapshot! { self };
+         self.lits.swap(j, k);
+-        proof_assert!(lemma_permuted_clause_maintains_equisat(_f@, *old_c.inner(), *self); true);
+-        proof_assert!(dup_stable_on_permut(*old_c.inner(), *self); true);
+     }
+ 
+     #[cfg_attr(feature = "trust_clause", trusted)]

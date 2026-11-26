@@ -1,0 +1,522 @@
+{
+ "status": "exploratory",
+ "limits_seconds": {
+  "short": 5,
+  "long": 60
+ },
+ "prover_order": [
+  "alt-ergo",
+  "z3",
+  "cvc4",
+  "cvc5"
+ ],
+ "functions_with_hints": 22,
+ "functions_measured": 21,
+ "functions_skipped": [
+  {
+   "id": "CreuSAT.unit_prop.swap.L67",
+   "why": "the removal changes no Coma file: the function has none (it is trusted, or not translated)"
+  }
+ ],
+ "total": {
+  "original": {
+   "easy": 304,
+   "goals": 309,
+   "vcs": 183,
+   "vcs_proved_by_default_strategy": 183,
+   "out-of-reach": 4,
+   "hard": 1
+  },
+  "ablated": {
+   "easy": 289,
+   "goals": 334,
+   "hard": 15,
+   "out-of-reach": 25,
+   "out-of-reach_leaves": 5,
+   "vcs": 183,
+   "vcs_proved_by_default_strategy": 179,
+   "unmeasured": 5,
+   "hard_leaves": 3
+  }
+ },
+ "ablated_functions_with_a_hard_goal": [
+  "CreuSAT.clause.swap_lits_in_clause.L165",
+  "CreuSAT.conflict_analysis.resolve.L52"
+ ],
+ "ablated_functions_with_an_out_of_reach_goal": [
+  "CreuSAT.clause.swap_lits_in_clause.L165",
+  "CreuSAT.conflict_analysis.resolve.L52",
+  "CreuSAT.logic.logic_clause.lemma_permuted_clause_maintains_equisat.L227",
+  "CreuSAT.watches.update_watch.L35"
+ ],
+ "ablated_functions_with_either": 4,
+ "functions": [
+  {
+   "id": "CreuSAT.clause.swap_lits_in_clause.L165",
+   "file": "CreuSAT/src/clause.rs",
+   "function": "swap_lits_in_clause",
+   "removed_asserts": 2,
+   "coma": [
+    "verif/CreuSAT_rlib/clause/impl_Clause/swap_lits_in_clause.coma"
+   ],
+   "original": {
+    "easy": 3,
+    "goals": 3,
+    "vcs": 3,
+    "vcs_proved_by_default_strategy": 3
+   },
+   "ablated": {
+    "easy": 6,
+    "goals": 12,
+    "hard": 1,
+    "out-of-reach": 5,
+    "out-of-reach_leaves": 1,
+    "vcs": 3,
+    "vcs_proved_by_default_strategy": 2
+   }
+  },
+  {
+   "id": "CreuSAT.conflict_analysis.resolve.L52",
+   "file": "CreuSAT/src/conflict_analysis.rs",
+   "function": "resolve",
+   "removed_asserts": 13,
+   "coma": [
+    "verif/CreuSAT_rlib/conflict_analysis/resolve.coma"
+   ],
+   "original": {
+    "easy": 65,
+    "goals": 66,
+    "out-of-reach": 1,
+    "vcs": 11,
+    "vcs_proved_by_default_strategy": 11
+   },
+   "ablated": {
+    "easy": 63,
+    "goals": 90,
+    "out-of-reach": 8,
+    "hard": 14,
+    "unmeasured": 5,
+    "out-of-reach_leaves": 2,
+    "hard_leaves": 3,
+    "vcs": 11,
+    "vcs_proved_by_default_strategy": 10
+   }
+  },
+  {
+   "id": "CreuSAT.conflict_analysis.analyze_conflict.L180",
+   "file": "CreuSAT/src/conflict_analysis.rs",
+   "function": "analyze_conflict",
+   "removed_asserts": 1,
+   "coma": [
+    "verif/CreuSAT_rlib/conflict_analysis/analyze_conflict.coma"
+   ],
+   "original": {
+    "easy": 25,
+    "goals": 25,
+    "vcs": 25,
+    "vcs_proved_by_default_strategy": 25
+   },
+   "ablated": {
+    "easy": 25,
+    "goals": 25,
+    "vcs": 25,
+    "vcs_proved_by_default_strategy": 25
+   }
+  },
+  {
+   "id": "CreuSAT.conflict_analysis.resolve_empty_clause.L258",
+   "file": "CreuSAT/src/conflict_analysis.rs",
+   "function": "resolve_empty_clause",
+   "removed_asserts": 1,
+   "coma": [
+    "verif/CreuSAT_rlib/conflict_analysis/resolve_empty_clause.coma"
+   ],
+   "original": {
+    "easy": 21,
+    "goals": 21,
+    "vcs": 21,
+    "vcs_proved_by_default_strategy": 21
+   },
+   "ablated": {
+    "easy": 21,
+    "goals": 21,
+    "vcs": 21,
+    "vcs_proved_by_default_strategy": 21
+   }
+  },
+  {
+   "id": "CreuSAT.decision.new.L77",
+   "file": "CreuSAT/src/decision.rs",
+   "function": "new",
+   "removed_asserts": 1,
+   "coma": [
+    "verif/CreuSAT_rlib/decision/impl_Decisions/new.coma"
+   ],
+   "original": {
+    "easy": 14,
+    "goals": 14,
+    "vcs": 14,
+    "vcs_proved_by_default_strategy": 14
+   },
+   "ablated": {
+    "easy": 14,
+    "goals": 14,
+    "vcs": 14,
+    "vcs_proved_by_default_strategy": 14
+   }
+  },
+  {
+   "id": "CreuSAT.decision.move_to_front.L153",
+   "file": "CreuSAT/src/decision.rs",
+   "function": "move_to_front",
+   "removed_asserts": 1,
+   "coma": [
+    "verif/CreuSAT_rlib/decision/impl_Decisions/move_to_front.coma"
+   ],
+   "original": {
+    "easy": 3,
+    "goals": 3,
+    "vcs": 3,
+    "vcs_proved_by_default_strategy": 3
+   },
+   "ablated": {
+    "easy": 3,
+    "goals": 3,
+    "vcs": 3,
+    "vcs_proved_by_default_strategy": 3
+   }
+  },
+  {
+   "id": "CreuSAT.formula.add_clause.L123",
+   "file": "CreuSAT/src/formula.rs",
+   "function": "add_clause",
+   "removed_asserts": 3,
+   "coma": [
+    "verif/CreuSAT_rlib/formula/impl_Formula/add_clause.coma"
+   ],
+   "original": {
+    "easy": 11,
+    "goals": 12,
+    "out-of-reach": 1,
+    "vcs": 5,
+    "vcs_proved_by_default_strategy": 5
+   },
+   "ablated": {
+    "easy": 21,
+    "goals": 21,
+    "vcs": 5,
+    "vcs_proved_by_default_strategy": 5
+   }
+  },
+  {
+   "id": "CreuSAT.formula.delete_clause.L210",
+   "file": "CreuSAT/src/formula.rs",
+   "function": "delete_clause",
+   "removed_asserts": 3,
+   "coma": [
+    "verif/CreuSAT_rlib/formula/impl_Formula/delete_clause.coma"
+   ],
+   "original": {
+    "easy": 5,
+    "goals": 5,
+    "vcs": 5,
+    "vcs_proved_by_default_strategy": 5
+   },
+   "ablated": {
+    "easy": 5,
+    "goals": 5,
+    "vcs": 5,
+    "vcs_proved_by_default_strategy": 5
+   }
+  },
+  {
+   "id": "CreuSAT.formula.delete_clauses.L230",
+   "file": "CreuSAT/src/formula.rs",
+   "function": "delete_clauses",
+   "removed_asserts": 1,
+   "coma": [
+    "verif/CreuSAT_rlib/formula/impl_Formula/delete_clauses.coma"
+   ],
+   "original": {
+    "easy": 6,
+    "goals": 6,
+    "vcs": 6,
+    "vcs_proved_by_default_strategy": 6
+   },
+   "ablated": {
+    "easy": 6,
+    "goals": 6,
+    "vcs": 6,
+    "vcs_proved_by_default_strategy": 6
+   }
+  },
+  {
+   "id": "CreuSAT.trail.backstep.L62",
+   "file": "CreuSAT/src/trail.rs",
+   "function": "backstep",
+   "removed_asserts": 6,
+   "coma": [
+    "verif/CreuSAT_rlib/trail/impl_Trail/backstep.coma"
+   ],
+   "original": {
+    "easy": 6,
+    "goals": 6,
+    "vcs": 6,
+    "vcs_proved_by_default_strategy": 6
+   },
+   "ablated": {
+    "easy": 6,
+    "goals": 6,
+    "vcs": 6,
+    "vcs_proved_by_default_strategy": 6
+   }
+  },
+  {
+   "id": "CreuSAT.trail.backtrack_to.L118",
+   "file": "CreuSAT/src/trail.rs",
+   "function": "backtrack_to",
+   "removed_asserts": 17,
+   "coma": [
+    "verif/CreuSAT_rlib/trail/impl_Trail/backtrack_to.coma"
+   ],
+   "original": {
+    "easy": 7,
+    "goals": 7,
+    "vcs": 7,
+    "vcs_proved_by_default_strategy": 7
+   },
+   "ablated": {
+    "easy": 7,
+    "goals": 7,
+    "vcs": 7,
+    "vcs_proved_by_default_strategy": 7
+   }
+  },
+  {
+   "id": "CreuSAT.trail.enq_assignment.L234",
+   "file": "CreuSAT/src/trail.rs",
+   "function": "enq_assignment",
+   "removed_asserts": 2,
+   "coma": [
+    "verif/CreuSAT_rlib/trail/impl_Trail/enq_assignment.coma"
+   ],
+   "original": {
+    "easy": 6,
+    "goals": 6,
+    "vcs": 6,
+    "vcs_proved_by_default_strategy": 6
+   },
+   "ablated": {
+    "easy": 6,
+    "goals": 6,
+    "vcs": 6,
+    "vcs_proved_by_default_strategy": 6
+   }
+  },
+  {
+   "id": "CreuSAT.unit_prop.swap.L67",
+   "file": "CreuSAT/src/unit_prop.rs",
+   "function": "swap",
+   "removed_asserts": 11,
+   "coma": [],
+   "skipped": "the removal changes no Coma file: the function has none (it is trusted, or not translated)",
+   "original": {},
+   "ablated": {}
+  },
+  {
+   "id": "CreuSAT.unit_prop.exists_new_watchable_lit.L133",
+   "file": "CreuSAT/src/unit_prop.rs",
+   "function": "exists_new_watchable_lit",
+   "removed_asserts": 4,
+   "coma": [
+    "verif/CreuSAT_rlib/unit_prop/exists_new_watchable_lit.coma"
+   ],
+   "original": {
+    "easy": 8,
+    "goals": 8,
+    "vcs": 8,
+    "vcs_proved_by_default_strategy": 8
+   },
+   "ablated": {
+    "easy": 8,
+    "goals": 8,
+    "vcs": 8,
+    "vcs_proved_by_default_strategy": 8
+   }
+  },
+  {
+   "id": "CreuSAT.unit_prop.propagate_lit_with_regard_to_clause.L206",
+   "file": "CreuSAT/src/unit_prop.rs",
+   "function": "propagate_lit_with_regard_to_clause",
+   "removed_asserts": 15,
+   "coma": [
+    "verif/CreuSAT_rlib/unit_prop/propagate_lit_with_regard_to_clause.coma"
+   ],
+   "original": {
+    "easy": 49,
+    "goals": 50,
+    "hard": 1,
+    "vcs": 12,
+    "vcs_proved_by_default_strategy": 12
+   },
+   "ablated": {
+    "easy": 37,
+    "goals": 37,
+    "vcs": 12,
+    "vcs_proved_by_default_strategy": 12
+   }
+  },
+  {
+   "id": "CreuSAT.unit_prop.propagate_literal.L281",
+   "file": "CreuSAT/src/unit_prop.rs",
+   "function": "propagate_literal",
+   "removed_asserts": 2,
+   "coma": [
+    "verif/CreuSAT_rlib/unit_prop/propagate_literal.coma"
+   ],
+   "original": {
+    "easy": 9,
+    "goals": 9,
+    "vcs": 9,
+    "vcs_proved_by_default_strategy": 9
+   },
+   "ablated": {
+    "easy": 9,
+    "goals": 9,
+    "vcs": 9,
+    "vcs_proved_by_default_strategy": 9
+   }
+  },
+  {
+   "id": "CreuSAT.watches.update_watch.L35",
+   "file": "CreuSAT/src/watches.rs",
+   "function": "update_watch",
+   "removed_asserts": 13,
+   "coma": [
+    "verif/CreuSAT_rlib/watches/update_watch.coma"
+   ],
+   "original": {
+    "easy": 36,
+    "goals": 37,
+    "out-of-reach": 1,
+    "vcs": 13,
+    "vcs_proved_by_default_strategy": 13
+   },
+   "ablated": {
+    "easy": 24,
+    "goals": 30,
+    "out-of-reach": 6,
+    "out-of-reach_leaves": 1,
+    "vcs": 13,
+    "vcs_proved_by_default_strategy": 12
+   }
+  },
+  {
+   "id": "CreuSAT.watches.unwatch.L157",
+   "file": "CreuSAT/src/watches.rs",
+   "function": "unwatch",
+   "removed_asserts": 2,
+   "coma": [
+    "verif/CreuSAT_rlib/watches/impl_Watches/unwatch.coma"
+   ],
+   "original": {
+    "easy": 10,
+    "goals": 10,
+    "vcs": 10,
+    "vcs_proved_by_default_strategy": 10
+   },
+   "ablated": {
+    "easy": 10,
+    "goals": 10,
+    "vcs": 10,
+    "vcs_proved_by_default_strategy": 10
+   }
+  },
+  {
+   "id": "CreuSAT.logic.logic_clause.lemma_permuted_clause_maintains_equisat.L227",
+   "file": "CreuSAT/src/logic/logic_clause.rs",
+   "function": "lemma_permuted_clause_maintains_equisat",
+   "removed_asserts": 1,
+   "coma": [
+    "verif/CreuSAT_rlib/logic/logic_clause/lemma_permuted_clause_maintains_equisat.coma"
+   ],
+   "original": {
+    "out-of-reach": 1,
+    "goals": 3,
+    "easy": 2,
+    "vcs": 1,
+    "vcs_proved_by_default_strategy": 1
+   },
+   "ablated": {
+    "out-of-reach": 6,
+    "goals": 6,
+    "out-of-reach_leaves": 1,
+    "vcs": 1,
+    "vcs_proved_by_default_strategy": 0
+   }
+  },
+  {
+   "id": "Robinson.assignments.unit_prop_once.L148",
+   "file": "Robinson/src/assignments.rs",
+   "function": "unit_prop_once",
+   "removed_asserts": 5,
+   "coma": [
+    "verif/Robinson_rlib/assignments/impl_Assignments_0/unit_prop_once.coma"
+   ],
+   "original": {
+    "easy": 6,
+    "goals": 6,
+    "vcs": 6,
+    "vcs_proved_by_default_strategy": 6
+   },
+   "ablated": {
+    "easy": 6,
+    "goals": 6,
+    "vcs": 6,
+    "vcs_proved_by_default_strategy": 6
+   }
+  },
+  {
+   "id": "Robinson.formula.check_and_establish_formula_invariant.L122",
+   "file": "Robinson/src/formula.rs",
+   "function": "check_and_establish_formula_invariant",
+   "removed_asserts": 2,
+   "coma": [
+    "verif/Robinson_rlib/formula/impl_Formula_0/check_and_establish_formula_invariant.coma"
+   ],
+   "original": {
+    "easy": 6,
+    "goals": 6,
+    "vcs": 6,
+    "vcs_proved_by_default_strategy": 6
+   },
+   "ablated": {
+    "easy": 6,
+    "goals": 6,
+    "vcs": 6,
+    "vcs_proved_by_default_strategy": 6
+   }
+  },
+  {
+   "id": "Robinson.solver.solver.L46",
+   "file": "Robinson/src/solver.rs",
+   "function": "solver",
+   "removed_asserts": 1,
+   "coma": [
+    "verif/Robinson_rlib/solver/solver.coma"
+   ],
+   "original": {
+    "easy": 6,
+    "goals": 6,
+    "vcs": 6,
+    "vcs_proved_by_default_strategy": 6
+   },
+   "ablated": {
+    "easy": 6,
+    "goals": 6,
+    "vcs": 6,
+    "vcs_proved_by_default_strategy": 6
+   }
+  }
+ ]
+}

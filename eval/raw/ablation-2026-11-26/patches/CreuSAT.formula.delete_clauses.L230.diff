@@ -1,0 +1,12 @@
+diff --git a/CreuSAT/src/formula.rs b/CreuSAT/src/formula.rs
+index 4b7fe641..dd3e2152 100644
+--- a/CreuSAT/src/formula.rs
++++ b/CreuSAT/src/formula.rs
+@@ -239,7 +239,6 @@ impl Formula {
+         #[invariant(self.equisat(*old_f.inner()))]
+         while i < self.clauses.len() {
+             if !self.clauses[i].deleted {
+-                proof_assert!(t.assignments.inv(*self));
+                 if self.clauses[i].len() > 1 && self.is_clause_sat(i, &t.assignments) {
+                     self.delete_clause(i, watches, t);
+                 }

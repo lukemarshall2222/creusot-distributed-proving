@@ -1,0 +1,18 @@
+diff --git a/CreuSAT/src/trail.rs b/CreuSAT/src/trail.rs
+index 8bbc5fc3..a984218c 100644
+--- a/CreuSAT/src/trail.rs
++++ b/CreuSAT/src/trail.rs
+@@ -238,13 +238,11 @@ impl Trail {
+         self.assignments.set_assignment(step.lit, _f, trail);
+ 
+         //proof_assert!(step.inv(*_f));
+-        proof_assert!(lemma_push_maintains_lit_not_in_less(*self, *_f, step); true);
+         self.trail.push(step);
+ 
+         //proof_assert!(self.lit_is_unique());
+         //proof_assert!(self.lit_not_in_less(*_f));
+ 
+-        proof_assert!(long_are_post_unit_inner(self.trail@, *_f, self.assignments@));
+     }
+ 
+     #[cfg_attr(feature = "trust_trail", trusted)]

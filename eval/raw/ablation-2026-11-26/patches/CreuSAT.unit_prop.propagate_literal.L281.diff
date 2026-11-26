@@ -1,0 +1,13 @@
+diff --git a/CreuSAT/src/unit_prop.rs b/CreuSAT/src/unit_prop.rs
+index 06e77f0f..da8322c9 100644
+--- a/CreuSAT/src/unit_prop.rs
++++ b/CreuSAT/src/unit_prop.rs
+@@ -281,8 +281,6 @@ fn propagate_lit_with_regard_to_clause(
+ fn propagate_literal(f: &mut Formula, trail: &mut Trail, watches: &mut Watches, lit: Lit) -> Result<(), usize> {
+     let mut j = 0;
+     let watchidx = lit.to_watchidx();
+-    proof_assert!(watches.watches@.len() == 2 * f.num_vars@);
+-    proof_assert!(watches.watches@.len() > watchidx@);
+     let old_trail: Snapshot<&mut Trail> = snapshot! { trail };
+     let old_f: Snapshot<&mut Formula> = snapshot! { f };
+     let old_w: Snapshot<&mut Watches> = snapshot! { watches };

@@ -1,0 +1,16 @@
+diff --git a/CreuSAT/src/formula.rs b/CreuSAT/src/formula.rs
+index 4b7fe641..e9ead918 100644
+--- a/CreuSAT/src/formula.rs
++++ b/CreuSAT/src/formula.rs
+@@ -212,10 +212,7 @@ impl Formula {
+         watches.unwatch(self, t, cref, self.clauses[cref][0]);
+         watches.unwatch(self, t, cref, self.clauses[cref][1]);
+         self.clauses[cref].deleted = true;
+-        proof_assert!(forall<i: Int> 0 <= i && i < self.clauses@[cref@]@.len() ==>
+-            self.clauses@[cref@]@[i] == old_f.clauses@[cref@]@[i]);
+-        proof_assert!(old_f.equisat(*self)); // This assertion helps with the invariant, which otherwise takes a long time.
+-        proof_assert!(^self == ^old_f.inner());
++         // This assertion helps with the invariant, which otherwise takes a long time.
+     }
+ 
+     // OK

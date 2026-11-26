@@ -1,0 +1,12 @@
+diff --git a/CreuSAT/src/decision.rs b/CreuSAT/src/decision.rs
+index a351e3f1..6a1c4431 100644
+--- a/CreuSAT/src/decision.rs
++++ b/CreuSAT/src/decision.rs
+@@ -165,7 +165,6 @@ impl Decisions {
+         } else {
+             self.timestamp += 1;
+         }
+-        proof_assert!(self.start@ < _f.num_vars@);
+         self.linked_list[self.start].prev = tomove;
+         self.start = tomove;
+         if prev != INVALID {

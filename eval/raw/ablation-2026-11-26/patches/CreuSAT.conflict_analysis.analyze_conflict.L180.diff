@@ -1,0 +1,12 @@
+diff --git a/CreuSAT/src/conflict_analysis.rs b/CreuSAT/src/conflict_analysis.rs
+index 86f0b2ad..2c41aa44 100644
+--- a/CreuSAT/src/conflict_analysis.rs
++++ b/CreuSAT/src/conflict_analysis.rs
+@@ -220,7 +220,6 @@ pub fn analyze_conflict(f: &Formula, trail: &Trail, cref: usize, d: &mut Decisio
+             _ => break,
+         };
+         let idx = trail.trail[i].lit.index();
+-        proof_assert!(clause.same_idx_same_polarity_except(*ante, idx@));
+         resolve(f, &mut clause, ante, idx, c_idx, &trail, &mut seen, &mut path_c, &mut to_bump);
+     }
+     //let clause = clause;

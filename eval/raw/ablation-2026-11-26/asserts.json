@@ -1,0 +1,682 @@
+{
+ "crates": [
+  "CreuSAT",
+  "Robinson",
+  "Friday"
+ ],
+ "functions": [
+  {
+   "id": "CreuSAT.clause.swap_lits_in_clause.L165",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/clause.rs",
+   "function": "swap_lits_in_clause",
+   "line": 165,
+   "context": [
+    "impl Clause"
+   ],
+   "asserts": [
+    {
+     "line": 168,
+     "text": "proof_assert!(lemma_permuted_clause_maintains_equisat(_f@, *old_c.inner(), *self); true);"
+    },
+    {
+     "line": 169,
+     "text": "proof_assert!(dup_stable_on_permut(*old_c.inner(), *self); true);"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.conflict_analysis.resolve.L52",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/conflict_analysis.rs",
+   "function": "resolve",
+   "line": 52,
+   "context": [],
+   "asserts": [
+    {
+     "line": 61,
+     "text": "proof_assert!(c.clause_is_seen(*seen));"
+    },
+    {
+     "line": 68,
+     "text": "proof_assert!(^seen == ^old_seen.inner());"
+    },
+    {
+     "line": 69,
+     "text": "proof_assert!(c.clause_is_seen(*seen));"
+    },
+    {
+     "line": 71,
+     "text": "proof_assert!(!old_c@[c_idx@].lit_in(*c));"
+    },
+    {
+     "line": 72,
+     "text": "proof_assert!(^c == ^old_c.inner());"
+    },
+    {
+     "line": 73,
+     "text": "proof_assert!(forall<j: Int> 0 <= j && j < old_c@.len() && j != c_idx@ ==> old_c@[j].lit_in(*c));"
+    },
+    {
+     "line": 92,
+     "text": "proof_assert!(^c == ^old_c3.inner());"
+    },
+    {
+     "line": 101,
+     "text": "proof_assert!(c@ == old_c3@.push_back(o@[i@]));"
+    },
+    {
+     "line": 102,
+     "text": "proof_assert!(c@.len() == old_c3@.len() + 1);"
+    },
+    {
+     "line": 103,
+     "text": "proof_assert!(o@[i@].lit_in(*c));"
+    },
+    {
+     "line": 106,
+     "text": "proof_assert!(forall<j: Int> 0 <= j && j < old_c3@.len() ==> (old_c3@[j] == c@[j]));"
+    },
+    {
+     "line": 110,
+     "text": "proof_assert!(c.resolvent_of(*old_c.inner(), *o, 0, c_idx@));"
+    },
+    {
+     "line": 111,
+     "text": "proof_assert!(lemma_resolvent_of_equisat_extension_is_equisat(_f@, *old_c.inner(), *o, *c, c_idx@, 0);true);"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.conflict_analysis.analyze_conflict.L180",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/conflict_analysis.rs",
+   "function": "analyze_conflict",
+   "line": 180,
+   "context": [],
+   "asserts": [
+    {
+     "line": 223,
+     "text": "proof_assert!(clause.same_idx_same_polarity_except(*ante, idx@));"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.conflict_analysis.resolve_empty_clause.L258",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/conflict_analysis.rs",
+   "function": "resolve_empty_clause",
+   "line": 258,
+   "context": [],
+   "asserts": [
+    {
+     "line": 275,
+     "text": "proof_assert!(clause.clause_is_seen(seen));"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.decision.new.L77",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/decision.rs",
+   "function": "new",
+   "line": 77,
+   "context": [
+    "impl Decisions"
+   ],
+   "asserts": [
+    {
+     "line": 109,
+     "text": "proof_assert!(forall<j: Int> 0 <= j && j < counts_with_index@.len() ==> counts_with_index@[j].1@ < f.num_vars@);"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.decision.move_to_front.L153",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/decision.rs",
+   "function": "move_to_front",
+   "line": 153,
+   "context": [
+    "impl Decisions"
+   ],
+   "asserts": [
+    {
+     "line": 168,
+     "text": "proof_assert!(self.start@ < _f.num_vars@);"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.formula.add_clause.L123",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/formula.rs",
+   "function": "add_clause",
+   "line": 123,
+   "context": [
+    "impl Formula"
+   ],
+   "asserts": [
+    {
+     "line": 135,
+     "text": "proof_assert!(^old_self.inner() == ^self);"
+    },
+    {
+     "line": 137,
+     "text": "proof_assert!(old_self.equisat(*self));"
+    },
+    {
+     "line": 138,
+     "text": "proof_assert!(trail_invariant(_t.trail@, *self));"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.formula.delete_clause.L210",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/formula.rs",
+   "function": "delete_clause",
+   "line": 210,
+   "context": [
+    "impl Formula"
+   ],
+   "asserts": [
+    {
+     "line": 215,
+     "text": "proof_assert!(forall<i: Int> 0 <= i && i < self.clauses@[cref@]@.len() ==> self.clauses@[cref@]@[i] == old_f.clauses@[cref@]@[i]);"
+    },
+    {
+     "line": 217,
+     "text": "proof_assert!(old_f.equisat(*self));"
+    },
+    {
+     "line": 218,
+     "text": "proof_assert!(^self == ^old_f.inner());"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.formula.delete_clauses.L230",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/formula.rs",
+   "function": "delete_clauses",
+   "line": 230,
+   "context": [
+    "impl Formula"
+   ],
+   "asserts": [
+    {
+     "line": 242,
+     "text": "proof_assert!(t.assignments.inv(*self));"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.trail.backstep.L62",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/trail.rs",
+   "function": "backstep",
+   "line": 62,
+   "context": [
+    "impl Trail"
+   ],
+   "asserts": [
+    {
+     "line": 71,
+     "text": "proof_assert!(self.trail@ == pop(old_t.trail@));"
+    },
+    {
+     "line": 72,
+     "text": "proof_assert!(^old_t.inner() == ^self);"
+    },
+    {
+     "line": 76,
+     "text": "proof_assert!(long_are_post_unit_inner(self.trail@, *f, self.assignments@));"
+    },
+    {
+     "line": 82,
+     "text": "proof_assert!(long_are_post_unit_inner(self.trail@, *f, self.assignments@) && true);"
+    },
+    {
+     "line": 85,
+     "text": "proof_assert!(self.assignments.inv(*f));"
+    },
+    {
+     "line": 91,
+     "text": "proof_assert!(long_are_post_unit_inner(self.trail@, *f, self.assignments@));"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.trail.backtrack_to.L118",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/trail.rs",
+   "function": "backtrack_to",
+   "line": 118,
+   "context": [
+    "impl Trail"
+   ],
+   "asserts": [
+    {
+     "line": 136,
+     "text": "proof_assert!(idx@ < f.num_vars@);"
+    },
+    {
+     "line": 150,
+     "text": "proof_assert!(sorted(self.decisions@));"
+    },
+    {
+     "line": 151,
+     "text": "proof_assert!(self.decisions@.len() > 0);"
+    },
+    {
+     "line": 152,
+     "text": "proof_assert!(lemma_pop_maintains_sorted(self.decisions@); true);"
+    },
+    {
+     "line": 155,
+     "text": "proof_assert!(self.decisions@ == pop(old_t2.decisions@));"
+    },
+    {
+     "line": 156,
+     "text": "proof_assert!((^old_t2.inner()) == ^self);"
+    },
+    {
+     "line": 162,
+     "text": "proof_assert!(sorted(self.decisions@));"
+    },
+    {
+     "line": 169,
+     "text": "proof_assert!(sorted(self.decisions@));"
+    },
+    {
+     "line": 170,
+     "text": "proof_assert!(self.decisions@.len() > 0);"
+    },
+    {
+     "line": 171,
+     "text": "proof_assert!(lemma_pop_maintains_sorted(self.decisions@); true);"
+    },
+    {
+     "line": 175,
+     "text": "proof_assert!(self.decisions@ == pop(old_t3.decisions@));"
+    },
+    {
+     "line": 176,
+     "text": "proof_assert!((^old_t3.inner()) == ^self);"
+    },
+    {
+     "line": 182,
+     "text": "proof_assert!(lemma_pop_maintains_sorted(old_t3.decisions@); true);"
+    },
+    {
+     "line": 183,
+     "text": "proof_assert!(sorted(self.decisions@));"
+    },
+    {
+     "line": 185,
+     "text": "proof_assert!( self.decisions@.len() == 0 || self.decisions@[self.decisions@.len()-1]@ <= self.trail@.len() );"
+    },
+    {
+     "line": 190,
+     "text": "proof_assert!(self.assignments.inv(*f));"
+    },
+    {
+     "line": 195,
+     "text": "proof_assert!(long_are_post_unit_inner(self.trail@, *f, self.assignments@));"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.trail.enq_assignment.L234",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/trail.rs",
+   "function": "enq_assignment",
+   "line": 234,
+   "context": [
+    "impl Trail"
+   ],
+   "asserts": [
+    {
+     "line": 241,
+     "text": "proof_assert!(lemma_push_maintains_lit_not_in_less(*self, *_f, step); true);"
+    },
+    {
+     "line": 247,
+     "text": "proof_assert!(long_are_post_unit_inner(self.trail@, *_f, self.assignments@));"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.unit_prop.swap.L67",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/unit_prop.rs",
+   "function": "swap",
+   "line": 67,
+   "context": [],
+   "asserts": [
+    {
+     "line": 72,
+     "text": "proof_assert!(vars_in_range_inner(f.clauses@[cref@]@, f.num_vars@));"
+    },
+    {
+     "line": 73,
+     "text": "proof_assert!(no_duplicate_indexes_inner(f.clauses@[cref@]@));"
+    },
+    {
+     "line": 75,
+     "text": "proof_assert!(forall<a2: Seq<AssignedState>> a2.len() == f.num_vars@ && complete_inner(a2) && old_f.clauses@[cref@].sat_inner(a2) ==> f.clauses@[cref@].sat_inner(a2));"
+    },
+    {
+     "line": 76,
+     "text": "proof_assert!(eventually_sat_complete(old_f@) ==> eventually_sat_complete(f@));"
+    },
+    {
+     "line": 77,
+     "text": "proof_assert!(^f == ^old_f.inner());"
+    },
+    {
+     "line": 79,
+     "text": "proof_assert!(forall<i: Int> 0 <= i && i < f.clauses@.len() && i != cref@ ==> old_f.clauses@[i] == f.clauses@[i]);"
+    },
+    {
+     "line": 82,
+     "text": "proof_assert!( trail.assignments.inv(*f) && trail_invariant(trail.trail@, *f) && trail.lit_to_level@.len() == f.num_vars@ && lit_is_unique_inner(trail.trail@) && trail_entries_are_assigned_inner(trail.trail@, trail.assignments@) && crate::logic::logic_util::sorted(trail.decisions@) && unit_are_sat(trail.trail@, *f, trail.assignments) && (forall<i: Int> 0 <= i && i < trail.decisions@.len() ==> trail.decisions@[i]@ <= trail.trail@.len()) );"
+    },
+    {
+     "line": 94,
+     "text": "proof_assert! { forall<i: Int> 0 <= i && i < trail.trail@.len() ==> forall<j: Int> 0 <= j && j < i ==> match trail.trail@[j].reason { Reason::Long(cref) => !(trail.trail@)[i].lit.lit_idx_in(f.clauses@[cref@]), _ => true, } }"
+    },
+    {
+     "line": 102,
+     "text": "proof_assert!(lit_not_in_less_inner(trail.trail@, *f));"
+    },
+    {
+     "line": 105,
+     "text": "proof_assert!( forall<j: Int> 0 <= j && j < trail.trail@.len() ==> match trail.trail@[j].reason { Reason::Long(k) => { clause_post_with_regards_to(f.clauses@[k@], trail.assignments, trail.trail@[j].lit.index_logic()) }, _ => true, } );"
+    },
+    {
+     "line": 113,
+     "text": "proof_assert!(long_are_post_unit_inner(trail.trail@, *f, trail.assignments@));"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.unit_prop.exists_new_watchable_lit.L133",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/unit_prop.rs",
+   "function": "exists_new_watchable_lit",
+   "line": 133,
+   "context": [],
+   "asserts": [
+    {
+     "line": 151,
+     "text": "proof_assert!(forall<j: Int> 0 <= j && j < f.clauses@.len() ==> f.clauses@[j]@ == old_f2.inner().clauses@[j]@);"
+    },
+    {
+     "line": 152,
+     "text": "proof_assert!(old_f2.inner().equisat(*f));"
+    },
+    {
+     "line": 170,
+     "text": "proof_assert!(forall<j: Int> 0 <= j && j < f.clauses@.len() ==> f.clauses@[j]@ == old_f2.inner().clauses@[j]@);"
+    },
+    {
+     "line": 171,
+     "text": "proof_assert!(old_f2.inner().equisat(*f));"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.unit_prop.propagate_lit_with_regard_to_clause.L206",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/unit_prop.rs",
+   "function": "propagate_lit_with_regard_to_clause",
+   "line": 206,
+   "context": [],
+   "asserts": [
+    {
+     "line": 214,
+     "text": "proof_assert!(^watches == ^old_w.inner());"
+    },
+    {
+     "line": 215,
+     "text": "proof_assert!(first_lit.index_logic() < f.num_vars@);"
+    },
+    {
+     "line": 222,
+     "text": "proof_assert!(^watches == ^old_w.inner());"
+    },
+    {
+     "line": 223,
+     "text": "proof_assert!(second_lit.index_logic() < f.num_vars@);"
+    },
+    {
+     "line": 232,
+     "text": "proof_assert!(f.clauses@[cref@].unsat(trail.assignments) || f.clauses@[cref@]@[0].unset(trail.assignments) || f.clauses@[cref@]@[1].unset(trail.assignments));"
+    },
+    {
+     "line": 239,
+     "text": "proof_assert!(trail.inv(*f));"
+    },
+    {
+     "line": 240,
+     "text": "proof_assert!(!f.clauses@[cref@].unsat(trail.assignments));"
+    },
+    {
+     "line": 241,
+     "text": "proof_assert!(f.clauses@[cref@].unit(trail.assignments));"
+    },
+    {
+     "line": 250,
+     "text": "proof_assert!(f.clauses@[cref@].post_unit(trail.assignments) && true);"
+    },
+    {
+     "line": 251,
+     "text": "proof_assert!(clause_post_with_regards_to_lit(f.clauses@[cref@], trail.assignments, first_lit));"
+    },
+    {
+     "line": 256,
+     "text": "proof_assert!(f.clauses@[cref@]@[1].unset(trail.assignments));"
+    },
+    {
+     "line": 258,
+     "text": "proof_assert!(f.clauses@[cref@]@.exchange(old_c@, 0, 1));"
+    },
+    {
+     "line": 259,
+     "text": "proof_assert!(f.clauses@[cref@]@[0].unset(trail.assignments));"
+    },
+    {
+     "line": 261,
+     "text": "proof_assert!(f.clauses@[cref@].post_unit(trail.assignments));"
+    },
+    {
+     "line": 262,
+     "text": "proof_assert!(clause_post_with_regards_to_lit((f.clauses@[cref@]), trail.assignments, second_lit));"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.unit_prop.propagate_literal.L281",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/unit_prop.rs",
+   "function": "propagate_literal",
+   "line": 281,
+   "context": [],
+   "asserts": [
+    {
+     "line": 284,
+     "text": "proof_assert!(watches.watches@.len() == 2 * f.num_vars@);"
+    },
+    {
+     "line": 285,
+     "text": "proof_assert!(watches.watches@.len() > watchidx@);"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.watches.update_watch.L35",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/watches.rs",
+   "function": "update_watch",
+   "line": 35,
+   "context": [],
+   "asserts": [
+    {
+     "line": 40,
+     "text": "proof_assert!(watchidx@ < watches.watches@.len());"
+    },
+    {
+     "line": 42,
+     "text": "proof_assert!(watcher_crefs_in_range(watches.watches@[watchidx@]@, *f));"
+    },
+    {
+     "line": 45,
+     "text": "proof_assert!(lemma_pop_watch_maintains_watcher_invariant(old_w.watches@[watchidx@]@, *f); true);"
+    },
+    {
+     "line": 46,
+     "text": "proof_assert!(watches.watches@[watchidx@]@ == pop(old_w.watches@[watchidx@]@));"
+    },
+    {
+     "line": 47,
+     "text": "proof_assert!(watcher_crefs_in_range(watches.watches@[watchidx@]@, *f));"
+    },
+    {
+     "line": 48,
+     "text": "proof_assert!(watches.inv(*f));"
+    },
+    {
+     "line": 49,
+     "text": "proof_assert!(curr_lit.to_neg_watchidx_logic() < watches.watches@.len());"
+    },
+    {
+     "line": 50,
+     "text": "proof_assert!(watcher_crefs_in_range(watches.watches@[curr_lit.to_neg_watchidx_logic()]@, *f));"
+    },
+    {
+     "line": 51,
+     "text": "proof_assert!(w.cref@ < f.clauses@.len());"
+    },
+    {
+     "line": 52,
+     "text": "proof_assert!(lemma_push_maintains_watcher_invariant(watches.watches@[curr_lit.to_neg_watchidx_logic()]@, *f, w); true);"
+    },
+    {
+     "line": 57,
+     "text": "proof_assert!(watch_valid(watches.watches@[watch_lit@]@, *f));"
+    },
+    {
+     "line": 58,
+     "text": "proof_assert!(watcher_crefs_in_range(watches.watches@[curr_lit.to_neg_watchidx_logic()]@, *f));"
+    },
+    {
+     "line": 59,
+     "text": "proof_assert!(watches.inv(*f));"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.watches.unwatch.L157",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/watches.rs",
+   "function": "unwatch",
+   "line": 157,
+   "context": [
+    "impl Watches"
+   ],
+   "asserts": [
+    {
+     "line": 171,
+     "text": "proof_assert!(^old_w.inner() == ^self);"
+    },
+    {
+     "line": 172,
+     "text": "proof_assert!(self.inv(*f));"
+    }
+   ]
+  },
+  {
+   "id": "CreuSAT.logic.logic_clause.lemma_permuted_clause_maintains_equisat.L227",
+   "crate": "CreuSAT",
+   "file": "CreuSAT/src/logic/logic_clause.rs",
+   "function": "lemma_permuted_clause_maintains_equisat",
+   "line": 227,
+   "context": [],
+   "asserts": [
+    {
+     "line": 228,
+     "text": "proof_assert! { forall<s: Seq<Clause>, x: Clause> s.push_back(x).subsequence(0, s.len()) == s }"
+    }
+   ]
+  },
+  {
+   "id": "Robinson.assignments.unit_prop_once.L148",
+   "crate": "Robinson",
+   "file": "Robinson/src/assignments.rs",
+   "function": "unit_prop_once",
+   "line": 148,
+   "context": [
+    "impl Assignments"
+   ],
+   "asserts": [
+    {
+     "line": 158,
+     "text": "proof_assert!(lemma_unit_wrong_polarity_unsat_formula(*clause, *f, self@, lit.index_logic(), bool_to_assignedstate(lit.polarity)); true);"
+    },
+    {
+     "line": 159,
+     "text": "proof_assert!(lemma_unit_forces(*f, self@, lit.index_logic(), bool_to_assignedstate(lit.polarity)); true);"
+    },
+    {
+     "line": 165,
+     "text": "proof_assert!(lemma_extension_sat_base_sat(*f, _old_a.inner()@, lit.index_logic(), bool_to_assignedstate(lit.polarity)); true);"
+    },
+    {
+     "line": 166,
+     "text": "proof_assert!(lemma_extensions_unsat_base_unsat(_old_a.inner()@, lit.index_logic(), *f); true);"
+    },
+    {
+     "line": 167,
+     "text": "proof_assert!(^self == ^_old_a.inner());"
+    }
+   ]
+  },
+  {
+   "id": "Robinson.formula.check_and_establish_formula_invariant.L122",
+   "crate": "Robinson",
+   "file": "Robinson/src/formula.rs",
+   "function": "check_and_establish_formula_invariant",
+   "line": 122,
+   "context": [
+    "impl Formula"
+   ],
+   "asserts": [
+    {
+     "line": 126,
+     "text": "proof_assert!(self.sat_inner(a@));"
+    },
+    {
+     "line": 127,
+     "text": "proof_assert!(self.eventually_sat_no_ass());"
+    }
+   ]
+  },
+  {
+   "id": "Robinson.solver.solver.L46",
+   "crate": "Robinson",
+   "file": "Robinson/src/solver.rs",
+   "function": "solver",
+   "line": 46,
+   "context": [],
+   "asserts": [
+    {
+     "line": 52,
+     "text": "proof_assert!(formula.clauses == old_f.clauses);"
+    }
+   ]
+  }
+ ],
+ "outside_a_function": []
+}

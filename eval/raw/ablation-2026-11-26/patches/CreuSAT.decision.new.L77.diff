@@ -1,0 +1,12 @@
+diff --git a/CreuSAT/src/decision.rs b/CreuSAT/src/decision.rs
+index a351e3f1..605d0395 100644
+--- a/CreuSAT/src/decision.rs
++++ b/CreuSAT/src/decision.rs
+@@ -106,7 +106,6 @@ impl Decisions {
+             i += 1;
+         }
+         sort_reverse(&mut counts_with_index);
+-        proof_assert!(forall<j: Int> 0 <= j && j < counts_with_index@.len() ==> counts_with_index@[j].1@ < f.num_vars@);
+         i = 0;
+         #[invariant(0 <= i@ && i@ <= f.num_vars@)]
+         #[invariant(lit_order@.len() == f.num_vars@)]

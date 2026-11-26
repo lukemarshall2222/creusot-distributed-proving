@@ -1,0 +1,69 @@
+{
+ "status": "exploratory: not pre-registered, one repetition, not evidence for a research question (R6.2, R6.3)",
+ "date": "2026-11-26",
+ "question": "which goals of CreuSAT become hard when the proof_assert! hints of a function are removed (a baseline for lemma sharing)",
+ "repository_commit": "cf5d9cd (dp-frontend, release build); eval/scripts/hint_ablation.py is new and uncommitted at the time of the run",
+ "machine": {
+  "system": "aarch64-darwin",
+  "cpu": "Apple M4 Pro",
+  "cores": 14,
+  "memory_gb": 48,
+  "os": "macOS 27.0.1"
+ },
+ "corpus": {
+  "source": "https://github.com/sarsko/CreuSAT",
+  "commit": "232edff08ec6a5713cc3d61797f353550ca94d6f",
+  "crates": [
+   "CreuSAT",
+   "Robinson",
+   "Friday"
+  ],
+  "note": "the crates that the project verifies (workspace.metadata.creusot default-members); NewDB and Scratch also have proof_assert! and are not verified by the project"
+ },
+ "tools": {
+  "translation": "Creusot 0.14.0-dev at ccc6c4ad243d5e20fd870a3d07be68fd184a7092, the revision of creusot-std that CreuSAT's Cargo.toml names, built from source with the Rust toolchain nightly-2026-08-03, run as `cargo creusot --only coma --span-mode off`",
+  "proving": "the pinned tools of this repository's development shell: Creusot 0.15.0 (prelude and prover configuration), Why3 1.8.2+git (05bf4ddf), why3find 1.3.0+dev (89dd8721 with patches/why3find), dp-frontend",
+  "provers": {
+   "alt-ergo": "2.6.4",
+   "z3": "5.3.2",
+   "cvc4": "1.8",
+   "cvc5": "1.4.1"
+  },
+  "why3find_json": "the project's: fast 0.2, time 1.0, depth 4, provers alt-ergo, z3, cvc4, cvc5, tactics split_vc, compute_specified, inline_goal"
+ },
+ "method": [
+  "hint_ablation.py scan: every proof_assert! of the three crates that is code (23 more are commented out), by the innermost function that holds it",
+  "hint_ablation.py translate: per function, a variant of the checkout without that function's proof_assert! invocations (patches/); nothing else is changed. The original and each variant are translated to Coma; each variant changes exactly one Coma file, its function's",
+  "hint_ablation.py measure --seconds 5: for each function its Coma file in the original and then in the ablated version, proved from scratch by dp-frontend with the project's why3find.json through corpus_hardness.py, with DP_MATRIX_SECONDS=5: every goal that gets a prover call is also run by every prover alone at a reference limit of 5 s",
+  "hint_ablation.py measure --seconds 60 --unproved-at 5: the same with a limit of 60 s, on the files that had a goal that no prover proved at 5 s (5 original, 4 ablated)",
+  "hint_ablation.py summarize: classes easy (some prover alone within 5 s), hard (none within 5 s, one within 60 s), out-of-reach (none within 60 s)"
+ ],
+ "why_creusot_0_14": "the pinned Creusot 0.15.0 refuses CreuSAT's creusot-std 0.14.0-dev, and against creusot-std 0.15.0 the crate does not compile (Seq::push_back is no logic function there; 7 errors in contracts and lemmas). Translating with the revision that the project was written for changes nothing of CreuSAT. The regenerated originals are the Coma files that the project commits, up to span annotations and the parentheses around an annotated term (checked for all 143 files), and those committed files are what matrix-2026-11-18 measured with the same proving tools",
+ "files": {
+  "asserts.json": "the 22 functions and the hints removed from each, with line and text",
+  "patches/": "the change of each variant, as a diff of the CreuSAT checkout",
+  "translate.jsonl": "per variant: whether it translated, and the Coma file that it changed",
+  "original-5s/, ablated-5s/, original-60s/, ablated-60s/": "output of corpus_hardness.py: records/ (one line per prover run, as in matrix-2026-11-18), goals.jsonl, runs.jsonl; matrix/ is prover_matrix.py on the records",
+  "goals.jsonl": "every goal of both versions with its class, whether it is a leaf of the proof search, and the runs of every prover",
+  "hard.jsonl": "the hard goals of the ablated versions: Task_Hash per prover (each prover's driver prints its own task), the provers that prove it within 60 s and their times, the Rust function, the removed asserts",
+  "summary.json": "per function, original against ablated",
+  "coma/": "the Coma files that were measured, original and ablated (ignored by git, as every Coma file of this repository)"
+ },
+ "findings": {
+  "functions": "22 functions have proof_assert! (107 hints). 21 were measured; unit_prop::swap (11 hints) is #[trusted] and has no Coma file. No variant failed to compile",
+  "original": "309 goals, 304 easy, 1 hard, 4 out-of-reach; every verification condition (183 of 183) is proved by the default strategy",
+  "ablated": "334 goals, 289 easy, 15 hard, 25 out-of-reach, 5 not measured at 60 s; 179 of 183 verification conditions are proved by the default strategy",
+  "where": "all hard and out-of-reach goals of the ablated versions are in 4 functions: conflict_analysis::resolve (14 hard, 8 out-of-reach), clause::swap_lits_in_clause (1 hard, 5 out-of-reach), watches::update_watch (6 out-of-reach), logic_clause::lemma_permuted_clause_maintains_equisat (6 out-of-reach). In each of the four, one verification condition is no longer proved by the default strategy",
+  "leaves": "goals are nodes of proof trees, and a node that is hard or out of reach usually has children that are too: of the 15 hard goals 3 are leaves (all in resolve), of the 25 out-of-reach goals 5 are leaves (2 in resolve, 1 in each of the other three functions)",
+  "unneeded_hints": "in the other 17 functions the default strategy proves every verification condition without the hints, and no goal is hard or out of reach: 67 of the 96 measured hints are in those functions"
+ },
+ "caveats": [
+  "one repetition; the load average of the machine was between 3 and 6 during the runs (14 cores), so outcomes near a limit may differ on a quiet machine",
+  "a goal is every node of a proof tree that got a prover call: verification conditions and the goals that a tactic made of them. The counts of the two versions are not counts of the same goals: without the hints the proof search splits other goals",
+  "a leaf at tactic depth 4 is a leaf because the project's why3find.json stops there, not because it cannot be split",
+  "5 goals of the ablated resolve were unproved at 5 s and are not in the 60 s run: in that run why3find proved their parent (split_vc.36) itself, so it did not split it. They are classed unmeasured",
+  "the 5 goals of the originals that no prover proves alone at 5 s are inner nodes (4 verification conditions that the strategy splits, of which one is proved within 60 s); the originals have no hard or out-of-reach leaf",
+  "limits are reference limits: dp-frontend scales them by the Calibration of each prover on this machine, as in matrix-2026-11-18",
+  "the Task_Hash of a goal depends on the prover whose driver prints it; hard.jsonl gives one per prover"
+ ]
+}

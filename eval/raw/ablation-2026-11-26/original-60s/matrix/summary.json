@@ -1,0 +1,25 @@
+{
+ "limit_seconds": 60.0,
+ "prover_order": [
+  "alt-ergo",
+  "z3",
+  "cvc4",
+  "cvc5"
+ ],
+ "goals": 168,
+ "classes": {
+  "first": 157,
+  "none": 4,
+  "later": 7,
+  "single": 1
+ },
+ "proved_alone_by": {
+  "alt-ergo": 157,
+  "z3": 154,
+  "cvc4": 155,
+  "cvc5": 155
+ },
+ "first_prover_seconds": 454.0,
+ "in_order_seconds": 816.3,
+ "best_seconds": 14.1
+}

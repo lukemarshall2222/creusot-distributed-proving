@@ -1,0 +1,12 @@
+diff --git a/Robinson/src/solver.rs b/Robinson/src/solver.rs
+index c322ba05..1cdb26c9 100644
+--- a/Robinson/src/solver.rs
++++ b/Robinson/src/solver.rs
+@@ -49,7 +49,6 @@ pub fn solver(formula: &mut Formula) -> SatResult {
+         SatResult::Unknown => {}
+         o => return o,
+     }
+-    proof_assert!(formula.clauses == old_f.clauses);
+     let assignments = Assignments::new(formula);
+     let decisions = Decisions::new(formula);
+     if inner(formula, assignments, &decisions) {

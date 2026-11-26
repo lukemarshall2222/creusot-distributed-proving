@@ -1,0 +1,12 @@
+diff --git a/CreuSAT/src/conflict_analysis.rs b/CreuSAT/src/conflict_analysis.rs
+index 86f0b2ad..f559ee8e 100644
+--- a/CreuSAT/src/conflict_analysis.rs
++++ b/CreuSAT/src/conflict_analysis.rs
+@@ -272,7 +272,6 @@ pub fn resolve_empty_clause(f: &Formula, trail: &Trail, cref: usize) -> bool {
+         j += 1;
+     }
+     let mut clause = clause;
+-    proof_assert!(clause.clause_is_seen(seen));
+     let c_idx = match choose_literal(&clause, trail, &mut i, f, &seen) {
+         Some(c_idx) => c_idx,
+         None => return false,

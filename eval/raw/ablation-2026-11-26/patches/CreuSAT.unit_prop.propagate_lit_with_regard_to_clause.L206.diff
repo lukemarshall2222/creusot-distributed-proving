@@ -1,0 +1,58 @@
+diff --git a/CreuSAT/src/unit_prop.rs b/CreuSAT/src/unit_prop.rs
+index 06e77f0f..814e8c52 100644
+--- a/CreuSAT/src/unit_prop.rs
++++ b/CreuSAT/src/unit_prop.rs
+@@ -211,16 +211,12 @@ fn propagate_lit_with_regard_to_clause(
+     let first_lit = clause[0];
+     if first_lit.lit_sat(&trail.assignments) {
+         // We know blocker cannot be first, as then we would not be here
+-        proof_assert!(^watches == ^old_w.inner());
+-        proof_assert!(first_lit.index_logic() < f.num_vars@);
+         watches.watches[lit.to_watchidx()][j].blocker = first_lit;
+         return Ok(true);
+     }
+     let second_lit = clause[1];
+     if second_lit.lit_sat(&trail.assignments) {
+         // We know blocker cannot be second, as then we would not be here
+-        proof_assert!(^watches == ^old_w.inner());
+-        proof_assert!(second_lit.index_logic() < f.num_vars@);
+         watches.watches[lit.to_watchidx()][j].blocker = second_lit;
+         return Ok(true);
+     }
+@@ -229,16 +225,12 @@ fn propagate_lit_with_regard_to_clause(
+         return Ok(false); // Watches have been updated -> don't increase j
+     }
+     // If we have gotten here, the clause is either all false or unit
+-    proof_assert!(f.clauses@[cref@].unsat(trail.assignments) || f.clauses@[cref@]@[0].unset(trail.assignments) || f.clauses@[cref@]@[1].unset(trail.assignments));
+     if first_lit.lit_unset(&trail.assignments) {
+         //if f.clauses[cref].rest[0].lit_unset(&trail.assignments) {
+         // zzTODOzz: Prove the runtime-check
+         if second_lit.lit_unset(&trail.assignments) {
+             return Ok(true);
+         }
+-        proof_assert!(trail.inv(*f));
+-        proof_assert!(!f.clauses@[cref@].unsat(trail.assignments));
+-        proof_assert!(f.clauses@[cref@].unit(trail.assignments));
+         let step = Step {
+             lit: first_lit,
+             //lit: f.clauses[cref].rest[0],
+@@ -247,19 +239,12 @@ fn propagate_lit_with_regard_to_clause(
+         };
+ 
+         trail.enq_assignment(step, f);
+-        proof_assert!(f.clauses@[cref@].post_unit(trail.assignments) && true);
+-        proof_assert!(clause_post_with_regards_to_lit(f.clauses@[cref@], trail.assignments, first_lit));
+         return Ok(true);
+     } else if second_lit.lit_unset(&trail.assignments) {
+         let step = Step { lit: second_lit, decision_level: trail.decision_level(), reason: Reason::Long(cref) };
+         let old_c: Snapshot<Clause> = snapshot! { f.clauses[cref] };
+-        proof_assert!(f.clauses@[cref@]@[1].unset(trail.assignments));
+         swap(f, trail, watches, cref, 0, 1);
+-        proof_assert!(f.clauses@[cref@]@.exchange(old_c@, 0, 1));
+-        proof_assert!(f.clauses@[cref@]@[0].unset(trail.assignments));
+         trail.enq_assignment(step, f);
+-        proof_assert!(f.clauses@[cref@].post_unit(trail.assignments));
+-        proof_assert!(clause_post_with_regards_to_lit((f.clauses@[cref@]), trail.assignments, second_lit));
+         return Ok(true);
+     } else {
+         return Err(cref);

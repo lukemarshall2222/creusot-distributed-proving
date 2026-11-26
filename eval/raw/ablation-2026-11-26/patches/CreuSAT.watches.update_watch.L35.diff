@@ -1,0 +1,31 @@
+diff --git a/CreuSAT/src/watches.rs b/CreuSAT/src/watches.rs
+index b396d502..b094a9e5 100644
+--- a/CreuSAT/src/watches.rs
++++ b/CreuSAT/src/watches.rs
+@@ -37,26 +37,13 @@ pub fn update_watch(f: &Formula, trail: &Trail, watches: &mut Watches, cref: usi
+     let end = watches.watches[watchidx].len() - 1;
+     watches.watches[watchidx].swap(j, end);
+     let curr_lit = f[cref][k];
+-    proof_assert!(watchidx@ < watches.watches@.len());
+     let old_w: Snapshot<&mut Watches> = snapshot!(watches);
+-    proof_assert!(watcher_crefs_in_range(watches.watches@[watchidx@]@, *f));
+     match watches.watches[watchidx].pop() {
+         Some(w) => {
+-            proof_assert!(lemma_pop_watch_maintains_watcher_invariant(old_w.watches@[watchidx@]@, *f); true);
+-            proof_assert!(watches.watches@[watchidx@]@ == pop(old_w.watches@[watchidx@]@));
+-            proof_assert!(watcher_crefs_in_range(watches.watches@[watchidx@]@, *f));
+-            proof_assert!(watches.inv(*f));
+-            proof_assert!(curr_lit.to_neg_watchidx_logic() < watches.watches@.len());
+-            proof_assert!(watcher_crefs_in_range(watches.watches@[curr_lit.to_neg_watchidx_logic()]@, *f));
+-            proof_assert!(w.cref@ < f.clauses@.len());
+-            proof_assert!(lemma_push_maintains_watcher_invariant(watches.watches@[curr_lit.to_neg_watchidx_logic()]@, *f, w); true);
+ 
+             let watch_lit = curr_lit.to_neg_watchidx();
+             watches.watches[watch_lit].push(w);
+ 
+-            proof_assert!(watch_valid(watches.watches@[watch_lit@]@, *f));
+-            proof_assert!(watcher_crefs_in_range(watches.watches@[curr_lit.to_neg_watchidx_logic()]@, *f));
+-            proof_assert!(watches.inv(*f));
+         }
+         None => {
+             unreachable!();

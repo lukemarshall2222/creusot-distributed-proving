@@ -1,0 +1,13 @@
+diff --git a/Robinson/src/formula.rs b/Robinson/src/formula.rs
+index f87a6f76..dd5551b1 100644
+--- a/Robinson/src/formula.rs
++++ b/Robinson/src/formula.rs
+@@ -123,8 +123,6 @@ impl Formula {
+         if self.clauses.len() == 0 {
+             let a = Vec::new();
+             // These just help the proof along.
+-            proof_assert!(self.sat_inner(a@));
+-            proof_assert!(self.eventually_sat_no_ass());
+             return SatResult::Sat(a);
+         }
+         let old_self: Snapshot<&mut Formula> = snapshot!(self);

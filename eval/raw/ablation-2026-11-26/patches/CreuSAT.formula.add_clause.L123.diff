@@ -1,0 +1,16 @@
+diff --git a/CreuSAT/src/formula.rs b/CreuSAT/src/formula.rs
+index 4b7fe641..7d3a858d 100644
+--- a/CreuSAT/src/formula.rs
++++ b/CreuSAT/src/formula.rs
+@@ -132,10 +132,8 @@ impl Formula {
+         self.clauses.push(clause);
+         watches.add_watcher(first_lit, cref, self, second_lit);
+         watches.add_watcher(second_lit, cref, self, first_lit);
+-        proof_assert!(^old_self.inner() == ^self);
+         //proof_assert!(old_self.equisat_compatible(*self));
+-        proof_assert!(old_self.equisat(*self));
+-        proof_assert!(trail_invariant(_t.trail@, *self)); // This one needs some inlining/splits
++         // This one needs some inlining/splits
+         cref
+     }
+ 

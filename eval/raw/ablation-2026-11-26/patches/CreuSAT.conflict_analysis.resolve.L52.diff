@@ -1,0 +1,51 @@
+diff --git a/CreuSAT/src/conflict_analysis.rs b/CreuSAT/src/conflict_analysis.rs
+index 86f0b2ad..d8b0e111 100644
+--- a/CreuSAT/src/conflict_analysis.rs
++++ b/CreuSAT/src/conflict_analysis.rs
+@@ -58,20 +58,13 @@ fn resolve(
+     let old_path_c: Snapshot<&mut usize> = snapshot!(path_c);
+     let old_to_bump: Snapshot<&mut Vec<usize>> = snapshot!(to_bump);
+ 
+-    proof_assert!(c.clause_is_seen(*seen));
+ 
+     c.remove_from_clause(c_idx, _f);
+ 
+     *path_c -= 1;
+     seen[idx] = false;
+ 
+-    proof_assert!(^seen == ^old_seen.inner());
+-    proof_assert!(c.clause_is_seen(*seen));
+     let old_c2: Snapshot<&mut Clause> = snapshot!(c);
+-    proof_assert!(!old_c@[c_idx@].lit_in(*c));
+-    proof_assert!(^c == ^old_c.inner());
+-    proof_assert!(forall<j: Int> 0 <= j && j < old_c@.len()
+-        && j != c_idx@ ==> old_c@[j].lit_in(*c));
+ 
+     // Add all the literals from the other clause
+     let mut i: usize = 1;
+@@ -89,7 +82,6 @@ fn resolve(
+     #[invariant(elems_less_than(to_bump@, _f.num_vars@))]
+     while i < o.len() {
+         let old_c3: Snapshot<&mut Clause> = snapshot!(c);
+-        proof_assert!(^c == ^old_c3.inner());
+ 
+         if !idx_in(&c.lits, o[i].index(), &seen) {
+             seen[o[i].index()] = true;
+@@ -98,17 +90,10 @@ fn resolve(
+             if trail.lit_to_level[o[i].index()] >= trail.decision_level() {
+                 *path_c += 1;
+             }
+-            proof_assert!(c@ == old_c3@.push_back(o@[i@]));
+-            proof_assert!(c@.len() == old_c3@.len() + 1);
+-            proof_assert!(o@[i@].lit_in(*c));
+         }
+ 
+-        proof_assert!(forall<j: Int> 0 <= j && j < old_c3@.len() ==>
+-            (old_c3@[j] == c@[j]));
+         i += 1;
+     }
+-    proof_assert!(c.resolvent_of(*old_c.inner(), *o, 0, c_idx@));
+-    proof_assert!(lemma_resolvent_of_equisat_extension_is_equisat(_f@, *old_c.inner(), *o, *c, c_idx@, 0);true);
+ }
+ 
+ #[cfg_attr(feature = "trust_conflict", trusted)]
