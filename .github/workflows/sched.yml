@@ -25,12 +25,15 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix', 'deps/**', 'patches/**') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
           gc-max-store-size-linux: 8G
+      # inputs: fuzz/, crates/
       - name: sched/fuzz-nightly
         run: nix develop .#ci --command ci/jobs/fuzz-nightly.sh
         env:
           DP_FUZZ_SEED: ${{ github.run_number }}
+      # inputs: tests/sim/, crates/
       - name: sched/sim-nightly
         run: nix develop .#ci --command ci/jobs/sim-nightly.sh
+      # inputs: tests/canaries/, crates/
       - name: sched/canaries-full
         run: nix develop .#ci --command ci/jobs/canaries-full.sh
 
@@ -47,6 +50,7 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix', 'deps/**', 'patches/**') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
           gc-max-store-size-linux: 8G
+      # inputs: verification/tla/
       - name: sched/apalache-nightly
         if: hashFiles('verification/tla/*.apalache.json') != ''
         run: nix develop --command ci/jobs/apalache-nightly.sh
@@ -64,6 +68,7 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix', 'deps/**', 'patches/**') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
           gc-max-store-size-linux: 8G
+      # inputs: crates/, tests/, tools/mutants/
       - name: sched/mutants-weekly
         run: nix develop --command ci/jobs/mutants-weekly.sh
         env:
@@ -89,6 +94,7 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix', 'deps/**', 'patches/**') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
           gc-max-store-size-linux: 8G
+      # inputs: eval/
       - name: sched/eval
         if: hashFiles('eval/run.sh') != ''
         run: nix develop .#ci --command ci/jobs/eval.sh

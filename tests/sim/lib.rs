@@ -535,13 +535,14 @@ impl Cluster {
     }
 
     /// Starts the Coordinator again, from an empty state, with a complete
-    /// trace of its steps in `path`.
+    /// trace of its steps in the file `path` of its simulated machine.
     pub fn trace_coordinator(&mut self, path: &str) {
         let config = coord::Config { silence_limit: SILENCE, beat_period: BEAT, retries: 2, serial: 0 };
-        let trace = TraceWriter::to_file("coordinator", path.into(), dp_shell::trace::Retention::Complete)
+        let mut env = SimEnv::new(&self.world, COORDINATOR);
+        let trace = TraceWriter::to_file(&mut env, "coordinator", path.into(), dp_shell::trace::Retention::Complete)
             .expect("the trace file can be written");
         self.coordinator = Some(CoordinatorShell::new(
-            SimEnv::new(&self.world, COORDINATOR),
+            env,
             config,
             trace,
             Some(operator_key().verifying_key()),
@@ -629,6 +630,11 @@ impl Cluster {
         }
         env.close(peer);
         report
+    }
+
+    /// A file of a node's simulated store.
+    pub fn file(&self, node: Node, path: impl AsRef<std::path::Path>) -> Option<Vec<u8>> {
+        self.world.borrow().files.get(&(node, path.as_ref().to_path_buf())).cloned()
     }
 
     pub fn now(&self) -> u64 {

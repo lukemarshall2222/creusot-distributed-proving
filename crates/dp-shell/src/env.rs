@@ -1,7 +1,8 @@
 //! The `Env` abstraction (design: "How the shells drive dp-core").
 //!
 //! A shell of the Coordinator or of a Worker touches the outside world only
-//! through an `Env`: the network, the clock and the solver processes. The
+//! through an `Env`: the network, the clock, the solver processes and the
+//! files that it keeps. The
 //! production adapter is [`OsEnv`]; the simulator of `dp-testkit` is
 //! another, with a virtual clock, a network that loses, delays and
 //! duplicates messages, and scripted solvers. The same shell code runs on
@@ -27,6 +28,7 @@ use dp_formats::{
 use crate::{
     net::{Connection, Event},
     solver::{self, Run},
+    store::{Files, OsFiles},
 };
 
 /// Identifies a connection of this process.
@@ -76,7 +78,8 @@ pub struct RunEnd {
     pub elapsed_micros: u64,
 }
 
-pub trait Env {
+/// The file store of the component is the supertrait `Files`.
+pub trait Env: Files {
     /// The clock, in microseconds.
     fn now(&self) -> u64;
     /// The next thing that arrived, waiting for at most `wait`.
@@ -93,11 +96,6 @@ pub trait Env {
     fn kill(&mut self, run: u64);
     /// The runs that ended since the last call.
     fn finished(&mut self) -> io::Result<Vec<(u64, RunEnd)>>;
-    /// The file store: the whole contents of a file.
-    fn read_file(&mut self, path: &Path) -> io::Result<Vec<u8>>;
-    /// Writes a file so that, whenever the component stops, the file is
-    /// absent, or as it was, or complete with these contents (P5.4.5).
-    fn write_file(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()>;
 }
 
 /// The production adapter: TCP, the OS clock and OS processes.
@@ -297,12 +295,22 @@ impl Env for OsEnv {
         }
         Ok(ended)
     }
+}
 
+impl Files for OsEnv {
     fn read_file(&mut self, path: &Path) -> io::Result<Vec<u8>> {
-        fs::read(path)
+        OsFiles.read_file(path)
     }
 
     fn write_file(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()> {
-        crate::store::write_atomic(path, bytes)
+        OsFiles.write_file(path, bytes)
+    }
+
+    fn write_dir(&mut self, dir: &Path, files: &[(&str, &[u8])]) -> io::Result<()> {
+        OsFiles.write_dir(dir, files)
+    }
+
+    fn append_file(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        OsFiles.append_file(path, bytes)
     }
 }

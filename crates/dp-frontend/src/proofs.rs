@@ -16,7 +16,7 @@
 use std::{collections::BTreeMap, io, path::Path};
 
 use dp_formats::{hash::Hash, proofjson::DpEntry};
-use dp_shell::store;
+use dp_shell::store::Files;
 use serde_json::{Map, Value};
 
 /// The label of one Goal of a proof file.
@@ -139,15 +139,21 @@ pub fn extend(
 
 /// Rewrites one proof file with its extension members, atomically. A file
 /// that why3find did not write is left alone.
-pub fn rewrite(path: &Path, lock_hash: Hash, goals: &[GoalLabel], unresolved: &DpEntry) -> io::Result<Report> {
-    let text = match std::fs::read_to_string(path) {
+pub fn rewrite(
+    env: &mut impl Files,
+    path: &Path,
+    lock_hash: Hash,
+    goals: &[GoalLabel],
+    unresolved: &DpEntry,
+) -> io::Result<Report> {
+    let text = match env.read_file(path).and_then(|bytes| String::from_utf8(bytes).map_err(io::Error::other)) {
         Ok(text) => text,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Report::default()),
         Err(e) => return Err(e),
     };
     let (out, report) = extend(&text, lock_hash, goals, unresolved)
         .map_err(|e| io::Error::other(format!("{}: {e}", path.display())))?;
-    store::write_atomic(path, out.as_bytes())?;
+    env.write_file(path, out.as_bytes())?;
     Ok(report)
 }
 

@@ -70,6 +70,81 @@ pub fn write_until(path: &Path, bytes: &[u8], stop: Option<Step>) -> io::Result<
     result
 }
 
+/// The file store of a component: the part of its `Env` that keeps files.
+/// It is a trait of its own because the trace writer and the proof files
+/// need nothing else of an environment, and are also built where there is
+/// no network (the `cluster` feature is off).
+pub trait Files {
+    /// The whole contents of a file.
+    fn read_file(&mut self, path: &Path) -> io::Result<Vec<u8>>;
+    /// Writes a file so that, whenever the component stops, the file is
+    /// absent, or as it was, or complete with these contents (P5.4.5).
+    fn write_file(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()>;
+    /// Writes a directory of files so that, whenever the component stops,
+    /// the directory is absent or complete with these files (R5.4). A
+    /// directory that is there already is kept as it is.
+    fn write_dir(&mut self, dir: &Path, files: &[(&str, &[u8])]) -> io::Result<()>;
+    /// Adds bytes at the end of a file, which is created if it is absent.
+    /// A complete trace is written this way (D-11).
+    fn append_file(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()>;
+}
+
+/// The file system, as a file store.
+pub struct OsFiles;
+
+impl Files for OsFiles {
+    fn read_file(&mut self, path: &Path) -> io::Result<Vec<u8>> {
+        fs::read(path)
+    }
+
+    fn write_file(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        write_atomic(path, bytes)
+    }
+
+    fn write_dir(&mut self, dir: &Path, files: &[(&str, &[u8])]) -> io::Result<()> {
+        write_dir_atomic(dir, files)
+    }
+
+    fn append_file(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        io::Write::write_all(&mut fs::OpenOptions::new().create(true).append(true).open(path)?, bytes)
+    }
+}
+
+/// Writes a directory of files so that, whenever the component stops, the
+/// directory is absent or complete (R5.4): the files are written and synced
+/// in a temporary directory, which is then renamed; the rename is the event
+/// that makes the directory complete. A directory that is there already is
+/// kept as it is.
+pub fn write_dir_atomic(dir: &Path, files: &[(&str, &[u8])]) -> io::Result<()> {
+    if dir.is_dir() {
+        return Ok(());
+    }
+    let parent = dir.parent().ok_or_else(|| io::Error::other("the directory has no parent"))?;
+    let name = dir.file_name().ok_or_else(|| io::Error::other("the directory has no name"))?;
+    fs::create_dir_all(parent)?;
+    let tmp = parent.join(format!(".{}.{}.tmp", name.to_string_lossy(), std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir(&tmp)?;
+    let result = (|| {
+        for (name, bytes) in files {
+            let mut file = fs::File::create(tmp.join(name))?;
+            io::Write::write_all(&mut file, bytes)?;
+            file.sync_all()?;
+        }
+        fs::File::open(&tmp)?.sync_all()?;
+        fs::rename(&tmp, dir)?;
+        fs::File::open(parent)?.sync_all()
+    })();
+    if result.is_err() {
+        let _ = fs::remove_dir_all(&tmp);
+        // Another writer may have completed the same directory meanwhile.
+        if dir.is_dir() {
+            return Ok(());
+        }
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -4,7 +4,7 @@
 //!     cargo run -p dp-sim --example trace -- OUT_FILE SEED
 
 use dp_formats::cluster::Operation;
-use dp_sim::{operator_key, Call, Cluster, PROVER, SILENCE, WORKERS};
+use dp_sim::{operator_key, Call, Cluster, COORDINATOR, PROVER, SILENCE, WORKERS};
 use dp_testkit::sim::Faults;
 
 fn main() {
@@ -26,7 +26,7 @@ fn main() {
         .collect();
     let faults = Faults { loss: 30_000, duplicate: 30_000, min_delay: 50, max_delay: 5_000 };
     let mut cluster = Cluster::new(seed, faults, 3, 0, script, 1 + seed % 2);
-    cluster.trace_coordinator(&out);
+    cluster.trace_coordinator("trace");
     // A Worker is cut off, another crashes, and both come back.
     cluster.run_until(40_000);
     cluster.world.borrow_mut().isolate(WORKERS + (seed % 3) as u32);
@@ -42,4 +42,7 @@ fn main() {
     cluster.operate(2, if seed % 2 == 0 { Operation::Remove } else { Operation::Revoke }, other, &operator_key());
     cluster.run_until(2_000_000);
     cluster.coordinator.as_mut().expect("the Coordinator runs").finish().expect("the trace is written");
+    // The trace is a file of the simulated machine; validation reads a real one.
+    let trace = cluster.file(COORDINATOR, "trace").expect("the Coordinator wrote its trace");
+    std::fs::write(&out, trace).expect("the trace file can be written");
 }

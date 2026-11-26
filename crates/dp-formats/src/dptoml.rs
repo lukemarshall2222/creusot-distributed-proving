@@ -120,9 +120,24 @@ impl std::fmt::Display for ConfigFileError {
     }
 }
 
+/// The message of a TOML error with the line that it is about: a value of
+/// the wrong type is reported by the parser without the name of its
+/// option, and an error has to name the option (R1.1 criterion 6; found by
+/// `prop_config.rs` on 2026-11-26).
+fn located(text: &str, error: &toml::de::Error) -> String {
+    let message = error.message();
+    let Some(span) = error.span() else { return message.to_string() };
+    let start = span.start.min(text.len());
+    let number = text.as_bytes()[..start].iter().filter(|b| **b == b'\n').count() + 1;
+    match text.lines().nth(number - 1).map(str::trim) {
+        Some(line) if !line.is_empty() => format!("line {number}, `{line}`: {message}"),
+        _ => format!("line {number}: {message}"),
+    }
+}
+
 impl ProjectConfig {
     pub fn parse(text: &str) -> Result<ProjectConfig, ConfigFileError> {
-        let config: ProjectConfig = toml::from_str(text).map_err(|e| ConfigFileError(e.message().to_string()))?;
+        let config: ProjectConfig = toml::from_str(text).map_err(|e| ConfigFileError(located(text, &e)))?;
         for (name, value) in [
             ("cluster.job_margin_seconds", config.cluster.job_margin_seconds),
             ("cluster.silence_seconds", config.cluster.silence_seconds),

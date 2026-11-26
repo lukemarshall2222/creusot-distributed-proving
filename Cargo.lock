@@ -240,6 +240,7 @@ version = "0.0.0"
 dependencies = [
  "dp-core",
  "dp-formats",
+ "dp-shell",
  "dp-testkit",
  "proptest",
 ]
@@ -309,6 +310,7 @@ version = "0.0.0"
 dependencies = [
  "dp-cert",
  "dp-formats",
+ "dp-shell",
  "ed25519-dalek",
 ]
 

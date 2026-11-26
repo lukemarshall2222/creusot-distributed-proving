@@ -44,7 +44,7 @@ proptest! {
     #[test]
     fn an_entry_is_read_back_and_storing_again_changes_nothing(c in certificate()) {
         let store = store();
-        let content = c.store(&store).unwrap();
+        let content = c.store(&store, &mut dp_shell::store::write_dir_atomic).unwrap();
         prop_assert_eq!(content, c.content_hash());
         prop_assert_eq!(&Certificate::load(&store, content).unwrap(), &c);
         // Idempotent: the same entry, the same name, the same files.
@@ -54,7 +54,7 @@ proptest! {
             names
         };
         let before = listing(&store);
-        prop_assert_eq!(c.store(&store).unwrap(), content);
+        prop_assert_eq!(c.store(&store, &mut dp_shell::store::write_dir_atomic).unwrap(), content);
         prop_assert_eq!(listing(&store), before);
         fs::remove_dir_all(store).unwrap();
     }
@@ -82,7 +82,7 @@ proptest! {
     #[test]
     fn a_damaged_entry_does_not_load(c in certificate(), file in 0usize..3, at in any::<prop::sample::Index>(), fault in 0u8..4) {
         let store = store();
-        let content = c.store(&store).unwrap();
+        let content = c.store(&store, &mut dp_shell::store::write_dir_atomic).unwrap();
         let path = store.join(content.to_hex()).join(["goal", "proof", "manifest"][file]);
         let mut stored = fs::read(&path).unwrap();
         match fault {
@@ -131,7 +131,7 @@ fn an_interrupted_write_leaves_no_entry() {
     fs::write(tmp.join("goal"), &c.goal).unwrap();
     fs::write(tmp.join("proof"), &c.proof).unwrap();
     assert!(Certificate::load(&store, content).is_err());
-    assert_eq!(c.store(&store).unwrap(), content);
+    assert_eq!(c.store(&store, &mut dp_shell::store::write_dir_atomic).unwrap(), content);
     assert_eq!(Certificate::load(&store, content).unwrap(), c);
     fs::remove_dir_all(store).unwrap();
 }

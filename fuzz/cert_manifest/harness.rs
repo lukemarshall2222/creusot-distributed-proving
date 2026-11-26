@@ -50,7 +50,7 @@ pub fn seeds() -> Vec<Vec<u8>> {
         checker_hash: Hash([2; 32]),
         signature_hash: Hash([3; 32]),
     };
-    let content = certificate.store(&store).expect("a temporary store");
+    let content = certificate.store(&store, &mut dp_shell::store::write_dir_atomic).expect("a temporary store");
     let manifest = fs::read(store.join(content.to_hex()).join("manifest")).expect("the manifest");
     let _ = fs::remove_dir_all(&store);
     vec![manifest]

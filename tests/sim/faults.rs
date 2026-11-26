@@ -172,28 +172,7 @@ fn a_registered_worker_that_lies_about_its_imports_proves_nothing() {
     }
 }
 
-/// One fault of a schedule.
-#[derive(Clone, Debug)]
-enum Fault {
-    Crash { node: u32, noticed: bool },
-    Restart { node: u32 },
-    Isolate { node: u32 },
-    Heal { node: u32 },
-}
-
-fn schedule() -> impl Strategy<Value = Vec<(u64, Fault)>> {
-    // Node 0 stands for the Coordinator, 1 to 3 for the Workers.
-    let fault = (0u32..4, 0u8..4, any::<bool>()).prop_map(|(node, kind, noticed)| match kind {
-        0 => Fault::Crash { node, noticed },
-        1 => Fault::Restart { node },
-        2 => Fault::Isolate { node },
-        _ => Fault::Heal { node },
-    });
-    proptest::collection::vec((0u64..400_000, fault), 0..8).prop_map(|mut faults| {
-        faults.sort_by_key(|(at, _)| *at);
-        faults
-    })
-}
+use dp_testkit::gen::fault_schedule::{network, schedule, Fault};
 
 fn calls() -> impl Strategy<Value = Vec<Call>> {
     let goal = prop_oneof![
@@ -260,9 +239,7 @@ proptest! {
     #[test]
     fn a_cluster_under_faults_keeps_its_promises(
         seed in any::<u64>(),
-        loss in prop_oneof![Just(0u32), 0u32..200_000],
-        duplicate in prop_oneof![Just(0u32), 0u32..200_000],
-        max_delay in 100u64..30_000,
+        faults in network(),
         script in calls(),
         schedule in schedule(),
         forging in prop::bool::weighted(0.2),
@@ -273,7 +250,6 @@ proptest! {
         local_member in any::<bool>(),
     ) {
         let speeds = Speeds { front_end, workers };
-        let faults = Faults { loss, duplicate, min_delay: 50, max_delay };
         let (replies, most) = run(seed, faults, &script, &schedule, forging, seeds, &speeds, local_member);
         for (rid, (reply, call)) in replies.iter().zip(&script).enumerate() {
             let Some(reply) = reply else {
@@ -562,7 +538,12 @@ fn a_worker_produces_the_certificate_and_the_front_end_checks_it() {
     let labels = cluster.front_end.labels();
     let certified = labels["sim.mlw"].iter().find(|g| g.name == "G0").unwrap();
     let content = certified.entry.certificate.expect("a certified entry names its certificate");
-    assert!(cluster.dir.join(".dp-certs").join(content.to_hex()).join("proof").is_file());
+    // The entry is in the file store of the Front_End's machine, whole.
+    let entry = cluster.dir.join(".dp-certs").join(content.to_hex());
+    for name in ["goal", "proof", "manifest"] {
+        assert!(cluster.file(dp_sim::FRONT_END, entry.join(name)).is_some(), "{name}");
+    }
+    assert!(!cluster.dir.join(".dp-certs").exists());
     // The Front_End's machine ran only the checker, once per certificate:
     // the proofs were produced by Workers.
     let world = cluster.world.borrow();
@@ -707,4 +688,129 @@ fn what_the_shells_store_is_in_the_simulated_file_store() {
     // One entry per call that ran to an answer.
     assert!(front_end.iter().filter(|p| p.contains(".dp-cache/") && !p.ends_with("revocations")).count() >= 4, "{front_end:?}");
     assert!(!cluster.dir.join(".dp-cache").exists() && !cluster.dir.join("coordinator.state").exists());
+}
+
+/// The local runs of the Front_End's machine on an input, from a point of
+/// the list of runs on.
+fn local_runs_on(cluster: &Cluster, from: usize, input: &[u8]) -> usize {
+    let world = cluster.world.borrow();
+    world.started[from..].iter().filter(|(node, _, i)| *node == dp_sim::FRONT_END && i == input).count()
+}
+
+// P-ID: P5.4.5, P5.2.3
+#[test]
+fn a_restarted_front_end_checks_the_stored_certificate_and_produces_none() {
+    let script = numbered(vec![call(0, "unsat 30000", 100_000)]);
+    let mut cluster = Cluster::with(33, Faults::none(), 1, 0, script.clone(), certifying(&script));
+    cluster.run_until(horizon(&script));
+    assert_eq!(label_of(&cluster, "G0"), "certified");
+    // The machine of the Front_End stops; the Cluster is gone when it is
+    // back, so the new Session has only itself and its file store.
+    cluster.crash_front_end(true);
+    cluster.crash(COORDINATOR, true);
+    cluster.crash(WORKERS, true);
+    let before = cluster.world.borrow().started.len();
+    cluster.restart_front_end();
+    cluster.run_until(2 * horizon(&script));
+    assert_eq!(cluster.answer(0).unwrap().0, Reply::Valid);
+    assert_eq!(label_of(&cluster, "G0"), "certified");
+    // The solver ran on the print once; the proof producer, which gets
+    // the same print, did not run: the certificate came from the store.
+    // The checker ran on it again, because the store is not trusted.
+    assert_eq!(local_runs_on(&cluster, before, &script[0].text), 1);
+    let proof = dp_testkit::sim::scripted_proof(&script[0].text);
+    assert_eq!(local_runs_on(&cluster, before, &proof), 1);
+}
+
+// P-ID: P5.4.5
+#[test]
+fn a_stored_certificate_that_was_changed_is_not_used() {
+    let script = numbered(vec![call(0, "unsat 30000", 100_000)]);
+    let mut cluster = Cluster::with(34, Faults::none(), 1, 0, script.clone(), certifying(&script));
+    cluster.run_until(horizon(&script));
+    assert_eq!(label_of(&cluster, "G0"), "certified");
+    cluster.crash_front_end(true);
+    cluster.crash(COORDINATOR, true);
+    cluster.crash(WORKERS, true);
+    // The proof of the entry is changed while the machine is down.
+    {
+        let mut world = cluster.world.borrow_mut();
+        let proof = world
+            .files
+            .iter_mut()
+            .find(|((node, path), _)| *node == dp_sim::FRONT_END && path.ends_with("proof"))
+            .expect("the entry has a proof");
+        proof.1.extend_from_slice(b"(step more)\n");
+    }
+    let before = cluster.world.borrow().started.len();
+    cluster.restart_front_end();
+    cluster.run_until(2 * horizon(&script));
+    // The entry does not match its manifest: the certificate is produced
+    // again, here, and that one is checked.
+    assert_eq!(label_of(&cluster, "G0"), "certified");
+    assert_eq!(local_runs_on(&cluster, before, &script[0].text), 2);
+}
+
+/// A complete trace is a file of the simulated machine: every step of the
+/// Coordinator is in it, in order, and nothing is written to disk.
+// P-ID: P1.5.15
+#[test]
+fn a_complete_trace_is_a_file_of_the_simulated_machine() {
+    let script = steady(6);
+    let mut cluster = Cluster::new(35, Faults::none(), 2, 0, script.clone(), 1);
+    let name = format!("dp-sim-trace-{}", std::process::id());
+    cluster.trace_coordinator(&name);
+    cluster.run_until(horizon(&script));
+    cluster.coordinator.as_mut().unwrap().finish().unwrap();
+    let trace = String::from_utf8(cluster.file(COORDINATOR, &name).expect("the trace is in the file store")).unwrap();
+    let sequence: Vec<u64> = trace
+        .lines()
+        .map(|line| {
+            let record = dp_formats::sexp::parse(line.as_bytes(), 1 << 20).unwrap();
+            record.as_list().unwrap()[2].as_str().unwrap().parse().unwrap()
+        })
+        .collect();
+    assert!(sequence.len() > 20, "{} records", sequence.len());
+    assert_eq!(sequence, (1..=sequence.len() as u64).collect::<Vec<_>>());
+    assert!(!std::path::Path::new(&name).exists());
+}
+
+/// The final write of the proof files goes through the file store: a
+/// proof file of the simulated machine gets its labels there.
+// P-ID: P7.2.6
+#[test]
+fn a_proof_file_is_rewritten_in_the_file_store() {
+    use dp_formats::{hash::Hash, proofjson::DpEntry};
+    use dp_frontend::proofs::{self, GoalLabel};
+    use dp_shell::store::Files;
+    use dp_testkit::sim::{SimEnv, World};
+    let world = World::new(1, Faults::none());
+    let mut env = SimEnv::new(&world, dp_sim::FRONT_END);
+    let entry = |label: &str| DpEntry {
+        label: label.into(),
+        replay: vec![],
+        imports_hash: Hash([0; 32]),
+        certificate: None,
+        conflict: false,
+        invalid: vec![],
+    };
+    let goals = [GoalLabel {
+        theory: "T".into(),
+        name: "A".into(),
+        steps: vec![],
+        entry: entry("proved-standalone"),
+        proof: true,
+    }];
+    let path = proofs::proof_file(std::path::Path::new("/project"), "sim.mlw");
+    // No file: why3find wrote none, and none is made.
+    let report = proofs::rewrite(&mut env, &path, Hash([7; 32]), &goals, &entry("unresolved")).unwrap();
+    assert_eq!(report, proofs::Report::default());
+    assert!(world.borrow().files.is_empty());
+    let file = br#"{ "profile": [], "proofs": { "T": { "A": { "prover": "z3", "time": 0.5 }, "B": null } } }"#;
+    env.write_file(&path, file).unwrap();
+    let report = proofs::rewrite(&mut env, &path, Hash([7; 32]), &goals, &entry("unresolved")).unwrap();
+    assert_eq!(report.labels.get("proved-standalone"), Some(&1));
+    let written = String::from_utf8(env.read_file(&path).unwrap()).unwrap();
+    assert!(written.contains("dp-lock") && written.contains("\"dp\""), "{written}");
+    assert!(!path.exists());
 }

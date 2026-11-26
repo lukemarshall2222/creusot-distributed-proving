@@ -36,13 +36,21 @@ fn results_of_an_unregistered_worker_prove_nothing() {
 fn tampering_coordinator() -> u16 {
     /// The real environment, except that what it sends is tampered with.
     struct Tampering(OsEnv);
-    impl EnvTrait for Tampering {
+    impl dp_shell::store::Files for Tampering {
+        fn write_dir(&mut self, dir: &std::path::Path, files: &[(&str, &[u8])]) -> std::io::Result<()> {
+            self.0.write_dir(dir, files)
+        }
+        fn append_file(&mut self, path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+            self.0.append_file(path, bytes)
+        }
         fn read_file(&mut self, path: &Path) -> std::io::Result<Vec<u8>> {
             self.0.read_file(path)
         }
         fn write_file(&mut self, path: &Path, bytes: &[u8]) -> std::io::Result<()> {
             self.0.write_file(path, bytes)
         }
+    }
+    impl EnvTrait for Tampering {
         fn now(&self) -> u64 {
             self.0.now()
         }

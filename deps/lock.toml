@@ -162,4 +162,4 @@ kind = "library"
 
 [[tool.platform]]
 platform = "aarch64-darwin"
-hash = "sha256:be4360b7e4665dd256188ea406da6f01ccc667f6798d18fb008aff3cd54cdbc4"
+hash = "sha256:6190176364a7dd6b74cd5335ea40854695d9b0d71dbbe2db1e3e5b9eee8de60a"

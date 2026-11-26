@@ -56,7 +56,7 @@ use crate::{
 use dp_shell::{
     env::{Env, NetEvent, OsEnv, Peer, RunSpec},
     solver,
-    store,
+    store::Files as _,
     trace::{Retention, TraceWriter},
     why3find::{Bridge, BridgeError, Poll, Printed, Why3find},
 };
@@ -1095,10 +1095,16 @@ impl<E: Env, W: Why3find> Session<E, W> {
         };
         // A certificate that an earlier Session stored for this very print
         // saves the production, not the check: the store is not trusted.
-        let stored = fs::read_to_string(self.cert_index(task_hash))
+        let index = self.cert_index(task_hash);
+        let store = self.dir.join(".dp-certs");
+        let env = &mut self.env;
+        let stored = env
+            .read_file(&index)
             .ok()
-            .and_then(|hex| dp_formats::cluster::from_hex::<32>(&hex))
-            .and_then(|content| dp_cert::Certificate::load(&self.dir.join(".dp-certs"), Hash(content)).ok())
+            .and_then(|hex| dp_formats::cluster::from_hex::<32>(&String::from_utf8(hex).ok()?))
+            .and_then(|content| {
+                dp_cert::Certificate::load_with(&store, Hash(content), &mut |path| env.read_file(path)).ok()
+            })
             .filter(|stored| stored.goal == cert.goal && stored.prover == cert.prover);
         match stored {
             Some(stored) => {
@@ -1243,12 +1249,14 @@ impl<E: Env, W: Why3find> Session<E, W> {
                         checker_hash,
                         signature_hash: certification.signature_hash,
                     };
-                    match certificate.store(&self.dir.join(".dp-certs")) {
+                    let env = &mut self.env;
+                    match certificate.store(&self.dir.join(".dp-certs"), &mut |dir, files| env.write_dir(dir, files)) {
                         Ok(content) => {
                             cert.facts.stored = true;
                             self.stored.insert(cert.call, content);
                             // For later Sessions: the certificate of this print.
-                            let _ = store::write_atomic(&self.cert_index(cert.task_hash), content.to_hex().as_bytes());
+                            let index = self.cert_index(cert.task_hash);
+                            let _ = self.env.write_file(&index, content.to_hex().as_bytes());
                         }
                         Err(e) => {
                             eprintln!("dp-frontend: goal {}: the certificate could not be stored: {e}", cert.gid)
@@ -1422,7 +1430,7 @@ impl<E: Env, W: Why3find> Session<E, W> {
         let out = frontend::step(state, input);
         let now = self.now();
         if self.trace.enabled() {
-            self.trace.record(out.action.name(), now, &format!("{input:?}"))?;
+            self.trace.record(&mut self.env, out.action.name(), now, &format!("{input:?}"))?;
         }
         self.state = Some(out.state);
         for entry in &out.log {
@@ -1986,7 +1994,7 @@ impl<E: Env, W: Why3find> Session<E, W> {
             }
         });
         let trace = match &config.trace {
-            Some((path, retention)) => TraceWriter::to_file("front-end", path.clone(), *retention)?,
+            Some((path, retention)) => TraceWriter::to_file(&mut env, "front-end", path.clone(), *retention)?,
             // On by default: the most recent steps, in memory (D-11).
             None => TraceWriter::in_memory("front-end", config.trace_keep),
         };
@@ -2114,6 +2122,7 @@ fn goal_labels(state: &State, goals: &BTreeMap<String, Goal>) -> BTreeMap<String
 /// wrote gets the label of each of its Goals and the Lock_File hash.
 /// Returns the number of Goals by label and the number of conflicts.
 fn final_write(
+    env: &mut impl Env,
     dir: &Path,
     lock_hash: Hash,
     files: BTreeMap<String, Vec<GoalLabel>>,
@@ -2129,7 +2138,7 @@ fn final_write(
     let mut conflicts = 0;
     for (file, goals) in files {
         let path = proofs::proof_file(dir, &file);
-        let report = proofs::rewrite(&path, lock_hash, &goals, &unresolved)?;
+        let report = proofs::rewrite(env, &path, lock_hash, &goals, &unresolved)?;
         for (label, n) in report.labels {
             *labels.entry(label).or_insert(0) += n;
         }
@@ -2197,7 +2206,7 @@ pub fn run(config: Config) -> Result<i32, SessionError> {
     for call in std::mem::take(&mut session.local).into_keys() {
         session.env.kill(call);
     }
-    session.trace.finish()?;
+    session.trace.finish(&mut session.env)?;
     // A Session that failed says what it did last: the steps that the
     // default trace kept go to the project's cache directory. Not after a
     // pin mismatch: such a Session leaves the project as it was (R7.7
@@ -2210,13 +2219,15 @@ pub fn run(config: Config) -> Result<i32, SessionError> {
         }
     }
     let files = goal_labels(session.state(), &session.goals);
-    let Session { bridge, state, counts, cache_hits, remote_proofs, spent, dir, lock_hash, cert_sources, .. } = session;
+    let Session {
+        bridge, state, counts, cache_hits, remote_proofs, spent, dir, lock_hash, cert_sources, mut env, ..
+    } = session;
     match result {
         Ok(()) => {
             let status = bridge.wait()?;
             let state = state.expect("the state is present between steps");
             // why3find has written its proof files; now the final write.
-            let (labels, conflicts) = final_write(&dir, lock_hash, files)?;
+            let (labels, conflicts) = final_write(&mut env, &dir, lock_hash, files)?;
             let verdicts =
                 state.verdicts.entries.iter().filter(|v| v.label == Label::ProvedStandalone).count();
             let certified = state.verdicts.entries.iter().filter(|v| v.label == Label::Certified).count();

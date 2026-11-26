@@ -19,7 +19,10 @@ use std::{
 };
 
 use dp_formats::{cluster::Message, hash::Hash};
-use dp_shell::env::{Env, NetEvent, Peer, RunEnd, RunSpec};
+use dp_shell::{
+    env::{Env, NetEvent, Peer, RunEnd, RunSpec},
+    store::Files,
+};
 
 pub type Node = u32;
 
@@ -334,20 +337,6 @@ impl Env for SimEnv {
         Ok((PathBuf::from(program), BINARY_HASH))
     }
 
-    fn read_file(&mut self, path: &Path) -> io::Result<Vec<u8>> {
-        self.world
-            .borrow()
-            .files
-            .get(&(self.node, path.to_path_buf()))
-            .cloned()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such simulated file"))
-    }
-
-    fn write_file(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()> {
-        self.world.borrow_mut().files.insert((self.node, path.to_path_buf()), bytes.to_vec());
-        Ok(())
-    }
-
     fn start(&mut self, run: u64, _exe: &Path, spec: &RunSpec) -> io::Result<()> {
         let mut w = self.world.borrow_mut();
         let mut behaviour = script(&spec.input);
@@ -403,5 +392,39 @@ impl Env for SimEnv {
             .into_iter()
             .map(|id| (id, w.runs.remove(&(self.node, id)).expect("listed").result))
             .collect())
+    }
+}
+
+impl Files for SimEnv {
+    fn read_file(&mut self, path: &Path) -> io::Result<Vec<u8>> {
+        self.world
+            .borrow()
+            .files
+            .get(&(self.node, path.to_path_buf()))
+            .cloned()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such simulated file"))
+    }
+
+    fn write_file(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        self.world.borrow_mut().files.insert((self.node, path.to_path_buf()), bytes.to_vec());
+        Ok(())
+    }
+
+    fn write_dir(&mut self, dir: &Path, files: &[(&str, &[u8])]) -> io::Result<()> {
+        let mut w = self.world.borrow_mut();
+        // A directory that is there is kept: it is complete, as every
+        // directory of this store is written at once.
+        if w.files.keys().any(|(node, path)| *node == self.node && path.starts_with(dir)) {
+            return Ok(());
+        }
+        for (name, bytes) in files {
+            w.files.insert((self.node, dir.join(name)), bytes.to_vec());
+        }
+        Ok(())
+    }
+
+    fn append_file(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        self.world.borrow_mut().files.entry((self.node, path.to_path_buf())).or_default().extend_from_slice(bytes);
+        Ok(())
     }
 }

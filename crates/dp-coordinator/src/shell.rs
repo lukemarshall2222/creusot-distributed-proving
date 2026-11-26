@@ -200,7 +200,8 @@ impl<E: Env> Shell<E> {
         let out = coord::step(state, input);
         // The record of a step is written before its effects.
         if let Some(described) = described {
-            self.trace.record_step(out.action.name(), self.env.now(), &described, &format!("{:?}", out.effects))?;
+            let now = self.env.now();
+            self.trace.record_step(&mut self.env, out.action.name(), now, &described, &format!("{:?}", out.effects))?;
         }
         self.state = Some(out.state);
         for effect in out.effects {
@@ -396,6 +397,6 @@ impl<E: Env> Shell<E> {
     }
 
     pub fn finish(&mut self) -> io::Result<()> {
-        self.trace.finish()
+        self.trace.finish(&mut self.env)
     }
 }

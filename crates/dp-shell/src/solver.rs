@@ -267,9 +267,13 @@ impl Run {
         signal("-KILL");
         let _ = self.child.kill();
         let _ = self.child.wait();
-        // One signal is not always enough: a process that the solver was
-        // just starting can be missed (seen on macOS, one run in six of
-        // the test below). The group is signalled until none of it is left.
+        // The members of a group are not signalled at one instant: a
+        // member whose child was killed can run on for a moment before its
+        // own signal arrives (seen on macOS under load, 2026-11-26: the
+        // solver's shell exited by itself with the status of its killed
+        // child, and the group still had members after the first signal),
+        // and it may start a process in that moment. So the group is
+        // signalled until the system says that none of it is left.
         for _ in 0..50 {
             // Signal 0 asks whether the group has a member; a failure to
             // ask is taken as an answer of yes.
@@ -384,14 +388,23 @@ mod tests {
     fn a_solver_that_ignores_termination_and_starts_children_is_killed() {
         let d = dir("stubborn");
         let marker = d.join("child-alive");
-        // The child would create the marker after the deadline if it survived.
-        let script = format!("trap \"\" TERM; (sleep 2; touch {}) & sleep 30", marker.display());
+        // The child creates the marker only if its sleep ends by itself:
+        // with `;` in place of `&&`, a child whose sleep was killed a
+        // moment before the child itself created the marker in that
+        // moment, and this test took a group that was killed completely
+        // for one with a survivor (about one run in thirty under load).
+        let script = format!("trap \"\" TERM; (sleep 2 && touch {}) & sleep 30", marker.display());
         let run = start(Path::new("/bin/sh"), &format!("sh -c '{script}'"), b"", ".txt", 200_000, &d, "j").unwrap();
+        let group = format!("-{}", run.child.id());
         let f = wait(run);
         assert!(f.timed_out && f.status.is_none());
         assert!(f.elapsed < Duration::from_secs(2));
+        // Nothing of the group is left when the run is reported: signal 0
+        // finds no member.
+        let asked = Command::new("/bin/kill").args(["-0", "--", &group]).stderr(Stdio::null()).status().unwrap();
+        assert!(!asked.success(), "the group {group} has a member after the kill");
         std::thread::sleep(Duration::from_millis(2500));
-        assert!(!marker.exists(), "a process of the solver's group survived");
+        assert!(!marker.exists(), "a process of the solver's group lived on to the end of its sleep");
         fs::remove_dir_all(d).unwrap();
     }
 }

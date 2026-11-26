@@ -153,7 +153,7 @@ fn main() -> ExitCode {
     let started = OsEnv::new("dp-coordinator").and_then(|mut env| {
         let bound = env.listen(address)?;
         let trace = match options.get("--trace") {
-            Some(path) => TraceWriter::to_file("coordinator", path.into(), Retention::Complete)?,
+            Some(path) => TraceWriter::to_file(&mut env, "coordinator", path.into(), Retention::Complete)?,
             // On by default: the most recent steps, in memory (D-11).
             None => TraceWriter::in_memory("coordinator", 1000),
         };

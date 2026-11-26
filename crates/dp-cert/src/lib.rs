@@ -184,45 +184,42 @@ impl Certificate {
         hash::sha256(&self.manifest())
     }
 
-    /// Stores the entry under `store/<content hash>/` (R5.4): the files
-    /// and the manifest are written and synced in a temporary directory,
-    /// which is then renamed; the rename is the event that makes the entry
-    /// complete. An entry that is there already is kept.
-    pub fn store(&self, store: &Path) -> io::Result<Hash> {
-        let content = self.content_hash();
-        let target = store.join(content.to_hex());
-        if target.is_dir() {
-            return Ok(content);
-        }
-        fs::create_dir_all(store)?;
-        let tmp = store.join(format!(".{}.{}.tmp", content.to_hex(), std::process::id()));
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir(&tmp)?;
-        let result = (|| {
-            for (name, bytes) in [("goal", &self.goal), ("proof", &self.proof), ("manifest", &self.manifest())] {
-                let mut file = fs::File::create(tmp.join(name))?;
-                io::Write::write_all(&mut file, bytes)?;
-                file.sync_all()?;
-            }
-            fs::File::open(&tmp)?.sync_all()?;
-            fs::rename(&tmp, &target)?;
-            fs::File::open(store)?.sync_all()
-        })();
-        if result.is_err() {
-            let _ = fs::remove_dir_all(&tmp);
-            // Another writer may have completed the same entry meanwhile.
-            if target.is_dir() {
-                return Ok(content);
-            }
-        }
-        result.map(|()| content)
+    /// The files of the entry in the Certificate_Store.
+    pub fn files(&self) -> [(&'static str, Vec<u8>); 3] {
+        [("goal", self.goal.clone()), ("proof", self.proof.clone()), ("manifest", self.manifest())]
     }
 
-    /// Loads the entry with this content hash and checks it against its
-    /// manifest.
+    /// Stores the entry under `store/<content hash>/` (R5.4) with the
+    /// directory writer of the component's file store, which leaves the
+    /// directory absent or complete and keeps an entry that is there.
+    pub fn store(
+        &self,
+        store: &Path,
+        write_dir: &mut dyn FnMut(&Path, &[(&str, &[u8])]) -> io::Result<()>,
+    ) -> io::Result<Hash> {
+        let content = self.content_hash();
+        let files = self.files();
+        let files: Vec<(&str, &[u8])> = files.iter().map(|(name, bytes)| (*name, bytes.as_slice())).collect();
+        write_dir(&store.join(content.to_hex()), &files)?;
+        Ok(content)
+    }
+
+    /// Loads the entry with this content hash from the file system and
+    /// checks it against its manifest.
     pub fn load(store: &Path, content: Hash) -> Result<Certificate, StoreError> {
+        Certificate::load_with(store, content, &mut |path| fs::read(path))
+    }
+
+    /// Loads the entry with this content hash through the reader of a file
+    /// store and checks it against its manifest.
+    pub fn load_with(
+        store: &Path,
+        content: Hash,
+        read_file: &mut dyn FnMut(&Path) -> io::Result<Vec<u8>>,
+    ) -> Result<Certificate, StoreError> {
         let dir = store.join(content.to_hex());
-        let read = |name: &str| fs::read(dir.join(name)).map_err(|e| StoreError::Damaged(format!("{name}: {e}")));
+        let mut read =
+            |name: &str| read_file(&dir.join(name)).map_err(|e| StoreError::Damaged(format!("{name}: {e}")));
         let manifest = read("manifest")?;
         if hash::sha256(&manifest) != content {
             return Err(StoreError::Damaged("the manifest does not have the content hash".into()));
@@ -290,11 +287,11 @@ mod tests {
     fn an_entry_is_read_back_by_its_content_hash_and_damage_is_found() {
         let store = scratch("store");
         let c = certificate();
-        let content = c.store(&store).unwrap();
+        let content = c.store(&store, &mut dp_shell::store::write_dir_atomic).unwrap();
         assert_eq!(content, c.content_hash());
         assert_eq!(Certificate::load(&store, content).unwrap(), c);
         // storing again keeps the entry, and no temporary directory is left
-        assert_eq!(c.store(&store).unwrap(), content);
+        assert_eq!(c.store(&store, &mut dp_shell::store::write_dir_atomic).unwrap(), content);
         assert_eq!(fs::read_dir(&store).unwrap().count(), 1);
         // another certificate has another content hash
         let mut other = certificate();

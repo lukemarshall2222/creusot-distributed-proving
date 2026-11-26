@@ -11,6 +11,7 @@ dp-formats = { workspace = true }
 
 [dev-dependencies]
 dp-testkit = { path = "../dp-testkit" }
+dp-shell = { workspace = true }
 proptest = "1"
 
 [lints]

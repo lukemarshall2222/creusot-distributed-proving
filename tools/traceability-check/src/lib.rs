@@ -11,13 +11,20 @@
 //! - a row in scope names an artifact that does not exist, or a CI job
 //!   that the workflow does not run;
 //! - a deferred row names only artifacts that exist: it must be switched
-//!   to in scope by the commit that adds the last of them (criterion 12).
+//!   to in scope by the commit that adds the last of them (criterion 12);
+//! - a Verification line of a row in scope lacks an assurance level, an
+//!   artifact path or a CI job (criterion 6), or the lines of the row lack
+//!   the levels that its class needs (criterion 4);
+//! - the workflows do not define exactly the CI job list, `ci/traceability`
+//!   does not come after every other `ci/` job, or a `sched/` job declares
+//!   no input paths (criteria 9 and 10).
 //!
 //! A missing artifact of a deferred row alone is no failure. An artifact
 //! exists when it is a tracked file, or a directory that holds one.
 //!
 //! Not checked yet: the outcomes of the CI jobs on the commit (criterion
-//! 3), the format registry and the mutation targets.
+//! 3) and with them the pending report (criterion 8), the format registry
+//! and the mutation targets.
 //!
 //! `traceability-check --write` rewrites the derived fields and keeps the
 //! scope statuses; a new row starts deferred.
@@ -151,6 +158,89 @@ pub fn rows_of(requirements: &str) -> Vec<Row> {
     rows
 }
 
+/// One Verification line of a requirement: its assurance levels, artifact
+/// paths and CI jobs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Line {
+    pub levels: Vec<String>,
+    pub artifacts: Vec<String>,
+    pub jobs: Vec<String>,
+    pub text: String,
+}
+
+/// The Verification lines of every requirement of `requirements.md`.
+pub fn lines_of(requirements: &str) -> BTreeMap<String, Vec<Line>> {
+    let mut lines: BTreeMap<String, Vec<Line>> = BTreeMap::new();
+    let mut req: Option<String> = None;
+    let mut verification = false;
+    for line in requirements.lines() {
+        if let Some(heading) = line.strip_prefix("### Requirement ") {
+            req = heading.split_once(": ").and_then(|(_, r)| r.split_whitespace().next()).map(str::to_string);
+            verification = false;
+        } else if line.starts_with("## ") {
+            if req.is_some() && line.trim() != "## Requirements" {
+                req = None;
+            }
+        } else if let Some(name) = line.strip_prefix("#### ") {
+            verification = name.trim() == "Verification";
+        } else if let (Some(req), true, true) = (&req, verification, line.starts_with("- ")) {
+            // The levels are the words A1 to A5 outside the quoted texts.
+            let plain: String = line.split('`').step_by(2).collect::<Vec<_>>().join(" ");
+            let mut levels: Vec<String> = Vec::new();
+            for word in plain.split(|c: char| !c.is_ascii_alphanumeric()) {
+                if matches!(word, "A1" | "A2" | "A3" | "A4" | "A5") && !levels.iter().any(|l| l == word) {
+                    levels.push(word.to_string());
+                }
+            }
+            let tokens = quoted(line);
+            lines.entry(req.clone()).or_default().push(Line {
+                levels,
+                artifacts: tokens.iter().filter(|t| is_artifact(t)).map(|t| t.to_string()).collect(),
+                jobs: tokens.iter().filter(|t| is_job(t)).map(|t| t.to_string()).collect(),
+                text: line.to_string(),
+            });
+        }
+    }
+    lines
+}
+
+/// R7.11 criteria 4 and 6 for one row in scope: every Verification line
+/// has a level, an artifact path and a CI job, and the lines together have
+/// the levels that the class of the requirement needs.
+fn check_lines(row: &Row, lines: &[Line]) -> Vec<String> {
+    let mut problems = Vec::new();
+    for line in lines {
+        let shown: String = line.text.chars().take(60).collect();
+        for (what, empty) in [
+            ("an assurance level", line.levels.is_empty()),
+            ("an artifact path", line.artifacts.is_empty()),
+            ("a CI job", line.jobs.is_empty()),
+        ] {
+            if empty {
+                problems.push(format!("{}: in scope, and a Verification line lacks {what}: {shown:?}", row.req));
+            }
+        }
+    }
+    let has = |levels: &[&str]| lines.iter().any(|l| l.levels.iter().any(|level| levels.contains(&level.as_str())));
+    match row.class.as_str() {
+        "Soundness-critical" => {
+            if !has(&["A1", "A3"]) {
+                problems.push(format!("{}: Soundness-critical and in scope without an A1 or A3 artifact", row.req));
+            }
+            if !has(&["A4"]) {
+                problems.push(format!("{}: Soundness-critical and in scope without an A4 artifact", row.req));
+            }
+        }
+        "Liveness" | "Robustness" | "Performance" => {
+            if !has(&["A2", "A4", "A5"]) {
+                problems.push(format!("{}: {} and in scope without an A2, A4 or A5 artifact", row.req, row.class));
+            }
+        }
+        _ => {}
+    }
+    problems
+}
+
 /// Whether an artifact path exists on the commit: a tracked file, or a
 /// directory that holds a tracked file.
 pub fn exists(artifact: &str, tracked: &BTreeSet<String>) -> bool {
@@ -168,6 +258,7 @@ pub fn exists(artifact: &str, tracked: &BTreeSet<String>) -> bool {
 pub fn check(table: &Table, requirements: &str, tracked: &BTreeSet<String>, jobs: &BTreeSet<String>) -> Vec<String> {
     let mut problems = Vec::new();
     let wanted = rows_of(requirements);
+    let lines = lines_of(requirements);
     let mut seen = BTreeSet::new();
     for row in &table.row {
         if !seen.insert(row.req.as_str()) {
@@ -210,6 +301,7 @@ pub fn check(table: &Table, requirements: &str, tracked: &BTreeSet<String>, jobs
                 for j in row.jobs.iter().filter(|j| !jobs.contains(*j)) {
                     problems.push(format!("{}: in scope, and the workflow runs no job {j}", row.req));
                 }
+                problems.extend(check_lines(row, lines.get(&row.req).map(Vec::as_slice).unwrap_or_default()));
             }
             "deferred" if missing.is_empty() && !row.artifacts.is_empty() => problems.push(format!(
                 "{}: deferred, but every artifact that its Verification lines name exists: switch the row to in scope",
@@ -310,39 +402,145 @@ pub fn check_jobs(requirements: &str, jobs: &BTreeSet<String>) -> Vec<String> {
 
 /// The CI jobs that the workflow runs: its steps named `ci/<job>`.
 pub fn workflow_jobs(workflow: &str) -> BTreeSet<String> {
-    workflow
-        .lines()
-        .filter_map(|l| l.trim().strip_prefix("- name: "))
-        .flat_map(|names| names.split(',').map(|n| n.trim().to_string()).collect::<Vec<_>>())
-        .filter(|n| is_job(n))
-        .collect()
+    structure(workflow).into_iter().flat_map(|group| group.steps).map(|step| step.job).collect()
 }
 
-/// Checks the repository at `root`, or with `write` rewrites the derived
-/// fields first.
-pub fn run(root: &Path, write: bool) -> Result<Vec<String>, String> {
-    let table_path = root.join("docs/traceability.toml");
-    let rendered_path = root.join("docs/traceability.md");
-    let requirements = read(&root.join(".kiro/specs/creusot-distributed-proving/requirements.md"))?;
-    let tracked = tracked_files(root)?;
+/// One job of a workflow file, with the CI jobs that its steps are.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Group {
+    pub name: String,
+    /// The jobs of the workflow that this one waits for.
+    pub needs: Vec<String>,
+    pub steps: Vec<Step>,
+}
+
+/// A step that is a CI job of the list: `- name: ci/<job>`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Step {
+    pub job: String,
+    /// The declared input paths: the comment `# inputs: a/, b/` above the
+    /// step.
+    pub inputs: Vec<String>,
+}
+
+/// The jobs of a workflow file. The file is read by its lines: a job is a
+/// key at two spaces under `jobs:`, its `needs` a list on one line, and a
+/// CI job a step whose name starts with `ci/` or `sched/`.
+pub fn structure(workflow: &str) -> Vec<Group> {
+    let mut groups: Vec<Group> = Vec::new();
+    let mut in_jobs = false;
+    let mut inputs: Vec<String> = Vec::new();
+    for line in workflow.lines() {
+        if !line.starts_with(' ') && !line.trim().is_empty() && !line.starts_with('#') {
+            in_jobs = line.trim_end() == "jobs:";
+            continue;
+        }
+        if !in_jobs {
+            continue;
+        }
+        let trimmed = line.trim();
+        let key = line.strip_prefix("  ").filter(|l| !l.starts_with([' ', '#'])).and_then(|l| l.trim_end().strip_suffix(':'));
+        if let Some(name) = key {
+            groups.push(Group { name: name.to_string(), needs: Vec::new(), steps: Vec::new() });
+        } else if let Some(group) = groups.last_mut() {
+            if let Some(list) = trimmed.strip_prefix("needs:") {
+                group.needs = list
+                    .trim()
+                    .trim_start_matches('[')
+                    .trim_end_matches(']')
+                    .split(',')
+                    .map(|n| n.trim().to_string())
+                    .filter(|n| !n.is_empty())
+                    .collect();
+            } else if let Some(list) = trimmed.strip_prefix("# inputs:") {
+                inputs = list.split(',').map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect();
+            } else if let Some(names) = trimmed.strip_prefix("- name: ") {
+                for name in names.split(',').map(str::trim).filter(|n| is_job(n)) {
+                    group.steps.push(Step { job: name.to_string(), inputs: inputs.clone() });
+                }
+                inputs.clear();
+            } else if trimmed.starts_with("- ") {
+                inputs.clear();
+            }
+        }
+    }
+    groups
+}
+
+/// R7.11 criteria 9 and 10: `ci/traceability` comes after every other
+/// `ci/` job (an earlier step of its own job, or a step of a job that its
+/// job needs), and every `sched/` job declares input paths.
+pub fn check_order(groups: &[Group]) -> Vec<String> {
+    let mut problems = Vec::new();
+    let last = groups.iter().find(|g| g.steps.iter().any(|s| s.job == "ci/traceability"));
+    for group in groups {
+        for (index, step) in group.steps.iter().enumerate() {
+            if step.job.starts_with("sched/") && step.inputs.is_empty() {
+                problems.push(format!("{}: a scheduled job that declares no input paths", step.job));
+            }
+            if !step.job.starts_with("ci/") || step.job == "ci/traceability" {
+                continue;
+            }
+            let Some(last) = last else { continue };
+            let before = if group.name == last.name {
+                last.steps.iter().position(|s| s.job == "ci/traceability").is_some_and(|at| index < at)
+            } else {
+                last.needs.contains(&group.name)
+            };
+            if !before {
+                problems.push(format!(
+                    "ci/traceability does not depend on {}: its job does not need the job {:?}",
+                    step.job, group.name
+                ));
+            }
+        }
+    }
+    problems
+}
+
+/// What the check reads of a repository.
+#[derive(Clone, Debug)]
+pub struct Inputs {
+    pub requirements: String,
+    /// `docs/traceability.toml`.
+    pub table: String,
+    /// `docs/traceability.md`.
+    pub rendered: String,
+    /// The texts of the workflow files.
+    pub workflows: Vec<String>,
+    /// The files that git tracks, and those that are staged to be.
+    pub tracked: BTreeSet<String>,
+}
+
+impl Inputs {
+    pub fn load(root: &Path) -> Result<Inputs, String> {
+        let workflows = root.join(".github/workflows");
+        let mut paths: Vec<_> = fs::read_dir(&workflows)
+            .map_err(|e| format!("{}: {e}", workflows.display()))?
+            .flatten()
+            .map(|entry| entry.path())
+            .collect();
+        paths.sort();
+        Ok(Inputs {
+            requirements: read(&root.join(".kiro/specs/creusot-distributed-proving/requirements.md"))?,
+            table: read(&root.join("docs/traceability.toml"))?,
+            rendered: read(&root.join("docs/traceability.md")).unwrap_or_default(),
+            workflows: paths.iter().map(|p| read(p)).collect::<Result<_, _>>()?,
+            tracked: tracked_files(root)?,
+        })
+    }
+}
+
+/// Every problem of a repository; an error when the table cannot be read.
+pub fn check_all(inputs: &Inputs) -> Result<Vec<String>, String> {
+    let Inputs { requirements, tracked, .. } = inputs;
+    let table: Table = toml::from_str(&inputs.table).map_err(|e| format!("docs/traceability.toml: {e}"))?;
     // The jobs of every workflow: the gating one and the scheduled one.
-    let mut jobs = BTreeSet::new();
-    let workflows = root.join(".github/workflows");
-    for entry in fs::read_dir(&workflows).map_err(|e| format!("{}: {e}", workflows.display()))?.flatten() {
-        jobs.extend(workflow_jobs(&read(&entry.path())?));
-    }
-    let mut table: Table = match read(&table_path) {
-        Ok(text) => toml::from_str(&text).map_err(|e| format!("docs/traceability.toml: {e}"))?,
-        Err(_) if write => Table::default(),
-        Err(e) => return Err(e),
-    };
-    if write {
-        table = regenerate(&table, &requirements);
-        fs::write(&table_path, print(&table)).map_err(|e| e.to_string())?;
-        fs::write(&rendered_path, render(&table, &tracked)).map_err(|e| e.to_string())?;
-    }
-    let mut problems = check(&table, &requirements, &tracked, &jobs);
-    problems.extend(check_jobs(&requirements, &jobs));
+    let groups: Vec<Group> = inputs.workflows.iter().flat_map(|w| structure(w)).collect();
+    let jobs: BTreeSet<String> = groups.iter().flat_map(|g| &g.steps).map(|s| s.job.clone()).collect();
+    let mut problems = check(&table, requirements, tracked, &jobs);
+    problems.extend(check_jobs(requirements, &jobs));
+    problems.extend(check_order(&groups));
     // Every job has its script, and every script is a job (R7.11: one
     // script per job under ci/jobs).
     for job in &jobs {
@@ -357,10 +555,27 @@ pub fn run(root: &Path, write: bool) -> Result<Vec<String>, String> {
             problems.push(format!("{script}: a script of no job"));
         }
     }
-    if read(&rendered_path).ok().as_deref() != Some(render(&table, &tracked).as_str()) {
+    if inputs.rendered != render(&table, tracked) {
         problems.push("docs/traceability.md is not current (run traceability-check --write)".to_string());
     }
     Ok(problems)
+}
+
+/// Checks the repository at `root`, or with `write` rewrites the derived
+/// fields first.
+pub fn run(root: &Path, write: bool) -> Result<Vec<String>, String> {
+    if write {
+        let table_path = root.join("docs/traceability.toml");
+        let requirements = read(&root.join(".kiro/specs/creusot-distributed-proving/requirements.md"))?;
+        let table: Table = match read(&table_path) {
+            Ok(text) => toml::from_str(&text).map_err(|e| format!("docs/traceability.toml: {e}"))?,
+            Err(_) => Table::default(),
+        };
+        let table = regenerate(&table, &requirements);
+        fs::write(&table_path, print(&table)).map_err(|e| e.to_string())?;
+        fs::write(root.join("docs/traceability.md"), render(&table, &tracked_files(root)?)).map_err(|e| e.to_string())?;
+    }
+    check_all(&Inputs::load(root)?)
 }
 
 #[cfg(test)]
@@ -386,7 +601,7 @@ mod tests {
     }
 
     fn jobs() -> BTreeSet<String> {
-        workflow_jobs("    steps:\n      - name: ci/creusot\n      - name: ci/sim, ci/test\n      - name: build the shell\n")
+        workflow_jobs("jobs:\n  checks:\n    steps:\n      - name: ci/creusot\n      - name: ci/sim, ci/test\n      - name: build the shell\n")
     }
 
     fn table(scopes: [&str; 2]) -> Table {
@@ -473,6 +688,55 @@ mod tests {
             ["ci/sim: in the CI job list, and no workflow defines it", "ci/extra: defined by a workflow, and not in the CI job list"]
         );
         assert!(!check_jobs("no list here", &defined(&[])).is_empty());
+    }
+
+    #[test]
+    fn a_workflow_is_read_by_its_jobs_needs_and_inputs() {
+        let text = "name: x\non:\n  push:\njobs:\n  # a comment\n  checks:\n    steps:\n      - uses: a\n      - name: ci/test\n        run: x\n      - name: ci/sim, ci/diff\n  last:\n    needs: [checks, other]\n    steps:\n      - name: ci/traceability\n  nightly:\n    steps:\n      # inputs: tests/sim/, crates/\n      - name: sched/sim-nightly\n      - name: sched/eval\n";
+        let groups = structure(text);
+        assert_eq!(groups.iter().map(|g| g.name.as_str()).collect::<Vec<_>>(), ["checks", "last", "nightly"]);
+        assert_eq!(groups[0].steps.iter().map(|s| s.job.as_str()).collect::<Vec<_>>(), ["ci/test", "ci/sim", "ci/diff"]);
+        assert_eq!(groups[1].needs, ["checks", "other"]);
+        assert_eq!(groups[2].steps[0].inputs, ["tests/sim/", "crates/"]);
+        // The inputs are those of the step below the comment only.
+        assert_eq!(check_order(&groups), ["sched/eval: a scheduled job that declares no input paths"]);
+        // Without the dependency, every job of the other group is named.
+        let independent = structure(&text.replace("    needs: [checks, other]\n", ""));
+        assert_eq!(check_order(&independent).iter().filter(|p| p.starts_with("ci/traceability does not depend on")).count(), 3);
+        // A step after ci/traceability in its own job does not come before it.
+        let after = structure("jobs:\n  one:\n    steps:\n      - name: ci/test\n      - name: ci/traceability\n      - name: ci/sim\n");
+        assert_eq!(check_order(&after), ["ci/traceability does not depend on ci/sim: its job does not need the job \"one\""]);
+    }
+
+    #[test]
+    fn the_lines_of_a_row_in_scope_have_levels_artifacts_and_jobs() {
+        let all = files(&["crates/core/src/coord.rs", "tests/sim/faults.rs", "tests/escalation.rs"]);
+        let every: BTreeSet<String> =
+            ["ci/creusot", "ci/sim", "ci/test", "sched/sim-nightly"].iter().map(|j| j.to_string()).collect();
+        let run = |requirements: &str| {
+            let mut t = regenerate(&Table::default(), requirements);
+            t.row.iter_mut().for_each(|r| r.scope = "in scope".into());
+            check(&t, requirements, &all, &every)
+        };
+        assert_eq!(run(REQUIREMENTS), Vec::<String>::new());
+        // The only A1 line of the Soundness-critical requirement is gone.
+        let problems = run(&REQUIREMENTS.replace("- A1 — contracts on `assign` — `crates/core/src/coord.rs` — `ci/creusot`.\n", ""));
+        assert_eq!(problems, ["R1.1: Soundness-critical and in scope without an A1 or A3 artifact"]);
+        // Its A4 line is gone.
+        let problems = run(&REQUIREMENTS.replace("- A4 — simulation", "- A2 — simulation"));
+        assert_eq!(problems, ["R1.1: Soundness-critical and in scope without an A4 artifact"]);
+        // A line without a job, without a path, without a level.
+        let problems = run(&REQUIREMENTS.replace(" — `ci/test`.", "."));
+        assert!(problems.iter().any(|p| p.starts_with("R1.2: in scope, and a Verification line lacks a CI job")), "{problems:?}");
+        let problems = run(&REQUIREMENTS.replace("- A4 — a test — `tests/escalation.rs`", "- A4 — a test"));
+        assert!(problems.iter().any(|p| p.starts_with("R1.2: in scope, and a Verification line lacks an artifact path")), "{problems:?}");
+        let problems = run(&REQUIREMENTS.replace("- A4 — a test", "- a test"));
+        assert!(problems.iter().any(|p| p.starts_with("R1.2: in scope, and a Verification line lacks an assurance level")), "{problems:?}");
+        assert!(problems.iter().any(|p| p == "R1.2: Performance and in scope without an A2, A4 or A5 artifact"), "{problems:?}");
+        // None of this is held against a deferred row.
+        let mut t = regenerate(&Table::default(), &REQUIREMENTS.replace(" — `ci/test`.", "."));
+        t.row[0].scope = "in scope".into();
+        assert_eq!(check(&t, &REQUIREMENTS.replace(" — `ci/test`.", "."), &files(&["crates/core/src/coord.rs", "tests/sim/x.rs"]), &every), Vec::<String>::new());
     }
 
     #[test]

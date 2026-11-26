@@ -4,14 +4,14 @@ Generated from `docs/traceability.toml` by `traceability-check --write`; do not 
 
 | Requirement | Class | Scope | Properties | Artifacts that exist | Missing artifacts |
 |---|---|---|---|---|---|
-| R1.1 | Functional | deferred | 10 | 5 of 8 | `tests/diff/dist_vs_local/`, `crates/dp-core/tests/prop_assign.rs`, `crates/dp-formats/tests/prop_config.rs` |
+| R1.1 | Functional | deferred | 10 | 6 of 8 | `tests/diff/dist_vs_local/`, `crates/dp-core/tests/prop_assign.rs` |
 | R1.2 | Performance | deferred | 7 | 2 of 6 | `crates/dp-core/src/escalation.rs`, `crates/dp-core/tests/prop_escalation.rs`, `tests/integration/fast_pass/`, `eval/scripts/rq7_escalation/` |
 | R1.3 | Soundness-critical | in scope | 11 | 7 of 7 |  |
 | R1.4 | Robustness | deferred | 6 | 4 of 5 | `eval/scripts/rq6_instability/` |
 | R1.5 | Liveness | deferred | 15 | 3 of 9 | `verification/tla/traces/`, `verification/kani/coordinator.rs`, `tests/integration/cluster/cancel.rs`, `tests/integration/cluster/deadline.rs`, `crates/dp-core/tests/prop_cancel.rs`, `crates/dp-core/tests/prop_record.rs` |
-| R1.6 | Robustness | deferred | 15 | 2 of 5 | `tests/sim/faults/`, `crates/dp-core/tests/heartbeat_margin.rs`, `crates/dp-core/tests/prop_idempotent.rs` |
+| R1.6 | Robustness | deferred | 15 | 3 of 5 | `tests/sim/faults/`, `crates/dp-core/tests/prop_idempotent.rs` |
 | R1.7 | Functional | in scope | 10 | 6 of 6 |  |
-| R2.1 | Functional | deferred | 5 | 2 of 4 | `crates/dp-formats/tests/prop_config.rs`, `tests/integration/config/` |
+| R2.1 | Functional | deferred | 5 | 3 of 4 | `tests/integration/config/` |
 | R2.2 | Performance | deferred | 19 | 3 of 8 | `crates/dp-core/src/race.rs`, `crates/dp-core/tests/prop_race.rs`, `tests/sim/faults/`, `tests/integration/config/`, `eval/scripts/rq2_portfolio/` |
 | R2.3 | Functional | in scope | 6 | 4 of 4 |  |
 | R3.1 | Performance | deferred | 15 | 0 of 9 | `verification/tla/Sharing.tla`, `crates/dp-core/tests/prop_forward.rs`, `crates/dp-core/tests/prop_pending.rs`, `tests/diff/sharing_on_off/`, `tests/sim/faults/`, `tests/sim/hostile_pool.rs`, `tests/sim/two_job_default_deps.rs`, `tests/sim/forwarding.rs`, `eval/scripts/rq3_within_goal/` |
