@@ -1,0 +1,19 @@
+# The crates that dp-core may have in its dependency closure (R7.3
+# criterion 2). dp-core depends on creusot-std alone, for the contract
+# attributes and the logic types of its proofs; the others are what
+# creusot-std 0.15.0 depends on. Nothing here is called by dp-core's code:
+# the syntax scan of purity-check keeps it from naming them.
+allowed = [
+    "creusot-std",
+    "creusot-std-proc",
+    "pearlite-syn",
+    "proc-macro2",
+    "quote",
+    "syn",
+    "unicode-ident",
+    # creusot-std's ghost identifiers
+    "uuid",
+    "getrandom",
+    "libc",
+    "cfg-if",
+]

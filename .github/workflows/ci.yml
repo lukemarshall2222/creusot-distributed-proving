@@ -1,9 +1,6 @@
 # CI on Linux (task 1.4, first version). Each step named ci/<job> runs
 # ci/jobs/<job>.sh, which also runs on a developer machine.
 #
-# ci/test also runs the simulator tests (tests/sim), the canary harness
-# (tests/canaries) and the tests through Creusot_CLI (tests/integration).
-#
 # Not here yet: the other jobs of the R7.11 job list (ci/lean, ci/kani,
 # ci/traceability and the rest), which have nothing to check so far, and
 # the scheduled jobs.
@@ -35,7 +32,11 @@ jobs:
         run: ci/jobs/patches.sh
       - name: build the CI shell
         run: nix develop .#ci --command true
-      - name: ci/test
+      - name: ci/purity, ci/tcb, ci/traceability
+        run: nix develop .#ci --command ci/jobs/trust.sh
+      # One script: the unit and property tests, the differential tests,
+      # the simulator tests and the canary harness.
+      - name: ci/test, ci/diff, ci/sim, ci/canaries
         run: nix develop .#ci --command ci/jobs/test.sh
         env:
           DP_GENERATED_LOCK: ${{ runner.temp }}/lock.toml

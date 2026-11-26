@@ -1,0 +1,142 @@
+# The public functions of dp-core (R7.3 criterion 4). `ci/purity` fails
+# when a public function has no entry here and when an entry names no
+# public function. Logic functions, which exist for the proofs only, are
+# not listed.
+#
+# kind = "decision": the result decides a label, an acceptance, an
+#                    assignment or a configuration; `decides` says which.
+# kind = "helper":   anything else.
+
+[[function]]
+path = "verdict::accept_result"
+kind = "decision"
+decides = "whether a Result of a local Job is bound to the local print (R1.3)"
+
+[[function]]
+path = "verdict::accept_remote"
+kind = "decision"
+decides = "whether a Result from the Cluster is accepted (R1.3, R1.4)"
+
+[[function]]
+path = "verdict::label"
+kind = "decision"
+decides = "the Assurance_Label of a Result (R7.1)"
+
+[[function]]
+path = "verdict::cache_label"
+kind = "decision"
+decides = "the label of a Result_Cache entry in the current Session (R7.1 criterion 6)"
+
+[[function]]
+path = "verdict::record_verdict"
+kind = "decision"
+decides = "the Verdicts of a Session: one per Goal, final (R1.5)"
+
+[[function]]
+path = "verdict::final_label"
+kind = "decision"
+decides = "the label of a Goal at the end of a Session (R7.2 criterion 5)"
+
+[[function]]
+path = "verdict::decode_label"
+kind = "decision"
+decides = "which label a name in a proof file stands for (R7.2 criterion 10)"
+
+[[function]]
+path = "verdict::conflict"
+kind = "decision"
+decides = "whether a Goal is in conflict (R7.2 criterion 7)"
+
+[[function]]
+path = "verdict::label_from_checker_output"
+kind = "decision"
+decides = "the label that a checker run gives (R5.3)"
+
+[[function]]
+path = "verdict::same_hash"
+kind = "helper"
+
+[[function]]
+path = "labels::classify"
+kind = "decision"
+decides = "the non-proof outcome of a prover answer (R7.2 criterion 6)"
+
+[[function]]
+path = "labels::most_informative"
+kind = "decision"
+decides = "the most informative non-proof outcome of a Goal (R7.2 criterion 5)"
+
+[[function]]
+path = "labels::rank_u8"
+kind = "helper"
+
+[[function]]
+path = "cache_key::encode_key"
+kind = "decision"
+decides = "the Cache_Key of a run (R7.5)"
+
+[[function]]
+path = "cache_key::lookup_ok"
+kind = "decision"
+decides = "whether a stored entry is for the wanted run (R7.5)"
+
+[[function]]
+path = "cache_key::validate_entry"
+kind = "decision"
+decides = "whether a stored entry may answer in this Session (R7.5)"
+
+[[function]]
+path = "config::validate_config"
+kind = "decision"
+decides = "whether a configuration starts a Session (R1.1 criterion 6)"
+
+[[function]]
+path = "calibration::scale"
+kind = "decision"
+decides = "the local time limit of a run from its reference limit and a Calibration (R1.4)"
+
+[[function]]
+path = "coord::pick"
+kind = "decision"
+decides = "the Worker that gets a Job (R1.1 criterion 4)"
+
+[[function]]
+path = "coord::local_limit"
+kind = "decision"
+decides = "the local time limit of an assigned Job (R1.4 criterion 1)"
+
+[[function]]
+path = "coord::step"
+kind = "decision"
+decides = "every transition of the Coordinator (R1.5)"
+
+[[function]]
+path = "frontend::decide"
+kind = "decision"
+decides = "whether a finished run proves its call (R1.3, R7.1)"
+
+[[function]]
+path = "frontend::step"
+kind = "decision"
+decides = "every transition of the Front_End (R1.5, R2.2)"
+
+[[function]]
+path = "frontend::position"
+kind = "helper"
+
+[[function]]
+path = "frontend::reply_of"
+kind = "helper"
+
+[[function]]
+path = "frontend::verdict_of"
+kind = "helper"
+
+[[function]]
+path = "worker::step"
+kind = "decision"
+decides = "every transition of a Worker (R1.5)"
+
+[[function]]
+path = "trace::name"
+kind = "helper"

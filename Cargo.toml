@@ -18,6 +18,9 @@ members = [
     "tests/diff",
     "tests/integration",
     "tests/sim",
+    "tools/purity-check",
+    "tools/tcb-check",
+    "tools/traceability-check",
 ]
 
 [workspace.package]

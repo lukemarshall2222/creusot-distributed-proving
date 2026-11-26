@@ -65,6 +65,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [ ] 2.1 Write `docs/traceability.toml` and the `docs/traceability.md` generator
     - One row per requirement from the Initial Traceability Table of `requirements.md` with Class, Properties, functions, trust items and the level-artifact-job triples of its Verification lines; every row starts with scope status deferred and is switched to in scope by the sub-task that delivers the last artifact its Verification lines name (R7.11 criterion 12, see Notes)
     - Canonical TOML printer; generator of `docs/traceability.md`
+    - As built (2026-11-25): `docs/traceability.toml` has one row per requirement (42). Every field but the scope status is derived from `requirements.md` by `traceability-check --write`: the class and the functions from the Initial Traceability Table, the Property IDs from the Properties subsection, the artifact paths and CI jobs from the Verification lines. `docs/traceability.md` shows per row which artifacts exist. Two rows are in scope (R7.11, R7.12); the others are deferred, mostly because their Verification lines name planned paths that the build did not follow (for example `crates/dp-frontend/src/accept.rs`, whose code is in `session.rs`). Open: the trust items and the levels of a row; either the paths in `requirements.md` or the code layout has to move before most rows can be switched
     - _Requirements: 40.1, 40.5, 40.11_
     - _Properties: 37_
 
@@ -74,6 +75,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - Format registry check (R7.10 criterion 7): every entry of `docs/formats/index.toml` names an existing grammar file, codec module, round-trip test and fuzz target; an exchanged format of R7.10's list without an entry fails once a requirement that the list cites for it is in scope, or once R7.10 is in scope for a format that cites none, such as `dispatch` (see Notes, format registry)
     - Mutation target and exclusion checks (R7.13 criteria 5 to 7)
     - Switch rows R7.11 and R7.13 to in scope with the switch step (Notes): `tools/traceability-check/` is the last artifact of both rows (R7.11 criterion 12)
+    - As built (2026-11-25): `tools/traceability-check/` fails on a requirement without a row and a row without a requirement, on a derived field that differs from `requirements.md`, on a row in scope with a missing artifact or a CI job that the workflow does not run, and on a deferred row whose artifacts all exist; an artifact exists when it is a tracked file or a directory that holds one. It runs in CI (`ci/jobs/trust.sh`). The first run made R7.12 and then R7.11 be switched. Open: job outcomes from the CI API (criterion 3), the pending report at a release tag, the format registry, the mutation targets
     - _Requirements: 40.2, 40.3, 40.4, 40.6, 40.7, 40.8, 40.10, 40.11, 40.12, 39.7, 42.5, 42.6, 42.7_
     - _Properties: 37_
 
@@ -81,21 +83,25 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - **Property 37: Every requirement is mechanically verified and the tests catch bugs** (traceability part)
     - Unit tests plus a self-test on mutated copies of `requirements.md`, `docs/traceability.toml` and the workflow: every change of P7.11.6 must fail the check, including scope-aware cases (a missing artifact fails only for in-scope rows)
     - Scope-switch cases (P7.11.11): adding the last missing artifact of a deferred row without switching the row fails `ci/traceability`, a missing artifact of a deferred row alone does not, and a directory artifact counts as existing only when it holds a tracked file
+    - As built (2026-11-25): unit tests in the tool with seeded changes of the table and of the requirements (eleven kinds), and the scope cases: a missing artifact fails only for a row in scope, a complete deferred row fails, a directory counts only with a tracked file. Open: mutated copies of the workflow
     - **Validates: Requirements 40.1, 40.2, 40.3, 40.4, 40.5, 40.6, 40.7, 40.8, 40.9, 40.10, 40.11, 40.12, 42.5, 42.6, 42.7**
 
   - [ ] 2.4 Write `docs/tcb.toml` and implement `tools/tcb-check/` (C20)
     - Items from Trusted items, Assumptions, Non-goals and F1–F4 of `requirements.md`, including AS-35 to AS-40 with status To check and TB-23 as a trusted item (part of NG-2, every label); checker entries, `checker_output`, `outcome_label` and `information_order` tables (Data Models)
     - `tools/tcb-check/` matches items against the Lock_File, the Trust subsections and the trust items of `docs/traceability.toml`, and regenerates `docs/tcb.md`
+    - As built (2026-11-25): `docs/tcb.toml` lists the 78 items of `requirements.md` (23 TB, 40 AS, 11 NG, F1 to F4), each with the requirements whose Trust subsection cites it (derived by `tcb-check --write`), the eight tools of the Lock_File with what each is trusted for (written by hand), and the information order. `tools/tcb-check/` fails when the items, their status or their citing requirements differ from `requirements.md`, when a Trust subsection cites an undefined identifier, when a trusted item is cited nowhere and not marked as holding for every label, when the tools differ from the Lock_File or a solver, checker or printer is not tied to its Non-goal, and when the information order is not the one dp-core implements (which closes the open point of 4.3); it writes `docs/tcb.md`. Open: the `checker_output` and `outcome_label` tables
     - _Requirements: 37.1, 37.2, 37.3, 37.4, 37.5, 37.6, 37.7, 37.8_
     - _Properties: 36_
 
   - [ ] 2.5 Write self-tests for `ci/repro-build`, `tools/tcb-check/` and `tools/patch-check/`
     - **Property 36: Builds are reproducible and the trust story is consistent**
     - Seeded mutations: a Lock_File entry without hash, a missing tool, a patched build marked Unpatched_Solver, a trusted item without reason or requirement ID, a Trust-subsection ID missing from `docs/tcb.toml`, a patch without header fields or over `<TBD-21>` lines
+    - As built (2026-11-25): for `tools/tcb-check/` only: thirteen seeded disagreements, each of which must be found
     - **Validates: Requirements 36.1, 36.2, 36.6, 36.8, 36.9, 37.1, 37.2, 37.5, 37.6, 37.7, 37.8, 38.1, 38.2, 38.3, 38.4**
 
   - [ ] 2.6 Implement `tools/purity-check/` (C20)
     - Dependency closure of dp-core against the allow-list; syntax scan for banned interfaces (file, network, clock, randomness, threads, processes, global mutable state); `registry.toml` against the public functions of dp-core and the in-scope rows (R7.3)
+    - As built (2026-11-25): `tools/purity-check/` with `allow.toml` (creusot-std and what it depends on), a scan of dp-core's sources for names of files, network, clocks, randomness, threads, processes, environment, output, statics, `unsafe` and foreign code (comments and string contents are not scanned), and `registry.toml`, which must list exactly the 28 public functions of dp-core, 20 of them as decision functions with what they decide. Open: the comparison of the registry with the rows in scope
     - _Requirements: 32.2, 32.3, 32.4_
     - _Properties: 35_
 
@@ -113,6 +119,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [ ] 2.9 Write self-tests for `tools/purity-check/`
     - **Property 35: The decision core is pure, deterministic and exercised** (purity part)
     - Seeded violations: a dp-core dependency outside the allow-list, a call to each banned interface, a registry entry naming no public function, an in-scope decision function without entry
+    - As built (2026-11-25): unit tests in the tool: a use of each banned interface, a dependency outside the allow-list, a registry entry that names no public function, a public function without entry, a decision function that does not say what it decides
     - **Validates: Requirements 32.2, 32.3, 32.4**
 
   - [ ] 2.10 Write self-tests for the mutation gate
@@ -314,6 +321,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [ ] 9.1 Implement the canary generators and registry (C18)
     - `tests/canaries/`: specification mutator for Creusot postconditions, preconditions, loop invariants and type invariants; hand-written invalid goals; witness production (cvc5 models as definitions with Ethos-checked CPC validity proofs, form a; finite evaluation only for finite uninterpreted sorts, form b); exclusion list with reason no witness; cache canaries; `registry.toml`, `modes.toml` listing every required mode, `exclusions.toml`
     - As built (2026-11-25): `tests/canaries/` with `registry.toml` (12 hand-written invalid Goals in `goals/canaries.mlw`, 11 of them quantified, and 4 functions with a wrong postcondition, a violated precondition, a wrong loop invariant and a violated type invariant in `creusot/lib.rs`), `modes.toml` and `exclusions.toml` (empty). A canary is a predicate applied under a quantifier, and its witness is the negated predicate at one argument; a test checks these shapes and that the files and the registry list the same canaries. Open: the specification mutator (the Creusot canaries are written by hand), witnesses as cvc5 models with Ethos-checked proofs (the witnesses are Goals that a prover proves), cache canaries of their own
+    - Since 2026-11-25 (later): the specification mutator `tests/canaries/mutator.rs` writes `creusot/mutants.rs` from four functions that meet their contracts (`creusot/originals.rs`): a flipped comparison in a postcondition, a postcondition shifted by one, and dropped preconditions give nine mutants. A test fails when the file is not what the mutator writes. The witness of a mutant is found by running its body: the mutated postcondition is false at sample arguments, or, for dropped preconditions, a process that calls the body at arguments outside the lost precondition fails. The Creusot mode of the harness proves the originals (as controls) and requires that no mutant gets a proof label. Open: loop and type invariants are not mutated
     - _Requirements: 33.1, 33.2, 33.3, 33.4, 33.14_
     - _Properties: 32_
 
@@ -340,11 +348,13 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - **Property 30: proof.json and the Creusot_CLI report labels faithfully** (legacy reader part)
     - `tests/diff/legacy_reader/`: unmodified why3find reads non-proof entries as not proved and ignores extension fields; the legacy layout holds only proved-standalone entries
     - Switch row R2.3 to in scope with the switch step (Notes): `tests/diff/legacy_reader/` is its last artifact, after `prop_proofjson.rs` (3.5) and `tests/replay/` with `tamper/` (7.2); the portfolio cases of tasks 19.8 and 19.9 extend these files later (R7.11 criterion 12)
+    - As built (2026-11-25): `tests/diff/legacy_reader/`: proofs that a solver reported and the Front_End did not accept leave no legacy proof and nothing that unmodified why3find replays as proved; a file with the extension members is replayed as the same file without them; a legacy proof stands exactly where the label is a proof label. Finding: after a Session the legacy layout in `.why3find` also holds the runs of why3find's own Calibration of each prover (they never leave why3find). They are for Calibration tasks, not for Goals of the project; the test shows this by comparing with a Session in which no proof is reported. P7.5.10 as worded (every entry has a Result labelled proved-standalone) does not hold for them. Open: the row switch
     - **Validates: Requirements 31.3, 10.5, 34.7**
 
   - [ ] 9.6 Write the warm-cache differential test
     - **Property 33: Turning a feature on or off never flips a proof against a counter-model** (cache part)
     - `tests/diff/cache_on_off/`: runs with a warm cache that differs in one lookup or validation field
+    - As built (2026-11-25): `tests/diff/cache_on_off/`: a cache whose entries each differ from the stored ones in one lookup field (each position in turn) or one validation field (solver binary hash, Calibration value, local time limit, import-set hash) answers no prover call, and the Session gives the labels of a Session without a cache; the unchanged entries do answer
     - **Validates: Requirements 34.5, 34.9**
 
 - [ ] 10. Wire stage 1 end to end

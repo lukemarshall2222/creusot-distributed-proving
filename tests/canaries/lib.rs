@@ -9,6 +9,17 @@
 #[path = "creusot/lib.rs"]
 pub mod creusot_canaries;
 
+/// Functions that meet their contracts, and the canaries that the
+/// specification mutator makes of them.
+#[cfg(not(creusot))]
+#[path = "creusot/originals.rs"]
+pub mod originals;
+#[cfg(not(creusot))]
+#[path = "creusot/mutants.rs"]
+pub mod mutants;
+#[cfg(not(creusot))]
+pub mod mutator;
+
 // Creusot refuses a crate that depends on `creusot-std` without using it.
 #[cfg(creusot)]
 #[allow(unused_imports)]

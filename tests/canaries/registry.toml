@@ -7,6 +7,11 @@
 #                   unmodified why3find must prove.
 # kind = "creusot": function `<id>_*` of creusot/lib.rs, named by `goal`;
 #                   the witness is `witness("<id>")` there, which is run.
+#
+# Not listed here: the mutants that the specification mutator (mutator.rs)
+# writes to creusot/mutants.rs from creusot/originals.rs. The harness takes
+# them from the table `MUTANTS` of that file, each with its witness.
+#
 # quantified: the canary's statement has a universal quantifier, so that an
 #             unsound instantiation or a dropped hypothesis could "prove" it.
 

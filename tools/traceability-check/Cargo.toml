@@ -1,0 +1,13 @@
+[package]
+name = "traceability-check"
+description = "ci/traceability: the Traceability_Table agrees with the requirements and with what exists (R7.11)"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+[lints]
+workspace = true

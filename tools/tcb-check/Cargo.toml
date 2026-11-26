@@ -1,0 +1,15 @@
+[package]
+name = "tcb-check"
+description = "ci/tcb: the TCB_Document agrees with the requirements, the Lock_File and dp-core (R7.8)"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dp-core.workspace = true
+dp-formats.workspace = true
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+[lints]
+workspace = true

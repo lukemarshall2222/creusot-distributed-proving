@@ -1,0 +1,13 @@
+[package]
+name = "purity-check"
+description = "ci/purity: dp-core stays a pure decision core (R7.3)"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+[lints]
+workspace = true

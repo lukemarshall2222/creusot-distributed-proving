@@ -44,6 +44,8 @@ use serde_json::Value;
 
 const GOALS: &str = include_str!("goals/canaries.mlw");
 const CREUSOT: &str = include_str!("creusot/lib.rs");
+const ORIGINALS: &str = include_str!("creusot/originals.rs");
+const MUTANTS: &str = include_str!("creusot/mutants.rs");
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -113,6 +115,62 @@ fn module(name: &str) -> Vec<&'static str> {
     let start = GOALS.find(&format!("module {name}\n")).unwrap_or_else(|| panic!("no module {name}"));
     let body = &GOALS[start..];
     body[..body.find("\nend\n").expect("module end")].lines().collect()
+}
+
+/// R7.5 criterion 1: `creusot/mutants.rs` is what the specification mutator
+/// writes from `creusot/originals.rs`, and every mutant has a witness: its
+/// contract is violated when its body runs at the recorded arguments.
+#[test]
+fn the_mutants_are_those_of_the_mutator_and_each_has_a_witness() {
+    let generated = dp_canaries::mutator::generate(ORIGINALS);
+    assert!(
+        MUTANTS == generated,
+        "creusot/mutants.rs is not what the mutator writes; run `cargo run -p dp-canaries --example bless`"
+    );
+    let mutants = dp_canaries::mutants::MUTANTS;
+    assert!(mutants.len() >= 8, "{} mutants", mutants.len());
+    for operator in ["flip", "shift", "drop"] {
+        assert!(mutants.iter().any(|(_, _, o)| *o == operator), "no mutant of the operator {operator}");
+    }
+    for (id, function, operator) in mutants {
+        assert!(MUTANTS.contains(&format!("pub fn {function}(")), "{id}: no function {function}");
+        assert!(mutant_witnessed(id, operator), "{id}: the witness does not show a violation");
+    }
+    // The check of a `drop` witness can tell a call that returns.
+    assert!(!fails_in_a_process("no such mutant"));
+}
+
+/// Not a test of its own: the process that `fails_in_a_process` starts.
+/// It calls a `drop` mutant at its bad arguments and ends with success
+/// only if the call returns.
+#[test]
+fn witness_process() {
+    if let Ok(id) = std::env::var("DP_WITNESS_OF") {
+        println!("calling {id}");
+        dp_canaries::mutants::call_bad(&id);
+        std::process::exit(0);
+    }
+}
+
+/// Whether the call of `call_bad(id)` ends its process without returning.
+fn fails_in_a_process(id: &str) -> bool {
+    let out = Command::new(std::env::current_exe().unwrap())
+        .args(["witness_process", "--exact", "--nocapture", "--test-threads=1"])
+        .env("DP_WITNESS_OF", id)
+        .output()
+        .unwrap();
+    // The process got as far as the call, and did not come back from it.
+    String::from_utf8_lossy(&out.stdout).contains(&format!("calling {id}")) && !out.status.success()
+}
+
+/// The witness of a mutant: its contract is false where its body ran, or,
+/// for a dropped precondition, its body fails where the precondition was
+/// violated.
+fn mutant_witnessed(id: &str, operator: &str) -> bool {
+    match operator {
+        "drop" => fails_in_a_process(id),
+        _ => dp_canaries::mutants::witness(id) == Some(true),
+    }
 }
 
 /// R7.5 criteria 1 to 4: the registry and the goals file agree, and every
@@ -676,7 +734,10 @@ fn no_canary_gets_a_proof_label_in_any_mode() {
             ),
         )
         .unwrap();
-        fs::write(dir.join("src/lib.rs"), CREUSOT).unwrap();
+        // The hand-written canaries, the originals and their mutants.
+        fs::write(dir.join("src/lib.rs"), format!("{CREUSOT}\npub mod mutants;\npub mod originals;\n")).unwrap();
+        fs::write(dir.join("src/originals.rs"), ORIGINALS).unwrap();
+        fs::write(dir.join("src/mutants.rs"), MUTANTS).unwrap();
         fs::write(
             dir.join("why3find.json"),
             r#"{ "fast": 0.2, "time": 1.0, "depth": 4, "packages": [ "creusot" ], "provers": [ "alt-ergo", "z3" ], "tactics": [ "compute_specified", "split_vc" ], "drivers": [], "warnoff": [ "unused_variable", "axiom_abstract" ] }"#,
@@ -693,17 +754,45 @@ fn no_canary_gets_a_proof_label_in_any_mode() {
             .unwrap();
         let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
         assert_eq!(out.status.code(), Some(1), "{stderr}");
-        // One proof file per function, with the Goal `vc_<function>`.
+        // One proof file per function, named by its path in the crate
+        // (`control`, `mutants.m01_add_flip1`), with the Goal
+        // `vc_<function>`.
         let node = |function: &str| -> Option<Value> {
             let path = dir.join(format!("why3find.proofs/verif.{crate_name}_rlib.{function}.json"));
             let file: Value = serde_json::from_str(&fs::read_to_string(path).ok()?).ok()?;
-            file["proofs"]["Coma"].get(format!("vc_{function}")).cloned()
+            let name = format!("vc_{}", function.rsplit('.').next().unwrap_or(function));
+            file["proofs"].as_object()?.values().find_map(|theory| theory.get(&name)).cloned()
         };
         let mut ran = Ran { canaries: 0, quantified: 0, witnesses_proved: 0 };
         // A mode in which the function that meets its contract is not
         // proved shows nothing.
-        if !node("control").is_some_and(|n| labelled_proved(&n)) {
-            h.failures.push(format!("creusot-cli: the control function is not proved: {stderr}"));
+        let originals: Vec<String> = ORIGINALS
+            .lines()
+            .filter_map(|l| l.strip_prefix("pub fn "))
+            .map(|l| format!("originals.{}", l.split('(').next().unwrap()))
+            .collect();
+        assert!(originals.len() >= 4, "{originals:?}");
+        for control in std::iter::once("control".to_string()).chain(originals) {
+            if !node(&control).is_some_and(|n| labelled_proved(&n)) {
+                h.failures.push(format!("creusot-cli: the function {control}, which meets its contract, is not proved: {stderr}"));
+            }
+        }
+        // The mutants: every one is a canary with a universal statement
+        // (its contract is over all arguments).
+        for (id, function, operator) in dp_canaries::mutants::MUTANTS {
+            match node(&format!("mutants.{function}")) {
+                Some(n) => {
+                    ran.canaries += 1;
+                    ran.quantified += 1;
+                    if labelled_proved(&n) || legacy_proved(&n) {
+                        h.failures.push(format!("creusot-cli: mutant {id} ({function}) is taken for proved: {n}"));
+                    }
+                }
+                None => h.failures.push(format!("creusot-cli: mutant {id} ({function}) did not run: {stderr}")),
+            }
+            if mutant_witnessed(id, operator) {
+                ran.witnesses_proved += 1;
+            }
         }
         for c in h.registry.canary.iter().filter(|c| c.kind == "creusot") {
             let function = c.goal.as_deref().unwrap();
@@ -727,7 +816,8 @@ fn no_canary_gets_a_proof_label_in_any_mode() {
     // Every listed mode ran, with enough canaries, and no other mode did.
     let listed = modes();
     for m in &listed.mode {
-        let total = h.registry.canary.iter().filter(|c| c.kind == m.kind).count();
+        let mutants = if m.kind == "creusot" { dp_canaries::mutants::MUTANTS.len() } else { 0 };
+        let total = h.registry.canary.iter().filter(|c| c.kind == m.kind).count() + mutants;
         match h.ran.get(&m.name) {
             None => h.failures.push(format!("{}: listed in modes.toml, did not run", m.name)),
             Some(ran) => {

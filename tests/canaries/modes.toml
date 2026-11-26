@@ -55,6 +55,6 @@ min_witnesses_proved = 10
 [[mode]]
 name = "creusot-cli"
 kind = "creusot"
-what = "cargo creusot --backend on the canary functions"
-min_quantified = 2
-min_witnesses_proved = 1
+what = "cargo creusot --backend on the hand-written canary functions and on the mutants of the specification mutator"
+min_quantified = 10
+min_witnesses_proved = 12

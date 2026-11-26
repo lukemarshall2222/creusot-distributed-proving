@@ -1,0 +1,1503 @@
+# The Traceability_Table (R7.11). Every field but `scope` is derived from
+# requirements.md by `cargo run -p traceability-check -- --write`; `scope`
+# is written by hand, and switched from deferred to in scope by the commit
+# that adds the last artifact of the row. `ci/traceability` checks both.
+
+[[row]]
+req = "R1.1"
+class = "Functional"
+scope = "deferred"
+properties = [
+    "P1.1.1",
+    "P1.1.2",
+    "P1.1.3",
+    "P1.1.4",
+    "P1.1.5",
+    "P1.1.6",
+    "P1.1.7",
+    "P1.1.8",
+    "P1.1.9",
+    "P1.1.10",
+]
+functions = []
+artifacts = [
+    "tests/integration/cluster/",
+    "tests/integration/cluster/cluster_off.rs",
+    "tests/integration/cluster/fallback.rs",
+    "tests/integration/cluster/config.rs",
+    "tests/diff/dist_vs_local/",
+    "crates/dp-core/tests/prop_assign.rs",
+    "crates/dp-formats/tests/prop_config.rs",
+    "tests/sim/",
+]
+jobs = [
+    "ci/integration-cluster",
+    "ci/diff",
+    "ci/test",
+    "ci/sim",
+]
+
+[[row]]
+req = "R1.2"
+class = "Performance"
+scope = "deferred"
+properties = [
+    "P1.2.1",
+    "P1.2.2",
+    "P1.2.3",
+    "P1.2.4",
+    "P1.2.5",
+    "P1.2.6",
+    "P1.2.7",
+]
+functions = []
+artifacts = [
+    "crates/dp-core/src/escalation.rs",
+    "verification/tla/Coordinator.tla",
+    "crates/dp-core/tests/prop_escalation.rs",
+    "tests/sim/",
+    "tests/integration/fast_pass/",
+    "eval/scripts/rq7_escalation/",
+]
+jobs = [
+    "ci/creusot",
+    "ci/tlc",
+    "ci/test",
+    "ci/sim",
+    "ci/integration-cluster",
+    "sched/eval",
+]
+
+[[row]]
+req = "R1.3"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P1.3.1",
+    "P1.3.2",
+    "P1.3.3",
+    "P1.3.4",
+    "P1.3.5",
+    "P1.3.6",
+    "P1.3.7",
+    "P1.3.8",
+    "P1.3.9",
+    "P1.3.10",
+    "P1.3.11",
+]
+functions = ["accept_result"]
+artifacts = [
+    "crates/dp-core/src/verdict.rs",
+    "crates/dp-frontend/src/accept.rs",
+    "crates/dp-core/tests/prop_accept.rs",
+    "fuzz/result_message/",
+    "tests/sim/adversarial_coordinator.rs",
+    "tools/mutants/",
+    "tests/canaries/",
+]
+jobs = [
+    "ci/creusot",
+    "ci/sim",
+    "ci/canaries",
+    "ci/test",
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+    "sched/sim-nightly",
+    "sched/mutants-weekly",
+]
+
+[[row]]
+req = "R1.4"
+class = "Robustness"
+scope = "deferred"
+properties = [
+    "P1.4.1",
+    "P1.4.2",
+    "P1.4.3",
+    "P1.4.4",
+    "P1.4.5",
+    "P1.4.6",
+]
+functions = []
+artifacts = [
+    "crates/dp-core/tests/prop_calibration.rs",
+    "verification/kani/calibration.rs",
+    "tests/integration/cluster/calibration.rs",
+    "tests/sim/adversarial_coordinator.rs",
+    "eval/scripts/rq6_instability/",
+]
+jobs = [
+    "ci/test",
+    "ci/kani",
+    "ci/integration-cluster",
+    "ci/sim",
+    "sched/eval",
+]
+
+[[row]]
+req = "R1.5"
+class = "Liveness"
+scope = "deferred"
+properties = [
+    "P1.5.1",
+    "P1.5.2",
+    "P1.5.3",
+    "P1.5.4",
+    "P1.5.5",
+    "P1.5.6",
+    "P1.5.7",
+    "P1.5.8",
+    "P1.5.9",
+    "P1.5.10",
+    "P1.5.11",
+    "P1.5.12",
+    "P1.5.13",
+    "P1.5.14",
+    "P1.5.15",
+]
+functions = []
+artifacts = [
+    "verification/tla/Coordinator.tla",
+    "verification/tla/traces/",
+    "verification/kani/coordinator.rs",
+    "tests/sim/",
+    "tests/integration/cluster/cancel.rs",
+    "tests/integration/cluster/deadline.rs",
+    "crates/dp-core/tests/prop_cancel.rs",
+    "crates/dp-shell/",
+    "crates/dp-core/tests/prop_record.rs",
+]
+jobs = [
+    "ci/tlc",
+    "sched/apalache-nightly",
+    "ci/trace-validation",
+    "ci/kani",
+    "ci/sim",
+    "sched/sim-nightly",
+    "ci/integration-cluster",
+    "ci/test",
+]
+
+[[row]]
+req = "R1.6"
+class = "Robustness"
+scope = "deferred"
+properties = [
+    "P1.6.1",
+    "P1.6.2",
+    "P1.6.3",
+    "P1.6.4",
+    "P1.6.5",
+    "P1.6.6",
+    "P1.6.7",
+    "P1.6.8",
+    "P1.6.9",
+    "P1.6.10",
+    "P1.6.11",
+    "P1.6.12",
+    "P1.6.13",
+    "P1.6.14",
+    "P1.6.15",
+]
+functions = []
+artifacts = [
+    "verification/tla/Coordinator.tla",
+    "tests/sim/faults/",
+    "crates/dp-core/tests/heartbeat_margin.rs",
+    "crates/dp-core/tests/prop_idempotent.rs",
+    "tests/integration/cluster/faults.rs",
+]
+jobs = [
+    "ci/tlc",
+    "sched/apalache-nightly",
+    "ci/sim",
+    "sched/sim-nightly",
+    "ci/test",
+    "ci/integration-cluster",
+]
+
+[[row]]
+req = "R1.7"
+class = "Functional"
+scope = "deferred"
+properties = [
+    "P1.7.1",
+    "P1.7.2",
+    "P1.7.3",
+    "P1.7.4",
+    "P1.7.5",
+    "P1.7.6",
+    "P1.7.7",
+    "P1.7.8",
+    "P1.7.9",
+    "P1.7.10",
+]
+functions = []
+artifacts = [
+    "verification/tla/Coordinator.tla",
+    "crates/dp-core/tests/prop_operator.rs",
+    "tests/integration/cluster/operator.rs",
+    "crates/dp-formats/tests/",
+    "tests/sim/",
+    "tests/sim/adversarial_coordinator.rs",
+]
+jobs = [
+    "ci/tlc",
+    "ci/test",
+    "ci/integration-cluster",
+    "ci/sim",
+]
+
+[[row]]
+req = "R2.1"
+class = "Functional"
+scope = "deferred"
+properties = [
+    "P2.1.1",
+    "P2.1.2",
+    "P2.1.3",
+    "P2.1.4",
+    "P2.1.5",
+]
+functions = []
+artifacts = [
+    "crates/dp-formats/tests/prop_config.rs",
+    "fuzz/config_parser/",
+    "tests/integration/config/",
+    "tests/sim/",
+]
+jobs = [
+    "ci/test",
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+    "ci/integration-cluster",
+    "ci/sim",
+]
+
+[[row]]
+req = "R2.2"
+class = "Performance"
+scope = "deferred"
+properties = [
+    "P2.2.1",
+    "P2.2.2",
+    "P2.2.3",
+    "P2.2.4",
+    "P2.2.5",
+    "P2.2.6",
+    "P2.2.7",
+    "P2.2.8",
+    "P2.2.9",
+    "P2.2.10",
+    "P2.2.11",
+    "P2.2.12",
+    "P2.2.13",
+    "P2.2.14",
+    "P2.2.15",
+    "P2.2.16",
+    "P2.2.17",
+    "P2.2.18",
+    "P2.2.19",
+]
+functions = []
+artifacts = [
+    "crates/dp-core/src/race.rs",
+    "verification/tla/Coordinator.tla",
+    "crates/dp-core/tests/prop_race.rs",
+    "tests/sim/",
+    "tests/sim/faults/",
+    "tests/integration/cluster/race.rs",
+    "tests/integration/config/",
+    "eval/scripts/rq2_portfolio/",
+]
+jobs = [
+    "ci/creusot",
+    "ci/tlc",
+    "sched/apalache-nightly",
+    "ci/test",
+    "ci/sim",
+    "sched/sim-nightly",
+    "ci/integration-cluster",
+    "sched/eval",
+]
+
+[[row]]
+req = "R2.3"
+class = "Functional"
+scope = "deferred"
+properties = [
+    "P2.3.1",
+    "P2.3.2",
+    "P2.3.3",
+    "P2.3.4",
+    "P2.3.5",
+    "P2.3.6",
+]
+functions = []
+artifacts = [
+    "crates/dp-formats/tests/prop_proofjson.rs",
+    "tests/replay/",
+    "tests/replay/tamper/",
+    "tests/diff/legacy_reader/",
+]
+jobs = [
+    "ci/test",
+    "ci/integration-cluster",
+    "ci/replay",
+    "ci/diff",
+]
+
+[[row]]
+req = "R3.1"
+class = "Performance"
+scope = "deferred"
+properties = [
+    "P3.1.1",
+    "P3.1.2",
+    "P3.1.3",
+    "P3.1.4",
+    "P3.1.5",
+    "P3.1.6",
+    "P3.1.7",
+    "P3.1.8",
+    "P3.1.9",
+    "P3.1.10",
+    "P3.1.11",
+    "P3.1.12",
+    "P3.1.13",
+    "P3.1.14",
+    "P3.1.15",
+]
+functions = []
+artifacts = [
+    "verification/tla/Sharing.tla",
+    "crates/dp-core/tests/prop_forward.rs",
+    "crates/dp-core/tests/prop_pending.rs",
+    "tests/diff/sharing_on_off/",
+    "tests/sim/faults/",
+    "tests/sim/hostile_pool.rs",
+    "tests/sim/two_job_default_deps.rs",
+    "tests/sim/forwarding.rs",
+    "eval/scripts/rq3_within_goal/",
+]
+jobs = [
+    "ci/tlc",
+    "ci/test",
+    "ci/diff",
+    "ci/sim",
+    "sched/sim-nightly",
+    "sched/eval",
+]
+
+[[row]]
+req = "R3.2"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P3.2.1",
+    "P3.2.2",
+    "P3.2.3",
+    "P3.2.4",
+    "P3.2.5",
+    "P3.2.6",
+    "P3.2.7",
+    "P3.2.8",
+    "P3.2.9",
+]
+functions = [
+    "admit",
+    "compose_plan",
+]
+artifacts = [
+    "crates/dp-core/src/provenance.rs",
+    "proofs/lean/DP/Admission.lean",
+    "crates/dp-core/src/compose_plan.rs",
+    "crates/dp-core/src/admission.rs",
+    "crates/dp-cert/src/check.rs",
+    "crates/dp-formats/tests/",
+    "fuzz/provenance/",
+    "crates/dp-core/tests/prop_provenance.rs",
+    "crates/dp-core/tests/prop_admission.rs",
+    "crates/dp-cert/tests/prop_compose.rs",
+    "crates/dp-pool/tests/prop_pool.rs",
+    "tests/sim/lying_provenance.rs",
+    "tests/canaries/",
+    "tools/mutants/",
+    "tests/replay/",
+]
+jobs = [
+    "ci/creusot",
+    "ci/lean",
+    "ci/certs",
+    "ci/canaries",
+    "ci/test",
+    "ci/fuzz-smoke",
+    "ci/sim",
+    "sched/mutants-weekly",
+    "ci/integration-cluster",
+    "ci/replay",
+]
+
+[[row]]
+req = "R3.3"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P3.3.1",
+    "P3.3.2",
+    "P3.3.3",
+    "P3.3.4",
+    "P3.3.5",
+    "P3.3.6",
+]
+functions = ["hygiene_ok"]
+artifacts = [
+    "crates/dp-core/src/admission.rs",
+    "proofs/lean/DP/Admission.lean",
+    "crates/dp-frontend/src/accept.rs",
+    "crates/dp-cert/src/check.rs",
+    "verification/kani/parsers.rs",
+    "crates/dp-core/tests/prop_hygiene.rs",
+    "crates/dp-formats/tests/",
+    "fuzz/lemma_parser/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/creusot",
+    "ci/lean",
+    "ci/certs",
+    "ci/canaries",
+    "ci/kani",
+    "ci/test",
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+    "sched/mutants-weekly",
+]
+
+[[row]]
+req = "R3.4"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P3.4.1",
+    "P3.4.2",
+    "P3.4.3",
+    "P3.4.4",
+    "P3.4.5",
+    "P3.4.6",
+    "P3.4.7",
+    "P3.4.8",
+    "P3.4.9",
+    "P3.4.10",
+    "P3.4.11",
+    "P3.4.12",
+    "P3.4.13",
+]
+functions = ["admit"]
+artifacts = [
+    "proofs/lean/DP/Admission.lean",
+    "proofs/lean/DP/ModelSanity.lean",
+    "crates/dp-core/src/admission.rs",
+    "crates/dp-frontend/src/accept.rs",
+    "crates/dp-cert/src/check.rs",
+    "tests/diff/admission_lean_vs_rust/",
+    "crates/dp-core/tests/prop_admission.rs",
+    "tests/canaries/",
+    "tests/sim/lying_provenance.rs",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/lean",
+    "ci/creusot",
+    "ci/certs",
+    "ci/canaries",
+    "ci/diff",
+    "ci/test",
+    "ci/sim",
+    "sched/mutants-weekly",
+]
+
+[[row]]
+req = "R3.5"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P3.5.1",
+    "P3.5.2",
+    "P3.5.3",
+    "P3.5.4",
+    "P3.5.5",
+    "P3.5.6",
+    "P3.5.7",
+    "P3.5.8",
+    "P3.5.9",
+    "P3.5.10",
+]
+functions = [
+    "accept_result",
+    "compose_plan",
+    "label",
+]
+artifacts = [
+    "proofs/lean/DP/Partition.lean",
+    "crates/dp-cert/src/partition.rs",
+    "crates/dp-frontend/src/accept.rs",
+    "crates/dp-core/src/race.rs",
+    "crates/dp-core/src/verdict.rs",
+    "crates/dp-cert/tests/prop_partition.rs",
+    "tests/canaries/partition/",
+    "crates/dp-core/tests/prop_race.rs",
+    "tests/sim/adversarial_coordinator.rs",
+    "crates/dp-formats/tests/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/lean-partition",
+    "ci/lean",
+    "ci/certs",
+    "ci/sim",
+    "ci/canaries",
+    "ci/creusot",
+    "ci/test",
+    "sched/mutants-weekly",
+]
+
+[[row]]
+req = "R3.6"
+class = "Robustness"
+scope = "deferred"
+properties = [
+    "P3.6.1",
+    "P3.6.2",
+    "P3.6.3",
+    "P3.6.4",
+    "P3.6.5",
+    "P3.6.6",
+]
+functions = []
+artifacts = [
+    "verification/kani/pool.rs",
+    "fuzz/lemma_pool_ingest/",
+    "crates/dp-pool/tests/prop_pool.rs",
+    "tests/sim/hostile_pool.rs",
+    "tests/sim/faults/",
+]
+jobs = [
+    "ci/kani",
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+    "ci/test",
+    "ci/sim",
+    "sched/sim-nightly",
+]
+
+[[row]]
+req = "R4.1"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P4.1.1",
+    "P4.1.2",
+    "P4.1.3",
+    "P4.1.4",
+    "P4.1.5",
+    "P4.1.6",
+    "P4.1.7",
+    "P4.1.8",
+    "P4.1.9",
+    "P4.1.10",
+    "P4.1.11",
+    "P4.1.12",
+    "P4.1.13",
+    "P4.1.14",
+    "P4.1.15",
+    "P4.1.16",
+    "P4.1.17",
+    "P4.1.18",
+    "P4.1.19",
+    "P4.1.20",
+]
+functions = [
+    "canonicalize",
+    "admit",
+]
+artifacts = [
+    "proofs/lean/DP/Canon.lean",
+    "crates/dp-core/src/admission.rs",
+    "crates/dp-frontend/src/accept.rs",
+    "crates/dp-cert/src/check.rs",
+    "crates/dp-canon/tests/",
+    "crates/dp-worker/tests/prop_rename.rs",
+    "tests/diff/canon_equisat/",
+    "tests/diff/canon_determinism/",
+    "tests/diff/canon_lean_vs_rust/",
+    "tests/diff/solver_names/",
+    "fuzz/canonicalizer/",
+    "tests/sim/lying_provenance.rs",
+    "tests/canaries/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/lean",
+    "ci/creusot",
+    "ci/certs",
+    "ci/canaries",
+    "ci/test",
+    "ci/diff",
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+    "ci/sim",
+    "sched/mutants-weekly",
+]
+
+[[row]]
+req = "R4.2"
+class = "Performance"
+scope = "deferred"
+properties = [
+    "P4.2.1",
+    "P4.2.2",
+    "P4.2.3",
+    "P4.2.4",
+    "P4.2.5",
+    "P4.2.6",
+    "P4.2.7",
+    "P4.2.8",
+]
+functions = []
+artifacts = [
+    "verification/tla/Sharing.tla",
+    "proofs/lean/DP/Admission.lean",
+    "crates/dp-core/src/admission.rs",
+    "crates/dp-core/tests/prop_scope.rs",
+    "tests/diff/cross_goal_on_off/",
+    "tests/integration/config/",
+    "tests/canaries/",
+    "eval/scripts/rq4_cross_goal/",
+]
+jobs = [
+    "ci/tlc",
+    "ci/lean",
+    "ci/creusot",
+    "ci/test",
+    "ci/diff",
+    "ci/integration-cluster",
+    "ci/canaries",
+    "sched/eval",
+]
+
+[[row]]
+req = "R4.3"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P4.3.1",
+    "P4.3.2",
+    "P4.3.3",
+    "P4.3.4",
+    "P4.3.5",
+    "P4.3.6",
+]
+functions = [
+    "is_ground_lemma",
+    "hygiene_ok",
+    "admit",
+]
+artifacts = [
+    "proofs/lean/DP/Admission.lean",
+    "crates/dp-core/src/admission.rs",
+    "crates/dp-frontend/src/accept.rs",
+    "crates/dp-cert/src/check.rs",
+    "crates/dp-core/tests/prop_ground.rs",
+    "tests/diff/cross_goal_on_off/",
+    "tests/canaries/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/lean",
+    "ci/creusot",
+    "ci/certs",
+    "ci/canaries",
+    "ci/test",
+    "ci/diff",
+    "sched/mutants-weekly",
+]
+
+[[row]]
+req = "R4.4"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P4.4.1",
+    "P4.4.2",
+    "P4.4.3",
+    "P4.4.4",
+    "P4.4.5",
+    "P4.4.6",
+    "P4.4.7",
+    "P4.4.8",
+    "P4.4.9",
+    "P4.4.10",
+    "P4.4.11",
+    "P4.4.12",
+    "P4.4.13",
+]
+functions = [
+    "admit_hint",
+    "instantiate",
+]
+artifacts = [
+    "proofs/lean/DP/Hints.lean",
+    "crates/dp-core/src/hints.rs",
+    "crates/dp-frontend/src/accept.rs",
+    "crates/dp-cert/src/check.rs",
+    "verification/kani/parsers.rs",
+    "crates/dp-core/tests/prop_hints.rs",
+    "tests/diff/hints_lean_vs_rust/",
+    "tests/diff/hints_on_off/",
+    "tests/integration/certs/",
+    "crates/dp-formats/tests/",
+    "fuzz/hint_parser/",
+    "tests/canaries/",
+    "tests/sim/lying_provenance.rs",
+    "tools/mutants/",
+    "eval/scripts/rq4_cross_goal/",
+]
+jobs = [
+    "ci/lean",
+    "ci/creusot",
+    "ci/certs",
+    "ci/canaries",
+    "ci/kani",
+    "ci/test",
+    "ci/diff",
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+    "ci/sim",
+    "sched/mutants-weekly",
+    "sched/eval",
+]
+
+[[row]]
+req = "R5.1"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P5.1.1",
+    "P5.1.2",
+    "P5.1.3",
+    "P5.1.4",
+    "P5.1.5",
+    "P5.1.6",
+    "P5.1.7",
+    "P5.1.8",
+    "P5.1.9",
+    "P5.1.10",
+    "P5.1.11",
+    "P5.1.12",
+]
+functions = [
+    "oblig",
+    "import_closure",
+]
+artifacts = [
+    "crates/dp-core/src/certification.rs",
+    "crates/dp-cert/src/check.rs",
+    "verification/tla/Coordinator.tla",
+    "crates/dp-core/tests/prop_certification.rs",
+    "tests/sim/",
+    "tests/integration/certs/",
+    "tools/mutants/",
+    "eval/scripts/rq5_certificates/",
+]
+jobs = [
+    "ci/creusot",
+    "ci/certs",
+    "ci/tlc",
+    "ci/test",
+    "ci/sim",
+    "sched/sim-nightly",
+    "sched/mutants-weekly",
+    "sched/eval",
+]
+
+[[row]]
+req = "R5.2"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P5.2.1",
+    "P5.2.2",
+    "P5.2.3",
+    "P5.2.4",
+    "P5.2.5",
+    "P5.2.6",
+    "P5.2.7",
+    "P5.2.8",
+    "P5.2.9",
+    "P5.2.10",
+    "P5.2.11",
+    "P5.2.12",
+    "P5.2.13",
+    "P5.2.14",
+    "P5.2.15",
+]
+functions = [
+    "compose_plan",
+    "fragment_ok",
+]
+artifacts = [
+    "proofs/lean/DP/Compose.lean",
+    "crates/dp-core/src/compose_plan.rs",
+    "crates/dp-core/src/fragment.rs",
+    "crates/dp-cert/src/check.rs",
+    "crates/dp-cert/tests/prop_compose.rs",
+    "tests/diff/compose_lean_vs_rust/",
+    "crates/dp-cert/tests/prop_partition.rs",
+    "crates/dp-core/tests/prop_fragment.rs",
+    "crates/dp-formats/tests/",
+    "fuzz/cpc_proof/",
+    "fuzz/alethe_proof/",
+    "tests/integration/certs/",
+    "tests/canaries/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/lean",
+    "ci/creusot",
+    "ci/certs",
+    "ci/canaries",
+    "ci/test",
+    "ci/diff",
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+    "sched/mutants-weekly",
+]
+
+[[row]]
+req = "R5.3"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P5.3.1",
+    "P5.3.2",
+    "P5.3.3",
+    "P5.3.4",
+    "P5.3.5",
+    "P5.3.6",
+    "P5.3.7",
+    "P5.3.8",
+    "P5.3.9",
+    "P5.3.10",
+    "P5.3.11",
+    "P5.3.12",
+    "P5.3.13",
+]
+functions = [
+    "label_from_checker_output",
+    "fragment_ok",
+    "label",
+]
+artifacts = [
+    "crates/dp-cert/src/check.rs",
+    "crates/dp-core/src/labels.rs",
+    "crates/dp-core/tests/prop_verdict.rs",
+    "tests/diff/label_lean_vs_rust/",
+    "tests/certs/tamper/",
+    "tests/canaries/",
+    "docs/tcb.toml",
+    "tests/integration/certs/",
+    "fuzz/checker_output/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/certs",
+    "ci/canaries",
+    "ci/creusot",
+    "ci/test",
+    "ci/diff",
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+    "sched/mutants-weekly",
+]
+
+[[row]]
+req = "R5.4"
+class = "Functional"
+scope = "deferred"
+properties = [
+    "P5.4.1",
+    "P5.4.2",
+    "P5.4.3",
+    "P5.4.4",
+    "P5.4.5",
+    "P5.4.6",
+    "P5.4.7",
+    "P5.4.8",
+]
+functions = []
+artifacts = [
+    "verification/tla/Coordinator.tla",
+    "crates/dp-cert/tests/prop_store.rs",
+    "crates/dp-formats/tests/",
+    "fuzz/cert_manifest/",
+    "tests/replay/tamper/",
+    "tests/replay/",
+    "tests/integration/certs/store_faults.rs",
+]
+jobs = [
+    "ci/tlc",
+    "ci/test",
+    "ci/fuzz-smoke",
+    "ci/replay",
+    "ci/integration-cluster",
+    "ci/certs",
+]
+
+[[row]]
+req = "R5.5"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P5.5.1",
+    "P5.5.2",
+    "P5.5.3",
+    "P5.5.4",
+    "P5.5.5",
+    "P5.5.6",
+    "P5.5.7",
+]
+functions = ["label"]
+artifacts = [
+    "crates/dp-core/src/verdict.rs",
+    "crates/dp-cert/src/check.rs",
+    "crates/dp-core/tests/prop_verdict.rs",
+    "tests/diff/certify_all_on_off/",
+    "tests/integration/config/",
+    "tests/canaries/",
+    "tools/mutants/",
+    "eval/scripts/rq5_certificates/",
+]
+jobs = [
+    "ci/creusot",
+    "ci/certs",
+    "ci/test",
+    "ci/diff",
+    "ci/integration-cluster",
+    "ci/canaries",
+    "sched/mutants-weekly",
+    "sched/eval",
+]
+
+[[row]]
+req = "R6.1"
+class = "Functional"
+scope = "deferred"
+properties = [
+    "P6.1.1",
+    "P6.1.2",
+    "P6.1.3",
+    "P6.1.4",
+    "P6.1.5",
+    "P6.1.6",
+    "P6.1.7",
+]
+functions = []
+artifacts = [
+    "eval/corpus/tests/",
+    "tests/diff/export_vs_why3find/",
+    "crates/dp-formats/tests/",
+    "fuzz/corpus_metadata/",
+    "eval/scripts/corpus_hardness/",
+    "eval/rq/corpus.toml",
+]
+jobs = [
+    "ci/corpus-check",
+    "sched/eval",
+    "ci/diff",
+    "ci/test",
+    "ci/fuzz-smoke",
+]
+
+[[row]]
+req = "R6.2"
+class = "Performance"
+scope = "deferred"
+properties = [
+    "P6.2.1",
+    "P6.2.2",
+    "P6.2.3",
+    "P6.2.4",
+    "P6.2.5",
+    "P6.2.6",
+    "P6.2.7",
+    "P6.2.8",
+    "P6.2.9",
+    "P6.2.10",
+    "P6.2.11",
+]
+functions = []
+artifacts = [
+    "eval/scripts/rq1_distribution/",
+    "eval/scripts/rq2_portfolio/",
+    "eval/scripts/rq3_within_goal/",
+    "eval/scripts/rq4_cross_goal/",
+    "eval/scripts/rq5_certificates/",
+    "eval/scripts/rq6_instability/",
+    "eval/scripts/rq7_escalation/",
+    "eval/rq/",
+    "eval/rq/corpus.toml",
+    "eval/tests/",
+    "eval/tests/metrics/",
+]
+jobs = [
+    "sched/eval",
+    "ci/eval-smoke",
+    "ci/eval-report",
+]
+
+[[row]]
+req = "R6.3"
+class = "Performance"
+scope = "deferred"
+properties = [
+    "P6.3.1",
+    "P6.3.2",
+    "P6.3.3",
+    "P6.3.4",
+    "P6.3.5",
+    "P6.3.6",
+    "P6.3.7",
+    "P6.3.8",
+    "P6.3.9",
+    "P6.3.10",
+    "P6.3.11",
+    "P6.3.12",
+    "P6.3.13",
+]
+functions = []
+artifacts = [
+    "eval/scripts/",
+    "eval/tests/",
+    "eval/raw/",
+    "eval/report/check/",
+    "eval/tests/canary_gate/",
+    "crates/dp-formats/tests/",
+]
+jobs = [
+    "sched/eval",
+    "ci/eval-smoke",
+    "ci/eval-report",
+    "ci/test",
+]
+
+[[row]]
+req = "R6.4"
+class = "Performance"
+scope = "deferred"
+properties = [
+    "P6.4.1",
+    "P6.4.2",
+    "P6.4.3",
+    "P6.4.4",
+    "P6.4.5",
+    "P6.4.6",
+    "P6.4.7",
+    "P6.4.8",
+    "P6.4.9",
+    "P6.4.10",
+    "P6.4.11",
+]
+functions = []
+artifacts = [
+    "eval/report/",
+    "eval/report/check/",
+    "eval/tests/report_check/",
+]
+jobs = [
+    "ci/eval-report",
+    "sched/eval",
+]
+
+[[row]]
+req = "R7.1"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P7.1.1",
+    "P7.1.2",
+    "P7.1.3",
+    "P7.1.4",
+    "P7.1.5",
+    "P7.1.6",
+    "P7.1.7",
+    "P7.1.8",
+]
+functions = [
+    "label",
+    "record_verdict",
+    "accept_result",
+]
+artifacts = [
+    "proofs/lean/DP/Verdict.lean",
+    "proofs/lean/DP/Certifiable.lean",
+    "crates/dp-core/src/verdict.rs",
+    "crates/dp-frontend/src/accept.rs",
+    "crates/dp-cert/src/check.rs",
+    "crates/dp-core/tests/prop_verdict.rs",
+    "tests/diff/label_lean_vs_rust/",
+    "tests/diff/cache_on_off/",
+    "tests/canaries/",
+    "tests/sim/adversarial_coordinator.rs",
+    "tests/sim/lying_provenance.rs",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/lean",
+    "ci/creusot",
+    "ci/sim",
+    "ci/canaries",
+    "ci/certs",
+    "ci/test",
+    "ci/diff",
+    "sched/canaries-full",
+    "sched/sim-nightly",
+    "sched/mutants-weekly",
+]
+
+[[row]]
+req = "R7.2"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P7.2.1",
+    "P7.2.2",
+    "P7.2.3",
+    "P7.2.4",
+    "P7.2.5",
+    "P7.2.6",
+    "P7.2.7",
+    "P7.2.8",
+    "P7.2.9",
+]
+functions = [
+    "decode_label",
+    "most_informative",
+    "classify",
+]
+artifacts = [
+    "crates/dp-formats/src/proofjson.rs",
+    "crates/dp-core/src/labels.rs",
+    "crates/dp-replay/",
+    "crates/dp-formats/tests/prop_proofjson.rs",
+    "fuzz/proofjson/",
+    "crates/dp-core/tests/prop_verdict.rs",
+    "tests/diff/legacy_reader/",
+    "tests/integration/cluster/race.rs",
+    "tests/integration/cli_labels/",
+    "tests/replay/tamper/",
+]
+jobs = [
+    "ci/creusot",
+    "ci/replay",
+    "ci/test",
+    "ci/fuzz-smoke",
+    "ci/diff",
+    "ci/integration-cluster",
+]
+
+[[row]]
+req = "R7.3"
+class = "Process"
+scope = "deferred"
+properties = [
+    "P7.3.1",
+    "P7.3.2",
+    "P7.3.3",
+    "P7.3.4",
+]
+functions = []
+artifacts = [
+    "docs/traceability.toml",
+    "tools/purity-check/",
+    "crates/dp-core/",
+    "verification/kani/",
+    "crates/dp-core/tests/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/purity",
+    "ci/creusot",
+    "ci/kani",
+    "ci/test",
+    "sched/mutants-weekly",
+]
+
+[[row]]
+req = "R7.4"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P7.4.1",
+    "P7.4.2",
+    "P7.4.3",
+    "P7.4.4",
+    "P7.4.5",
+    "P7.4.6",
+    "P7.4.7",
+    "P7.4.8",
+    "P7.4.9",
+    "P7.4.10",
+]
+functions = []
+artifacts = [
+    "tests/canaries/",
+    "tests/canaries/witness.rs",
+    "tests/certs/tamper/",
+    "eval/tests/canary_gate/",
+    "docs/traceability.toml",
+    "tests/canaries/modes.toml",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/canaries",
+    "sched/canaries-full",
+    "ci/certs",
+    "ci/eval-smoke",
+    "sched/mutants-weekly",
+]
+
+[[row]]
+req = "R7.5"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P7.5.1",
+    "P7.5.2",
+    "P7.5.3",
+    "P7.5.4",
+    "P7.5.5",
+    "P7.5.6",
+    "P7.5.7",
+    "P7.5.8",
+    "P7.5.9",
+    "P7.5.10",
+]
+functions = ["encode_key"]
+artifacts = [
+    "crates/dp-core/src/cache_key.rs",
+    "verification/kani/cache_key.rs",
+    "crates/dp-frontend/src/accept.rs",
+    "crates/dp-cert/src/check.rs",
+    "crates/dp-core/tests/prop_cache_key.rs",
+    "tests/diff/cache_on_off/",
+    "tests/diff/legacy_reader/",
+    "tests/canaries/",
+    "tools/mutants/",
+]
+jobs = [
+    "ci/creusot",
+    "ci/kani",
+    "ci/sim",
+    "ci/certs",
+    "ci/test",
+    "ci/diff",
+    "ci/canaries",
+    "sched/mutants-weekly",
+]
+
+[[row]]
+req = "R7.6"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P7.6.1",
+    "P7.6.2",
+    "P7.6.3",
+    "P7.6.4",
+    "P7.6.5",
+    "P7.6.6",
+    "P7.6.7",
+    "P7.6.8",
+]
+functions = []
+artifacts = [
+    "crates/dp-replay/",
+    "tests/replay/tamper/",
+    "tests/replay/",
+    "tools/mutants/",
+    "eval/scripts/rq6_instability/",
+]
+jobs = [
+    "ci/integration-cluster",
+    "ci/replay",
+    "sched/mutants-weekly",
+    "sched/eval",
+]
+
+[[row]]
+req = "R7.7"
+class = "Process"
+scope = "deferred"
+properties = [
+    "P7.7.1",
+    "P7.7.2",
+    "P7.7.3",
+    "P7.7.4",
+    "P7.7.5",
+    "P7.7.6",
+]
+functions = []
+artifacts = [
+    "deps/",
+    "tools/patch-check/",
+    "tests/integration/pins/",
+    "tests/integration/certs/",
+    "crates/dp-core/tests/prop_verdict.rs",
+]
+jobs = [
+    "ci/repro-build",
+    "ci/patches",
+    "ci/integration-cluster",
+    "ci/certs",
+    "ci/test",
+]
+
+[[row]]
+req = "R7.8"
+class = "Process"
+scope = "deferred"
+properties = [
+    "P7.8.1",
+    "P7.8.2",
+    "P7.8.3",
+    "P7.8.4",
+    "P7.8.5",
+    "P7.8.6",
+]
+functions = []
+artifacts = [
+    "tools/tcb-check/",
+    "docs/tcb.toml",
+    "crates/dp-core/tests/prop_verdict.rs",
+    "tests/integration/certs/",
+]
+jobs = [
+    "ci/tcb-check",
+    "ci/test",
+    "ci/certs",
+]
+
+[[row]]
+req = "R7.9"
+class = "Process"
+scope = "deferred"
+properties = [
+    "P7.9.1",
+    "P7.9.2",
+]
+functions = []
+artifacts = ["tools/patch-check/"]
+jobs = ["ci/patches"]
+
+[[row]]
+req = "R7.10"
+class = "Soundness-critical"
+scope = "deferred"
+properties = [
+    "P7.10.1",
+    "P7.10.2",
+    "P7.10.3",
+    "P7.10.4",
+    "P7.10.5",
+    "P7.10.6",
+    "P7.10.7",
+    "P7.10.8",
+    "P7.10.9",
+]
+functions = ["canonical_check"]
+artifacts = [
+    "crates/dp-formats/src/canonical_check.rs",
+    "crates/dp-cert/src/check.rs",
+    "crates/dp-frontend/src/accept.rs",
+    "verification/kani/parsers.rs",
+    "crates/dp-formats/tests/",
+    "crates/dp-canon/tests/",
+    "fuzz/",
+    "tests/diff/smtlib_parser/",
+    "tools/traceability-check/",
+]
+jobs = [
+    "ci/sim",
+    "ci/canaries",
+    "ci/replay",
+    "ci/certs",
+    "ci/kani",
+    "ci/test",
+    "ci/fuzz-smoke",
+    "sched/fuzz-nightly",
+    "ci/diff",
+    "ci/traceability",
+]
+
+[[row]]
+req = "R7.11"
+class = "Process"
+scope = "in scope"
+properties = [
+    "P7.11.1",
+    "P7.11.2",
+    "P7.11.3",
+    "P7.11.4",
+    "P7.11.5",
+    "P7.11.6",
+    "P7.11.7",
+    "P7.11.8",
+    "P7.11.9",
+    "P7.11.10",
+    "P7.11.11",
+]
+functions = []
+artifacts = [
+    "docs/traceability.toml",
+    "tools/traceability-check/",
+]
+jobs = ["ci/traceability"]
+
+[[row]]
+req = "R7.12"
+class = "Functional"
+scope = "in scope"
+properties = [
+    "P7.12.1",
+    "P7.12.2",
+    "P7.12.3",
+]
+functions = []
+artifacts = ["tests/diff/legacy_compat/"]
+jobs = ["ci/diff"]
+
+[[row]]
+req = "R7.13"
+class = "Process"
+scope = "deferred"
+properties = [
+    "P7.13.1",
+    "P7.13.2",
+    "P7.13.3",
+    "P7.13.4",
+    "P7.13.5",
+    "P7.13.6",
+]
+functions = []
+artifacts = [
+    "tools/mutants/",
+    "tools/mutants/targets.toml",
+    "docs/traceability.toml",
+    "tools/mutants/exclusions.toml",
+    "tools/traceability-check/",
+]
+jobs = [
+    "sched/mutants-weekly",
+    "ci/traceability",
+]

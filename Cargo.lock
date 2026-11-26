@@ -264,6 +264,7 @@ dependencies = [
 name = "dp-diff"
 version = "0.0.0"
 dependencies = [
+ "dp-formats",
  "serde_json",
 ]
 
@@ -616,6 +617,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "purity-check"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -841,6 +850,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tcb-check"
+version = "0.0.0"
+dependencies = [
+ "dp-core",
+ "dp-formats",
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "tempfile"
 version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -923,6 +942,14 @@ name = "toml_write"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
+
+[[package]]
+name = "traceability-check"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "toml",
+]
 
 [[package]]
 name = "typenum"
