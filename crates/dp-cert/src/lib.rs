@@ -32,6 +32,26 @@ pub const PROOF_LIMIT: u64 = 1 << 28;
 pub const PROOF_OPTIONS: [&str; 5] =
     ["--dump-proofs", "--proof-format=cpc", "--no-proof-dag-global", "--no-proof-allow-trust", "--dag-thresh=0"];
 
+/// The Transformation_Pipeline of a certifying print (R5.3): what Why3
+/// applies to the Goal's task before the proof producer's Driver prints
+/// it. cvc5 has no complete CPC proof of the elimination of a `match`
+/// (`dt-match-elim` is a step taken on trust), so the print has none: Why3
+/// states each pattern matching through the constructors' projections.
+/// Recursive definitions become axioms first, because Why3 cannot show
+/// that a recursive function still terminates once its `match` is gone.
+/// The checker's reference is this print, and nothing else.
+pub const PIPELINE: [&str; 2] = ["eliminate_recursion", "eliminate_match"];
+
+/// The pipeline as the list that the bridge takes.
+pub fn pipeline() -> Vec<String> {
+    PIPELINE.iter().map(|t| t.to_string()).collect()
+}
+
+/// The bytes that stand for the pipeline in a Task_Hash.
+pub fn pipeline_hash() -> Vec<u8> {
+    PIPELINE.join("\n").into_bytes()
+}
+
 /// The command line with which a proof producer runs, in the form of a
 /// Why3 prover command: `%T` is the time limit in milliseconds and `%f`
 /// the input file. The program's name may hold spaces.

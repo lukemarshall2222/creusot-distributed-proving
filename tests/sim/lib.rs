@@ -324,6 +324,11 @@ pub fn operator_key() -> SigningKey {
     SigningKey::from_bytes(&[7; 32])
 }
 
+/// The signing key of a registered Worker, for a test that has it lie.
+pub fn worker_key(node: Node) -> [u8; 32] {
+    key(node, 1).to_bytes()
+}
+
 fn key(node: Node, salt: u8) -> SigningKey {
     let mut secret = [salt; 32];
     secret[..4].copy_from_slice(&node.to_be_bytes());
@@ -399,6 +404,8 @@ impl Cluster {
                 ethos: "ethos".into(),
                 signature: "signature".into(),
                 signature_hash: BINARY_HASH,
+                check_micros: None,
+                proof_limit: 1 << 20,
             }),
             certify_all: false,
             export: None,

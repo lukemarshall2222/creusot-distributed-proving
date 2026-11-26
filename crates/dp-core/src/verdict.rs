@@ -141,6 +141,12 @@ pub enum Acceptance {
     /// The Front_End did not submit this Job with this prover (R1.3
     /// criterion 6).
     NotSubmitted,
+    /// The local time limit of the run is not the one that its reference
+    /// time limit and the Worker's Calibration give (R1.4 criteria 6 and 7).
+    LimitMismatch,
+    /// The import-set hash is not the hash of the imports that the Result
+    /// lists (R1.3 criterion 7).
+    WrongImportsHash,
 }
 
 /// What the shell established about a Result that arrived from the Cluster.
@@ -156,13 +162,24 @@ pub struct RemoteFacts {
     /// The Result names an open Job of this Session and the prover that the
     /// Front_End submitted it with.
     pub submitted: bool,
+    /// The local time limit that the Result records is the Calibration
+    /// scaling of the reference time limit that the Front_End submitted,
+    /// with the Calibration that the Result records.
+    pub limits_consistent: bool,
+    /// The import-set hash that the Result records is the hash that the
+    /// Front_End computes over the imports that the Result lists.
+    pub imports_consistent: bool,
 }
 
-/// The Result comes from an authentic, registered Worker and answers a Job
-/// that the Front_End submitted (P1.3.2, P1.3.4, P1.3.6).
+/// The Result comes from an authentic, registered Worker, answers a Job
+/// that the Front_End submitted, ran with the time limit of that Job, and
+/// states its imports truthfully (P1.3.2, P1.3.4, P1.3.6, P1.3.7, P1.4.4).
 #[logic(open)]
 pub fn authentic(f: RemoteFacts) -> bool {
-    pearlite! { f.signature_valid && f.registered && !f.revoked && f.submitted }
+    pearlite! {
+        f.signature_valid && f.registered && !f.revoked && f.submitted
+            && f.limits_consistent && f.imports_consistent
+    }
 }
 
 #[ensures(result == (a == b))]
@@ -184,8 +201,13 @@ pub fn accept_result(r: ResultFields, ctx: &Context) -> Acceptance {
 }
 
 /// Accepts or discards a Result that arrived from the Cluster (R1.3
-/// criteria 3, 4, 6, 9 and 10). Everything that arrives is untrusted until
-/// this function accepts it; a discarded Result is never labelled.
+/// criteria 3, 4, 6, 7, 9 and 10, R1.4 criterion 6). Everything that
+/// arrives is untrusted until this function accepts it; a discarded Result
+/// is never labelled.
+///
+/// A Result whose time limits do not agree is discarded, which is stricter
+/// than R1.4 criterion 7 asks (only its non-proof answer must stay out of
+/// the Result_Cache): no answer of such a run is used at all.
 #[ensures((result == Acceptance::Accepted) == (authentic(facts) && bound(r, *ctx)))]
 pub fn accept_remote(r: ResultFields, ctx: &Context, facts: RemoteFacts) -> Acceptance {
     if !facts.registered || facts.revoked {
@@ -194,6 +216,10 @@ pub fn accept_remote(r: ResultFields, ctx: &Context, facts: RemoteFacts) -> Acce
         Acceptance::BadSignature
     } else if !facts.submitted {
         Acceptance::NotSubmitted
+    } else if !facts.limits_consistent {
+        Acceptance::LimitMismatch
+    } else if !facts.imports_consistent {
+        Acceptance::WrongImportsHash
     } else {
         accept_result(r, ctx)
     }

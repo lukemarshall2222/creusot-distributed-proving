@@ -343,3 +343,117 @@ fn a_checker_that_is_not_pinned_certifies_nothing() {
     assert!(!proofs(&dir).unwrap().contains("\"alt-ergo\""), "{stderr}");
     fs::remove_dir_all(dir).unwrap();
 }
+
+/// A module whose Goals use an algebraic type, with `match` and with a
+/// recursive function over it.
+const SHAPES: &str = r#"module Arith
+  use int.Int
+
+  type shape = Square int | Rect int int
+
+  function area (s: shape) : int = match s with
+    | Square a -> a * a
+    | Rect a b -> a * b
+  end
+
+  goal Same: forall a: int. area (Square a) = area (Rect a a)
+
+  goal Distinct: forall a b c: int. Square a <> Rect b c
+
+  goal Wrong: forall s: shape. area s >= 1
+end
+"#;
+
+fn demoted_alt_ergo(lock: &str) -> String {
+    let start = lock.find("name = \"alt-ergo\"").unwrap();
+    let kind = start + lock[start..].find("unpatched-solver").unwrap();
+    format!("{}sharing-solver{}", &lock[..kind], &lock[kind + "unpatched-solver".len()..])
+}
+
+fn checker() -> bool {
+    if std::env::var_os("DP_ETHOS").is_none() || std::env::var_os("DP_CPC_SIGNATURE").is_none() {
+        assert!(std::env::var_os("DP_REQUIRE_TOOLS").is_none(), "DP_ETHOS or DP_CPC_SIGNATURE is not set");
+        return false;
+    }
+    true
+}
+
+/// R5.3: a Goal over an algebraic type is certified like any other. The
+/// print that the checker takes as its reference declares the type as a
+/// datatype, and the function over it by cases.
+#[test]
+fn a_goal_over_an_algebraic_type_is_certified() {
+    let Some((why3find, lock)) = env() else { return };
+    if !checker() {
+        return;
+    }
+    let dir = project("shapes", r#""alt-ergo", "cvc5""#);
+    fs::write(dir.join("arith.mlw"), SHAPES).unwrap();
+    // Every reported proof needs a certificate, cvc5's own included.
+    fs::write(dir.join("dp.toml"), "[certification]\nenabled = true\ncertify_all = true\n").unwrap();
+    let out = prove(&dir, &why3find, &lock);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{stderr}");
+    let proofs = proofs(&dir).unwrap_or_else(|| panic!("no proof file: {stderr}"));
+    let file: serde_json::Value = serde_json::from_str(&proofs).unwrap();
+    let goals = &file["proofs"]["Arith"];
+    let label = |goal: &str| DpEntry::from_member(goals[goal]["dp"].as_str().unwrap(), 1 << 20).unwrap().label;
+    assert_eq!(label("Same"), "certified", "{stderr}");
+    assert_eq!(label("Distinct"), "certified", "{stderr}");
+    assert!(label("Wrong") != "certified" && label("Wrong") != "proved-standalone", "{stderr}");
+    fs::remove_dir_all(dir).unwrap();
+}
+
+/// The limits of certification are options: a checker that takes longer
+/// than its time limit certifies nothing, and a certificate size outside
+/// the allowed range is an invalid configuration.
+#[test]
+fn the_limits_of_certification_are_options() {
+    use std::os::unix::fs::PermissionsExt;
+    let Some((why3find, lock)) = env() else { return };
+    if !checker() {
+        return;
+    }
+    let demoted = demoted_alt_ergo(&lock);
+    let dir = project("check-limit", r#""alt-ergo", "cvc5""#);
+    // A checker that answers after three seconds, with a limit of half a
+    // second. (A limit that the real checker would miss cannot be chosen:
+    // it answers within milliseconds.)
+    let slow = dir.join("slow-ethos");
+    let real = std::env::var("DP_ETHOS").unwrap();
+    fs::write(&slow, format!("#!/bin/sh\nsleep 3\nexec '{real}' \"$@\"\n")).unwrap();
+    fs::set_permissions(&slow, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::write(dir.join("dp.toml"), "[certification]\nenabled = true\ncheck_seconds = 0.5\n").unwrap();
+    let lock_path = dir.join("lock.toml");
+    fs::write(&lock_path, &demoted).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_dp-frontend"))
+        .args(["prove", "-f", "arith.mlw"])
+        .current_dir(&dir)
+        .env("DP_WHY3FIND", &why3find)
+        .env("DP_LOCK", &lock_path)
+        .env("DP_ETHOS", &slow)
+        .output()
+        .unwrap();
+    fs::remove_file(lock_path).unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("0 certified Verdicts"), "{stderr}");
+    assert!(stderr.contains("the checker did not accept the certificate of cvc5@: its time limit ended"), "{stderr}");
+    // With time, the same project is certified.
+    fs::write(dir.join("dp.toml"), "[certification]\nenabled = true\ncheck_seconds = 60\nproof_megabytes = 16\n").unwrap();
+    let _ = fs::remove_dir_all(dir.join(".dp-cache"));
+    let out = prove(&dir, &why3find, &demoted);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("2 certified Verdicts"), "{stderr}");
+    for (text, expected) in [
+        ("proof_megabytes = 0", "certification.proof_megabytes (dp.toml) = 0: a certificate has between 1 and 4096 megabytes"),
+        ("proof_megabytes = 5000", "certification.proof_megabytes (dp.toml) = 5000"),
+        ("check_seconds = 0", "certification.check_seconds (dp.toml) = 0: the time limit of the checker must be positive"),
+    ] {
+        fs::write(dir.join("dp.toml"), format!("[certification]\nenabled = true\n{text}\n")).unwrap();
+        let out = prove(&dir, &why3find, &demoted);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(2), "{stderr}");
+        assert!(stderr.contains(expected), "{stderr}");
+    }
+    fs::remove_dir_all(dir).unwrap();
+}

@@ -102,6 +102,10 @@ pub struct World {
     velocity: BTreeMap<Node, u64>,
     /// Nodes that change every Result that they send (a forging relay).
     pub forging: BTreeSet<Node>,
+    /// Workers that sign, with their own key, a Result whose import-set
+    /// hash is not the hash of what the Result lists: registered and
+    /// authentic, and still not to be believed (R1.3 criterion 7).
+    pub import_liars: BTreeMap<Node, [u8; 32]>,
     /// The largest number of solver runs that a node had at once.
     pub most_runs: BTreeMap<Node, usize>,
     /// Every solver run that was started: node, time and input.
@@ -127,6 +131,7 @@ impl World {
             down: BTreeSet::new(),
             velocity: BTreeMap::new(),
             forging: BTreeSet::new(),
+            import_liars: BTreeMap::new(),
             most_runs: BTreeMap::new(),
             started: Vec::new(),
             sent: 0,
@@ -273,6 +278,12 @@ impl Env for SimEnv {
                 signed.fields.output = b"unsat\n".to_vec();
                 signed.fields.timed_out = false;
                 Message::Result(signed)
+            }
+            Message::Result(signed) if w.import_liars.contains_key(&self.node) => {
+                let mut fields = signed.fields.clone();
+                fields.imports_hash.0[0] ^= 1;
+                let key = ed25519_dalek::SigningKey::from_bytes(&w.import_liars[&self.node]);
+                Message::Result(dp_formats::cluster::SignedResult::sign(fields, &key))
             }
             other => other.clone(),
         };

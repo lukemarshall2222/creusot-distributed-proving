@@ -15,6 +15,20 @@ for patch in patches/*/*.patch; do
     fi
   done
 done
+# The Lock_File names every patch in the entry of the build that applies
+# it, and names no patch that is not there (R7.7 criterion 8).
+for patch in patches/*/*.patch; do
+  if ! grep -q "^patches = .*\"$patch\"" deps/lock.toml; then
+    echo "ci/patches: no Lock_File entry names $patch" >&2
+    status=1
+  fi
+done
+for named in $(grep '^patches = ' deps/lock.toml | grep -o '"[^"]*"' | tr -d '"'); do
+  if [ ! -f "$named" ]; then
+    echo "ci/patches: the Lock_File names $named, which does not exist" >&2
+    status=1
+  fi
+done
 [ "$status" -eq 0 ] || exit "$status"
 
 # Building applies each patch to the pinned source; an apply or build error

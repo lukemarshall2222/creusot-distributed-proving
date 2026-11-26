@@ -2,9 +2,9 @@
   "profile": [],
   "proofs": {
     "Coma": {
-      "vc_debug_struct_field4_finish": {
+      "vc_debug_struct_fields_finish": {
         "prover": "alt-ergo",
-        "time": 0.009
+        "time": 0.011
       },
       "vc_fmt_RemoteFacts": { "prover": "alt-ergo", "time": 0.009 }
     }

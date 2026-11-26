@@ -47,6 +47,7 @@ fn fields() -> impl Strategy<Value = ResultFields> {
                 // every signed field is covered by `mutate` below
                 velocity: 1_000_000,
                 local_micros: 7,
+                imports_hash: Hash([3; 32]),
             }
         })
 }
@@ -94,7 +95,8 @@ fn message() -> impl Strategy<Value = Message> {
 /// One changed field of a Result.
 fn mutate(f: &ResultFields, which: u8) -> ResultFields {
     let mut g = f.clone();
-    match which % 12 {
+    match which % 13 {
+        12 => g.imports_hash.0[7] ^= 2,
         10 => g.velocity += 1,
         11 => g.local_micros += 1,
         9 => g.seed = Some(g.seed.map_or(0, |s| s.wrapping_add(1))),

@@ -32,6 +32,10 @@ pub struct Options {
     /// The checker of certification, when certification is on.
     pub checker: Option<dp_cert::Checker>,
     pub certify_all: bool,
+    /// The time limit of one checker run, when the configuration sets one,
+    /// and the largest certificate taken, in bytes.
+    pub check_limit: Option<Duration>,
+    pub proof_limit: usize,
     pub trace: Option<(std::path::PathBuf, Retention)>,
 }
 
@@ -106,6 +110,16 @@ pub fn load(dir: &Path) -> Result<Options, String> {
     )?;
     let certify =
         pick("certification.enabled", "DP_CERTIFY", |t| t.parse().ok(), file.certification.enabled, false)?;
+    let check_given = env_text("DP_CHECK_SECONDS")?.is_some() || file.certification.check_seconds.is_some();
+    let check =
+        pick("certification.check_seconds", "DP_CHECK_SECONDS", seconds, file.certification.check_seconds, 0.0)?;
+    let proof_megabytes = pick(
+        "certification.proof_megabytes",
+        "DP_PROOF_MEGABYTES",
+        |t| t.parse().ok(),
+        file.certification.proof_megabytes,
+        dp_cert::PROOF_LIMIT >> 20,
+    )?;
     // The checker and its signature files come from the environment of the
     // pinned tools, not from the project.
     let ethos = env_text("DP_ETHOS")?.unwrap_or_else(|| "ethos".to_string());
@@ -179,6 +193,9 @@ pub fn load(dir: &Path) -> Result<Options, String> {
         certify: certify.value,
         checker_given: checker.is_some(),
         certify_all: certify_all.value,
+        proof_megabytes: proof_megabytes.value,
+        check_limit_given: check_given,
+        check_limit: micros(check.value),
         trace_bounded: retention == RetentionOption::Bounded,
         trace_keep: keep.value,
     };
@@ -214,6 +231,12 @@ pub fn load(dir: &Path) -> Result<Options, String> {
                 certify.shown
             ),
             ConfigError::CertifyAll => format!("{}: needs certification.enabled", certify_all.shown),
+            ConfigError::ProofSize => format!(
+                "{}: a certificate has between 1 and {} megabytes",
+                proof_megabytes.shown,
+                dp_core::config::MAX_PROOF_MEGABYTES
+            ),
+            ConfigError::CheckLimit => format!("{}: the time limit of the checker must be positive", check.shown),
             ConfigError::TraceRetention => format!("{}: the bounded setting keeps at least one record", keep.shown),
         });
     }
@@ -245,6 +268,8 @@ pub fn load(dir: &Path) -> Result<Options, String> {
         local_racer: local_member.value,
         checker: if certify.value { checker } else { None },
         certify_all: certify_all.value,
+        check_limit: check_given.then(|| Duration::from_secs_f64(check.value)),
+        proof_limit: (proof_megabytes.value as usize) << 20,
         trace: trace_file.map(|f| {
             let retention = match retention {
                 RetentionOption::Complete => Retention::Complete,

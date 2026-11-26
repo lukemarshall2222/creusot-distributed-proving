@@ -67,6 +67,8 @@ fn main() -> ExitCode {
                     ethos: checker.ethos.to_string_lossy().into_owned(),
                     signature: checker.signature,
                     signature_hash,
+                    check_micros: options.check_limit.map(|d| d.as_micros() as u64),
+                    proof_limit: options.proof_limit,
                 }),
                 Err(e) => return fail(format!("the signature files of the checker: {e}")),
             },

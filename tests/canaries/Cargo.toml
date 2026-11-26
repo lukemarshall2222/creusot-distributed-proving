@@ -1,0 +1,28 @@
+[package]
+name = "dp-canaries"
+description = "Canary_Goals: false Goals that no mode of the System may label as proved (R7.5)"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+path = "lib.rs"
+
+# The canary functions of `creusot/lib.rs` are a module of this crate, so
+# that their witnesses run on the code that Creusot is given.
+[dependencies]
+creusot-std = "0.15.0"
+
+[dev-dependencies]
+dp-formats.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+[[test]]
+name = "canaries"
+path = "main.rs"
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(creusot)'] }

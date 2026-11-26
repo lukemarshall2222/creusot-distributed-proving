@@ -176,6 +176,12 @@ pub struct ResultFields {
     /// time limit that the run had (R1.4 criterion 2).
     pub velocity: u64,
     pub local_micros: u64,
+    /// The hash of the set of Lemmas and Instantiation_Hints that the run
+    /// imported, the hash of the empty set when there were none (R1.3
+    /// criterion 1). A Result lists no imports yet, so any other hash is
+    /// one that the Front_End cannot recompute, and it discards the Result
+    /// (criterion 7).
+    pub imports_hash: Hash,
 }
 
 impl ResultFields {
@@ -196,12 +202,13 @@ impl ResultFields {
             n(self.elapsed_micros),
             n(self.velocity),
             n(self.local_micros),
+            Sexp::atom(self.imports_hash.0),
         ])
     }
 
     fn decode(s: &Sexp) -> Result<ResultFields, DecodeError> {
         match items(s)? {
-            [job_id, task_hash, prover, seed, binary_hash, worker, status, end, output, elapsed, velocity, local] => {
+            [job_id, task_hash, prover, seed, binary_hash, worker, status, end, output, elapsed, velocity, local, imports] => {
                 Ok(ResultFields {
                     job_id: text(job_id)?,
                     task_hash: hash(task_hash)?,
@@ -223,6 +230,7 @@ impl ResultFields {
                     elapsed_micros: number(elapsed)?,
                     velocity: number(velocity)?,
                     local_micros: number(local)?,
+                    imports_hash: hash(imports)?,
                 })
             }
             _ => err("result fields"),

@@ -155,6 +155,23 @@ fn unregistered_workers_prove_nothing() {
     }
 }
 
+/// R1.3 criterion 7: a registered Worker signs Results whose import-set
+/// hash is not the hash of the imports they list. The Results are
+/// authentic, and none of them proves anything.
+#[test]
+fn a_registered_worker_that_lies_about_its_imports_proves_nothing() {
+    let script = mixed();
+    let mut cluster = Cluster::new(9, Faults::none(), 2, 0, script.clone(), 1);
+    for node in [WORKERS, WORKERS + 1] {
+        cluster.world.borrow_mut().import_liars.insert(node, dp_sim::worker_key(node));
+    }
+    cluster.run_until(horizon(&script));
+    assert!(script.iter().any(|call| truth(call) == Reply::Valid), "the script has a provable call");
+    for rid in 0..script.len() {
+        assert!(cluster.answer(rid).is_some_and(|(reply, _)| reply != Reply::Valid), "call {rid}");
+    }
+}
+
 /// One fault of a schedule.
 #[derive(Clone, Debug)]
 enum Fault {

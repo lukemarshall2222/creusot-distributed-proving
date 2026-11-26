@@ -72,3 +72,13 @@ patches = ["patches/why3find/0001-dispatch-mode.patch"]
 [[tool.platform]]
 platform = "aarch64-darwin"
 hash = "sha256:983a0ccc18b5f7d47b2ed908517ca3c9dbd7ff717e0e83c41dd6634a68ccc9cf"
+
+[[tool]]
+name = "creusot"
+version = "fd4d85b2c237ef93147e99f6a0c04acfc89a6a17"
+kind = "creusot"
+patches = ["patches/creusot/0001-prove-backend-option.patch"]
+
+[[tool.platform]]
+platform = "aarch64-darwin"
+hash = "sha256:f3ec5ad5d0bc5b0ee53bf0fe45f1049bcf5d2866522a95d7ca13a761bd55a6a9"

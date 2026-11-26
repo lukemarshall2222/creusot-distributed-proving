@@ -96,3 +96,17 @@ patches = ["patches/why3find/0001-dispatch-mode.patch"]
 platform = "$platform"
 hash = "sha256:$(sha "$(real "$why3find/bin/why3find")")"
 ENTRY
+
+# Creusot_CLI with the backend option (R7.9). Never an Unpatched_Solver kind.
+cat <<ENTRY
+
+[[tool]]
+name = "creusot"
+version = "fd4d85b2c237ef93147e99f6a0c04acfc89a6a17"
+kind = "creusot"
+patches = ["patches/creusot/0001-prove-backend-option.patch"]
+
+[[tool.platform]]
+platform = "$platform"
+hash = "sha256:$(sha "$(real "$wrapper/bin/cargo-creusot")")"
+ENTRY

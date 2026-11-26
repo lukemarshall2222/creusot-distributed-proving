@@ -1,0 +1,111 @@
+# The Canary_Goals (R7.5 criterion 1). Every canary is false, and has a
+# witness that the harness validates again on every run, or an entry in
+# exclusions.toml that says why it has none.
+#
+# kind = "why3":    Goal `Canaries.Canary_<id>` of goals/canaries.mlw; the
+#                   witness is the Goal `Witnesses.Witness_<id>`, which
+#                   unmodified why3find must prove.
+# kind = "creusot": function `<id>_*` of creusot/lib.rs, named by `goal`;
+#                   the witness is `witness("<id>")` there, which is run.
+# quantified: the canary's statement has a universal quantifier, so that an
+#             unsound instantiation or a dropped hypothesis could "prove" it.
+
+[[canary]]
+id = "c01"
+kind = "why3"
+quantified = true
+what = "x * x > x; false at 0"
+
+[[canary]]
+id = "c02"
+kind = "why3"
+quantified = true
+what = "a < b -> a + 1 < b; false at 0, 1 (off by one)"
+
+[[canary]]
+id = "c03"
+kind = "why3"
+quantified = true
+what = "abs x = x; false at -1"
+
+[[canary]]
+id = "c04"
+kind = "why3"
+quantified = true
+what = "squaring is monotone; false at -2, 1"
+
+[[canary]]
+id = "c05"
+kind = "why3"
+quantified = true
+what = "an implication and its converse; false at False, True"
+
+[[canary]]
+id = "c06"
+kind = "why3"
+quantified = true
+what = "every list is non-empty; false at Nil (algebraic type)"
+
+[[canary]]
+id = "c07"
+kind = "why3"
+quantified = true
+what = "max x y = x; false at 0, 1"
+
+[[canary]]
+id = "c08"
+kind = "why3"
+quantified = true
+what = "an integer strictly between x and x + 1; false at 0 (existential under a universal)"
+
+[[canary]]
+id = "c09"
+kind = "why3"
+quantified = true
+what = "subtraction commutes; false at 1, 0"
+
+[[canary]]
+id = "c10"
+kind = "why3"
+quantified = true
+what = "every integer is non-negative; false at -1"
+
+[[canary]]
+id = "c11"
+kind = "why3"
+quantified = true
+what = "multiplication is monotone; false at 0, 1, -1 (non-linear)"
+
+[[canary]]
+id = "c12"
+kind = "why3"
+quantified = false
+what = "0 = 0 + 1 (ground)"
+
+[[canary]]
+id = "r01"
+kind = "creusot"
+goal = "r01_post"
+quantified = true
+what = "mutated postcondition"
+
+[[canary]]
+id = "r02"
+kind = "creusot"
+goal = "r02_pre"
+quantified = false
+what = "call that violates the callee's precondition"
+
+[[canary]]
+id = "r03"
+kind = "creusot"
+goal = "r03_loop"
+quantified = true
+what = "mutated loop invariant"
+
+[[canary]]
+id = "r04"
+kind = "creusot"
+goal = "r04_type"
+quantified = false
+what = "value that violates its type invariant"

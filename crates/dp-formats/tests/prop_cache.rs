@@ -37,6 +37,7 @@ fn origin() -> impl Strategy<Value = Origin> {
                     elapsed_micros: 5,
                     velocity: 1_000_000,
                     local_micros: 9,
+                    imports_hash: Hash([5; 32]),
                 };
                 Origin::Worker(SignedResult::sign(fields, &SigningKey::from_bytes(&key)))
             }),

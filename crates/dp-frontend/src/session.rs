@@ -80,6 +80,11 @@ pub struct Certification {
     /// The directory of its signature files, and their hash.
     pub signature: PathBuf,
     pub signature_hash: Hash,
+    /// The time limit of one checker run in microseconds; without one it
+    /// follows from the time limit of the prover call.
+    pub check_micros: Option<u64>,
+    /// The largest certificate taken, in bytes.
+    pub proof_limit: usize,
 }
 
 /// A member of the Portfolio: a Solver_Configuration by name.
@@ -794,6 +799,11 @@ impl<E: Env, W: Why3find> Session<E, W> {
                     submitted: signed.fields.prover == prover
                         && signed.fields.seed == seed
                         && signed.fields.binary_hash == entry.binary_hash,
+                    // The entry's own time limits were validated above; the
+                    // signed ones must be the same.
+                    limits_consistent: signed.fields.velocity == entry.velocity
+                        && signed.fields.local_micros == entry.local_micros,
+                    imports_consistent: signed.fields.imports_hash == hash::imports_hash(&[]),
                 };
                 (signed.fields.task_hash, signed.fields.prover.clone(), Some(facts))
             }
@@ -1094,7 +1104,21 @@ impl<E: Env, W: Why3find> Session<E, W> {
             producer.info.extension.clone(),
             producer.info.digest.clone().into_bytes(),
         );
-        let (printed, task_hash) = self.print_local(&gid, &prover)?;
+        // The certifying print: the producer's Driver after the pipeline of
+        // certification. It is this Session's own print, as every reference.
+        let t = Instant::now();
+        let printed = match self.bridge.print(&gid, &prover, &dp_cert::pipeline()) {
+            Ok(printed) => printed,
+            // Why3 cannot apply the pipeline to this Goal: no certificate,
+            // and the Session goes on.
+            Err(BridgeError::Refused(reason)) => {
+                eprintln!("dp-frontend: goal {gid}: no certificate, the certifying print failed: {reason}");
+                return refuse(self);
+            }
+            Err(e) => return Err(e.into()),
+        };
+        *self.spent.entry("print").or_default() += t.elapsed();
+        let task_hash = hash::task_hash(&printed.bytes, &driver, &dp_cert::pipeline_hash());
         if printed.tasks != 1 {
             return refuse(self);
         }
@@ -1161,7 +1185,7 @@ impl<E: Env, W: Why3find> Session<E, W> {
             cert.extension.clone(),
             calibration::scale(cert.micros, velocity).max(1),
         );
-        spec.output_limit = dp_cert::PROOF_LIMIT as usize;
+        spec.output_limit = self.certification.as_ref().map_or(dp_cert::PROOF_LIMIT as usize, |c| c.proof_limit);
         self.env.start(run, &cert.exe, &spec)?;
         cert.stage = CertStage::Producing { run: Some(run), job: None, deadline: 0 };
         Ok(())
@@ -1169,9 +1193,17 @@ impl<E: Env, W: Why3find> Session<E, W> {
 
     /// The proof producer answered: its proof goes to the checker.
     fn cert_produced(&mut self, cert: Cert, output: Option<Vec<u8>>) -> Result<(), SessionError> {
-        match output.as_deref().and_then(dp_cert::extract_proof) {
+        // A proof at the size limit may be cut short; it is not taken.
+        let limit = self.certification.as_ref().map_or(dp_cert::PROOF_LIMIT as usize, |c| c.proof_limit);
+        match output.as_deref().filter(|o| o.len() < limit).and_then(dp_cert::extract_proof) {
             Some(proof) => self.cert_check(cert, proof),
             None => {
+                let said = String::from_utf8_lossy(output.as_deref().unwrap_or_default());
+                let said: String = said.trim().chars().take(200).collect();
+                eprintln!(
+                    "dp-frontend: goal {}: {} produced no certificate within the limits: {said:?}",
+                    cert.gid, cert.prover
+                );
                 self.cert_finish(cert);
                 Ok(())
             }
@@ -1201,7 +1233,9 @@ impl<E: Env, W: Why3find> Session<E, W> {
             input: proof.clone(),
             extension: ".cpc".to_string(),
             // Checking a proof is slower than finding it for some rules.
-            micros: cert.micros.saturating_mul(10).saturating_add(10_000_000),
+            micros: certification
+                .check_micros
+                .unwrap_or_else(|| cert.micros.saturating_mul(10).saturating_add(10_000_000)),
             reference: Some((cert.goal.clone(), cert.extension.clone())),
             output_limit: 1 << 16,
         };
@@ -1229,6 +1263,17 @@ impl<E: Env, W: Why3find> Session<E, W> {
             CertStage::Checking { proof, .. } => {
                 let checker_hash = self.stored.remove(&cert.call);
                 cert.facts.accepted = !done.timed_out && dp_cert::accepted(done.status, &done.output);
+                if !cert.facts.accepted {
+                    // Why the checker did not accept, in its own words.
+                    let said = String::from_utf8_lossy(&done.output);
+                    let said: String = said.trim().chars().take(300).collect();
+                    eprintln!(
+                        "dp-frontend: goal {}: the checker did not accept the certificate of {}: {}",
+                        cert.gid,
+                        cert.prover,
+                        if done.timed_out { "its time limit ended".to_string() } else { format!("{said:?}") }
+                    );
+                }
                 if let (true, Some(checker_hash), Some(certification)) =
                     (cert.facts.accepted, checker_hash, self.certification.clone())
                 {
@@ -1651,6 +1696,7 @@ impl<E: Env, W: Why3find> Session<E, W> {
                     revoked: facts.revoked,
                     velocity: signed.fields.velocity,
                     local_micros: signed.fields.local_micros,
+                    imports_consistent: facts.imports_consistent,
                 }
             }
             Source::Cache { .. } => return Ok(()),
@@ -1674,7 +1720,13 @@ impl<E: Env, W: Why3find> Session<E, W> {
             registered: key.is_some(),
             revoked: self.revoked.contains(&signed.fields.worker),
             signature_valid: key.is_some_and(|k| signed.verifies(&k)),
-            submitted: true, // decided by dp-core from the prover and the seed
+            // Decided by dp-core: from the prover and the seed, and from the
+            // Calibration and the limits that the Result records.
+            submitted: true,
+            limits_consistent: true,
+            // A Result lists no imports, so the hash it may carry is that
+            // of the empty set (R1.3 criterion 7).
+            imports_consistent: signed.fields.imports_hash == hash::imports_hash(&[]),
         };
         let authentic = facts.registered && facts.signature_valid && !facts.revoked;
         if !authentic {
@@ -2191,6 +2243,11 @@ pub fn run(config: Config) -> Result<i32, SessionError> {
         }),
         _ => None,
     };
+    // Two Sessions that start in one project directory at the same time
+    // would both have why3find create its cache directory, and the second
+    // fails on it (found 2026-11-25). The directory exists before either
+    // why3find starts.
+    fs::create_dir_all(config.dir.join(".why3find"))?;
     let bridge = Bridge::start(&why3find, &config.args, &config.dir, MESSAGE_LIMIT, Box::new(responder))?;
     let env = OsEnv::new("dp-frontend")?;
     let mut session = Session::start(env, bridge, config, standalone)?;

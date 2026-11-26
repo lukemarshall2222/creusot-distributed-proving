@@ -161,6 +161,8 @@ impl<E: Env> Shell<E> {
                             / u128::from(current.velocity.max(1))) as u64,
                         velocity: current.velocity,
                         local_micros: current.local_micros,
+                        // The run imported nothing.
+                        imports_hash: hash::imports_hash(&[]),
                     };
                     let msg = Message::Result(SignedResult::sign(fields, &self.config.key));
                     self.send(&msg);

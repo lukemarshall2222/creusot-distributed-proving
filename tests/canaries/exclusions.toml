@@ -1,0 +1,7 @@
+# Canaries without a witness, each with the reason (R7.5 criterion 4). A
+# canary that is listed here is still run in every mode; it does not count
+# towards the witnessed canaries of a mode.
+#
+# [[exclusion]]
+# id = "..."
+# reason = "..."

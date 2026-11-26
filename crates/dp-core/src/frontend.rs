@@ -187,6 +187,9 @@ pub enum Input {
         /// The Calibration and the local time limit that the Worker signed.
         velocity: u64,
         local_micros: u64,
+        /// The import-set hash that the Worker signed is the hash of the
+        /// imports that the Result lists (R1.3 criterion 7).
+        imports_consistent: bool,
     },
     /// The Cluster reported that it did not run a Job.
     JobNotRun { now: Time, rid: CallId, seed: u64 },
@@ -383,7 +386,7 @@ fn context(config: Config, evidence: Evidence) -> Context {
 /// criterion 2 holds; this is the only source of a `Valid` reply.
 #[ensures(result == Decision::Proved ==> crate::verdict::standalone(evidence.fields, *ctx))]
 #[ensures(result == Decision::Proved ==> match remote {
-    Some(facts) => facts.signature_valid && facts.registered && !facts.revoked && facts.submitted,
+    Some(facts) => crate::verdict::authentic(facts),
     None => true,
 })]
 pub fn decide(evidence: Evidence, ctx: &Context, remote: Option<RemoteFacts>) -> Decision {
@@ -758,7 +761,8 @@ pub fn step(mut s: State, i: Input) -> Step<State, Effect> {
             conclude(s, k, evidence, None, member, TlaAction::LocalExit)
         }
         Input::RemoteResult {
-            rid, seed, prover, evidence, signature_valid, registered, revoked, velocity, local_micros, ..
+            rid, seed, prover, evidence, signature_valid, registered, revoked, velocity, local_micros,
+            imports_consistent, ..
         } => {
             let k = match find_call(&s.calls, rid) {
                 Some(k) => k,
@@ -786,10 +790,11 @@ pub fn step(mut s: State, i: Input) -> Step<State, Effect> {
                 revoked,
                 // The Job as submitted: an open Job of the call, for the
                 // call's prover (R1.3 criterion 6).
-                // and with the local time limit that its reference limit
-                // and the Worker's Calibration give (R1.4 criterion 6).
-                submitted: prover == s.calls[k].prover
-                    && local_micros == crate::calibration::scale(s.calls[k].micros, velocity),
+                submitted: prover == s.calls[k].prover,
+                // The local time limit that the call's reference limit and
+                // the Worker's Calibration give (R1.4 criterion 6).
+                limits_consistent: local_micros == crate::calibration::scale(s.calls[k].micros, velocity),
+                imports_consistent,
             };
             conclude(s, k, evidence, Some(facts), false, TlaAction::RemoteResult)
         }

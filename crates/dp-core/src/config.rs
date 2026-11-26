@@ -14,6 +14,10 @@ use creusot_std::prelude::{Clone, DeepModel, PartialEq, *};
 /// bound, not a proposal for an open parameter.
 pub const MAX_SEEDS: u64 = 64;
 
+/// The largest certificate that a Session may be configured to take, in
+/// megabytes. A working bound, as `MAX_SEEDS`.
+pub const MAX_PROOF_MEGABYTES: u64 = 4096;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, DeepModel)]
 pub struct Settings {
     /// The cluster option is set.
@@ -39,6 +43,11 @@ pub struct Settings {
     /// The checker and its signature files are named.
     pub checker_given: bool,
     pub certify_all: bool,
+    /// The largest certificate that the Session takes, in megabytes.
+    pub proof_megabytes: u64,
+    /// A time limit of the checker is set, and it is positive.
+    pub check_limit_given: bool,
+    pub check_limit: u64,
     /// The bounded tracing retention setting is chosen, with this many
     /// records.
     pub trace_bounded: bool,
@@ -72,6 +81,10 @@ pub enum ConfigError {
     Certification,
     /// Certifying every proof needs certification to be on.
     CertifyAll,
+    /// A certificate has between 1 and `MAX_PROOF_MEGABYTES` megabytes.
+    ProofSize,
+    /// A time limit of the checker is positive.
+    CheckLimit,
     /// The bounded retention setting keeps at least one record.
     TraceRetention,
 }
@@ -90,6 +103,8 @@ pub fn valid(s: Settings) -> bool {
               s.beat_period@ >= 1 && 2 * s.beat_period@ <= s.silence_limit@)
         && (s.certify ==> s.checker_given)
         && (s.certify_all ==> s.certify)
+        && (s.certify ==> 1 <= s.proof_megabytes@ && s.proof_megabytes@ <= MAX_PROOF_MEGABYTES@)
+        && (s.certify && s.check_limit_given ==> s.check_limit@ >= 1)
         && (s.trace_bounded ==> s.trace_keep@ >= 1)
     }
 }
@@ -129,6 +144,12 @@ pub fn validate_config(s: &Settings) -> Option<ConfigError> {
     }
     if s.certify_all && !s.certify {
         return Some(ConfigError::CertifyAll);
+    }
+    if s.certify && (s.proof_megabytes < 1 || s.proof_megabytes > MAX_PROOF_MEGABYTES) {
+        return Some(ConfigError::ProofSize);
+    }
+    if s.certify && s.check_limit_given && s.check_limit < 1 {
+        return Some(ConfigError::CheckLimit);
     }
     if s.trace_bounded && s.trace_keep < 1 {
         return Some(ConfigError::TraceRetention);

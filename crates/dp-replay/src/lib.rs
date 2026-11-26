@@ -376,8 +376,14 @@ impl Replay {
             return no(&format!("the prover {} of the certificate is not configured here", certificate.prover));
         }
         let digest = self.provers()?[&certificate.prover].info.digest.clone();
-        let printed = self.bridge.print(gid, &certificate.prover, &[])?;
-        let task_hash = hash::task_hash(&printed.bytes, digest.as_bytes(), b"");
+        let printed = match self.bridge.print(gid, &certificate.prover, &dp_cert::pipeline()) {
+            Ok(printed) => printed,
+            Err(dp_shell::why3find::BridgeError::Refused(reason)) => {
+                return no(&format!("the certifying print failed: {reason}"));
+            }
+            Err(e) => return Err(e.into()),
+        };
+        let task_hash = hash::task_hash(&printed.bytes, digest.as_bytes(), &dp_cert::pipeline_hash());
         if printed.tasks != 1 || task_hash != certificate.task_hash || printed.bytes != certificate.goal {
             return no("the certificate is not for the Goal as printed here");
         }

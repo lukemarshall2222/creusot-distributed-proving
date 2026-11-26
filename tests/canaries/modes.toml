@@ -1,0 +1,60 @@
+# The modes that the canary harness runs (R7.5 criteria 5 to 7). The
+# harness fails if a mode listed here did not run, if it ran a mode that is
+# not listed, and if a mode ran fewer quantified canaries, or proved fewer
+# witnesses, than it states. `kind` says which canaries the mode takes.
+
+[[mode]]
+name = "local"
+kind = "why3"
+what = "one Session on this machine, nothing stored before"
+min_quantified = 10
+min_witnesses_proved = 10
+
+[[mode]]
+name = "warm-cache"
+kind = "why3"
+what = "a second Session on the Result_Cache of the first"
+min_quantified = 10
+min_witnesses_proved = 10
+
+[[mode]]
+name = "certification"
+kind = "why3"
+what = "Alt-Ergo is not an Unpatched_Solver, so its proofs need a certificate"
+min_quantified = 10
+min_witnesses_proved = 8
+
+[[mode]]
+name = "certify-all"
+kind = "why3"
+what = "every reported proof needs a certificate"
+min_quantified = 10
+min_witnesses_proved = 6
+
+[[mode]]
+name = "cluster"
+kind = "why3"
+what = "every prover call goes to Workers through a Coordinator"
+min_quantified = 10
+min_witnesses_proved = 10
+
+[[mode]]
+name = "portfolio"
+kind = "why3"
+what = "a Portfolio of two provers races on the Cluster, the first pass included"
+min_quantified = 10
+min_witnesses_proved = 10
+
+[[mode]]
+name = "replay"
+kind = "why3"
+what = "dp-replay on the proof files of a Session, and after every stored answer was forged to Valid"
+min_quantified = 10
+min_witnesses_proved = 10
+
+[[mode]]
+name = "creusot-cli"
+kind = "creusot"
+what = "cargo creusot --backend on the canary functions"
+min_quantified = 2
+min_witnesses_proved = 1

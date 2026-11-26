@@ -104,6 +104,11 @@ pub struct CertificationOptions {
     pub enabled: Option<bool>,
     /// Every reported proof does (R5.5).
     pub certify_all: Option<bool>,
+    /// The time limit of one run of the checker, in seconds. Without it
+    /// the limit follows from the time limit of the prover call.
+    pub check_seconds: Option<f64>,
+    /// The largest certificate that the Session takes, in megabytes.
+    pub proof_megabytes: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

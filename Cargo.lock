@@ -217,6 +217,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "dp-canaries"
+version = "0.0.0"
+dependencies = [
+ "creusot-std",
+ "dp-formats",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "dp-canon"
 version = "0.0.0"
 dependencies = [
@@ -281,6 +292,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dp-integration"
+version = "0.0.0"
+dependencies = [
+ "dp-formats",
+ "serde_json",
+]
+
+[[package]]
 name = "dp-pool"
 version = "0.0.0"
 dependencies = [
@@ -330,6 +349,7 @@ dependencies = [
  "dp-core",
  "dp-formats",
  "dp-shell",
+ "ed25519-dalek",
 ]
 
 [[package]]

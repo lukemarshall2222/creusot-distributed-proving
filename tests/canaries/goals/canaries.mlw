@@ -1,0 +1,67 @@
+(* Canary_Goals (R7.5): Goals that are false, each with a witness.
+
+   A canary `cNN` is a predicate `cNN` in `Defs`, the Goal `Canary_cNN` in
+   `Canaries` that states it for every argument, and the Goal `Witness_cNN`
+   in `Witnesses` that states its negation at one argument. The harness
+   checks these shapes, has unmodified why3find prove every witness on
+   every run, and fails if any mode gives a canary a proof label.
+   `registry.toml` lists the canaries. *)
+
+module Defs
+  use int.Int
+  use int.Abs
+  use int.MinMax
+  use list.List
+  use list.Length
+
+  predicate c01 (x: int) = x * x > x
+  predicate c02 (a b: int) = a < b -> a + 1 < b
+  predicate c03 (x: int) = abs x = x
+  predicate c04 (x y: int) = x <= y -> x * x <= y * y
+  predicate c05 (p q: bool) = (p -> q) -> (q -> p)
+  predicate c06 (l: list int) = length l > 0
+  predicate c07 (x y: int) = max x y = x
+  predicate c08 (x: int) = exists y: int. y > x /\ y < x + 1
+  predicate c09 (x y: int) = x - y = y - x
+  predicate c10 (x: int) = x >= 0
+  predicate c11 (a b c: int) = a <= b -> a * c <= b * c
+  predicate c12 (x: int) = x = x + 1
+end
+
+module Canaries
+  use int.Int
+  use list.List
+  use Defs
+
+  goal Canary_c01: forall x: int. c01 x
+  goal Canary_c02: forall a b: int. c02 a b
+  goal Canary_c03: forall x: int. c03 x
+  goal Canary_c04: forall x y: int. c04 x y
+  goal Canary_c05: forall p q: bool. c05 p q
+  goal Canary_c06: forall l: list int. c06 l
+  goal Canary_c07: forall x y: int. c07 x y
+  goal Canary_c08: forall x: int. c08 x
+  goal Canary_c09: forall x y: int. c09 x y
+  goal Canary_c10: forall x: int. c10 x
+  goal Canary_c11: forall a b c: int. c11 a b c
+  goal Canary_c12: c12 0
+end
+
+module Witnesses
+  use int.Int
+  use list.List
+  use Defs
+
+  goal Witness_c01: not (c01 0)
+  goal Witness_c02: not (c02 0 1)
+  goal Witness_c03: not (c03 (-1))
+  goal Witness_c04: not (c04 (-2) 1)
+  goal Witness_c05: not (c05 False True)
+  goal Witness_c06: not (c06 (Nil: list int))
+  goal Witness_c07: not (c07 0 1)
+  goal Witness_c08: not (c08 0)
+  goal Witness_c09: not (c09 1 0)
+  goal Witness_c10: not (c10 (-1))
+  goal Witness_c11: not (c11 0 1 (-1))
+  goal Witness_c12: not (c12 0)
+end

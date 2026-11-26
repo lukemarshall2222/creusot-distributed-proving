@@ -111,9 +111,9 @@ fn input() -> impl Strategy<Value = Input> {
         8 => (now.clone(), rid.clone(), seed.clone(), 1u64..3, evidence(),
               prop::bool::weighted(0.85), prop::bool::weighted(0.85), prop::bool::weighted(0.1),
               prop_oneof![4 => Just(1_000_000u64), 1 => Just(2_000_000u64)],
-              prop_oneof![3 => Just(5u64), 3 => Just(10u64), 1 => Just(20u64)])
-            .prop_map(|(now, rid, seed, prover, evidence, signature_valid, registered, revoked, velocity, local_micros)| Input::RemoteResult {
-                now, rid, seed, prover, evidence, signature_valid, registered, revoked, velocity, local_micros,
+              prop_oneof![3 => Just(5u64), 3 => Just(10u64), 1 => Just(20u64)], prop::bool::weighted(0.9))
+            .prop_map(|(now, rid, seed, prover, evidence, signature_valid, registered, revoked, velocity, local_micros, imports_consistent)| Input::RemoteResult {
+                now, rid, seed, prover, evidence, signature_valid, registered, revoked, velocity, local_micros, imports_consistent,
             }),
         2 => (now.clone(), rid.clone(), seed).prop_map(|(now, rid, seed)| Input::JobNotRun { now, rid, seed }),
         2 => (now.clone(), rid).prop_map(|(now, rid)| Input::CancelCall { now, rid }),
@@ -240,10 +240,12 @@ proptest! {
                         prop_assert_eq!(r, rid);
                         prop_assert!(standalone(&evidence));
                     }
-                    Input::RemoteResult { rid: r, seed, prover, evidence, signature_valid, registered, revoked, velocity, local_micros, .. } => {
+                    Input::RemoteResult { rid: r, seed, prover, evidence, signature_valid, registered, revoked, velocity, local_micros, imports_consistent, .. } => {
                         prop_assert_eq!(r, rid);
                         prop_assert!(standalone(&evidence));
                         prop_assert!(signature_valid && registered && !revoked);
+                        // the import-set hash is the recomputed one (P1.3.7)
+                        prop_assert!(imports_consistent);
                         let call = before.calls.iter().find(|c| c.rid == rid).unwrap();
                         prop_assert!(call.jobs.contains(&seed));
                         prop_assert_eq!(call.prover, prover);
@@ -350,7 +352,7 @@ fn racing() -> State {
 fn result(seed: u64, evidence: Evidence, authentic: bool) -> Input {
     Input::RemoteResult {
         now: 1, rid: 9, seed, prover: 1, evidence, signature_valid: authentic, registered: true, revoked: false,
-        velocity: 1_000_000, local_micros: 4,
+        velocity: 1_000_000, local_micros: 4, imports_consistent: true,
     }
 }
 
@@ -380,8 +382,8 @@ fn a_result_that_is_not_authentic_leaves_its_job_open() {
     let before = racing();
     for forged in [
         result(0, good(), false),
-        Input::RemoteResult { now: 1, rid: 9, seed: 0, prover: 1, evidence: good(), signature_valid: true, registered: false, revoked: false, velocity: 1_000_000, local_micros: 4 },
-        Input::RemoteResult { now: 1, rid: 9, seed: 0, prover: 1, evidence: good(), signature_valid: true, registered: true, revoked: true, velocity: 1_000_000, local_micros: 4 },
+        Input::RemoteResult { now: 1, rid: 9, seed: 0, prover: 1, evidence: good(), signature_valid: true, registered: false, revoked: false, velocity: 1_000_000, local_micros: 4, imports_consistent: true },
+        Input::RemoteResult { now: 1, rid: 9, seed: 0, prover: 1, evidence: good(), signature_valid: true, registered: true, revoked: true, velocity: 1_000_000, local_micros: 4, imports_consistent: true },
     ] {
         let out = step(before.clone(), forged);
         assert_eq!(out.action, TlaAction::Discard);
@@ -397,18 +399,24 @@ fn an_authentic_result_for_another_prover_or_task_proves_nothing() {
     // Signed and registered, but for a prover that the call did not submit.
     let wrong_prover = Input::RemoteResult {
         now: 1, rid: 9, seed: 0, prover: 2, evidence: good(), signature_valid: true, registered: true, revoked: false,
-        velocity: 1_000_000, local_micros: 4,
+        velocity: 1_000_000, local_micros: 4, imports_consistent: true,
     };
     // Signed and registered, but run with a limit that the Worker's
     // Calibration does not give for the call's reference limit.
     let wrong_limit = Input::RemoteResult {
         now: 1, rid: 9, seed: 0, prover: 1, evidence: good(), signature_valid: true, registered: true, revoked: false,
-        velocity: 2_000_000, local_micros: 4,
+        velocity: 2_000_000, local_micros: 4, imports_consistent: true,
+    };
+    // Signed and registered, but with an import-set hash that is not the
+    // hash of the imports it lists (R1.3 criterion 7).
+    let wrong_imports = Input::RemoteResult {
+        now: 1, rid: 9, seed: 0, prover: 1, evidence: good(), signature_valid: true, registered: true, revoked: false,
+        velocity: 1_000_000, local_micros: 4, imports_consistent: false,
     };
     // Signed and registered, but run on another Printed_Goal.
     let mut other_task = good();
     other_task.fields.task_hash = h(8);
-    for input in [wrong_prover, wrong_limit, result(0, other_task, true)] {
+    for input in [wrong_prover, wrong_limit, wrong_imports, result(0, other_task, true)] {
         let (state, effects) = run(racing(), &[input, result(1, unknown(), true), result(2, unknown(), true)]);
         assert_eq!(effects, vec![Effect::Answer { rid: 9, reply: Reply::Unknown }]);
         assert!(state.verdicts.entries.is_empty());

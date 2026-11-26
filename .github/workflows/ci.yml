@@ -1,9 +1,12 @@
 # CI on Linux (task 1.4, first version). Each step named ci/<job> runs
 # ci/jobs/<job>.sh, which also runs on a developer machine.
 #
+# ci/test also runs the simulator tests (tests/sim), the canary harness
+# (tests/canaries) and the tests through Creusot_CLI (tests/integration).
+#
 # Not here yet: the other jobs of the R7.11 job list (ci/lean, ci/kani,
-# ci/sim, ci/canaries, ci/traceability and the rest), which have nothing to
-# check so far, and the scheduled jobs.
+# ci/traceability and the rest), which have nothing to check so far, and
+# the scheduled jobs.
 name: ci
 
 on:

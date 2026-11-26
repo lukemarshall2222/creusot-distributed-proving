@@ -14,7 +14,9 @@ members = [
     "crates/dp-canon",
     "crates/dp-cert",
     "crates/dp-replay",
+    "tests/canaries",
     "tests/diff",
+    "tests/integration",
     "tests/sim",
 ]
 
