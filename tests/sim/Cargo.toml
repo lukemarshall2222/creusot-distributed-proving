@@ -26,6 +26,10 @@ name = "trace"
 path = "examples/trace.rs"
 
 [[test]]
+name = "adversarial_coordinator"
+path = "adversarial_coordinator.rs"
+
+[[test]]
 name = "faults"
 path = "faults.rs"
 

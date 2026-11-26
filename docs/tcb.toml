@@ -1,6 +1,6 @@
 # The TCB_Document (R7.8). The items are derived from requirements.md by
 # `cargo run -p tcb-check -- --write`; the tools, their reasons and the
-# every_label marks are written by hand. `ci/tcb` checks both.
+# every_label marks are written by hand. `ci/tcb-check` checks both.
 
 information_order = [
     "standalone-invalid",

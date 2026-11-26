@@ -298,7 +298,12 @@ pub fn run(root: &Path, write: bool) -> Result<Vec<String>, String> {
     let rendered_path = root.join("docs/traceability.md");
     let requirements = read(&root.join(".kiro/specs/creusot-distributed-proving/requirements.md"))?;
     let tracked = tracked_files(root)?;
-    let jobs = workflow_jobs(&read(&root.join(".github/workflows/ci.yml"))?);
+    // The jobs of every workflow: the gating one and the scheduled one.
+    let mut jobs = BTreeSet::new();
+    let workflows = root.join(".github/workflows");
+    for entry in fs::read_dir(&workflows).map_err(|e| format!("{}: {e}", workflows.display()))?.flatten() {
+        jobs.extend(workflow_jobs(&read(&entry.path())?));
+    }
     let mut table: Table = match read(&table_path) {
         Ok(text) => toml::from_str(&text).map_err(|e| format!("docs/traceability.toml: {e}"))?,
         Err(_) if write => Table::default(),

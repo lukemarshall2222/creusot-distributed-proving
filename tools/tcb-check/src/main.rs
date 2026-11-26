@@ -16,17 +16,17 @@ fn main() -> ExitCode {
     }
     match tcb_check::run(&root, write) {
         Ok(problems) if problems.is_empty() => {
-            println!("ci/tcb: docs/tcb.toml agrees with the requirements, the Lock_File and dp-core");
+            println!("ci/tcb-check: docs/tcb.toml agrees with the requirements, the Lock_File and dp-core");
             ExitCode::SUCCESS
         }
         Ok(problems) => {
             for p in &problems {
-                eprintln!("ci/tcb: {p}");
+                eprintln!("ci/tcb-check: {p}");
             }
             ExitCode::from(1)
         }
         Err(e) => {
-            eprintln!("ci/tcb: {e}");
+            eprintln!("ci/tcb-check: {e}");
             ExitCode::from(2)
         }
     }

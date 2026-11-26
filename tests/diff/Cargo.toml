@@ -9,6 +9,7 @@ publish.workspace = true
 path = "lib.rs"
 
 [dependencies]
+dp-core.workspace = true
 dp-formats.workspace = true
 serde_json = "1"
 
@@ -23,6 +24,10 @@ path = "legacy_reader/main.rs"
 [[test]]
 name = "cache_on_off"
 path = "cache_on_off/main.rs"
+
+[[test]]
+name = "label_lean_vs_rust"
+path = "label_lean_vs_rust/main.rs"
 
 [lints]
 workspace = true

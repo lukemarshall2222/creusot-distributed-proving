@@ -1,0 +1,18 @@
+--- crates/dp-core/src/calibration.rs
++++ replace > with >= in scale
+@@ -37,14 +37,14 @@
+     }
+     let high = whole * velocity;
+     let low = if velocity != 0 && part > u64::MAX / velocity {
+         // Split the velocity the same way; `part` is below 10^6.
+         part * (velocity / 1_000_000) + part * (velocity % 1_000_000) / 1_000_000
+     } else {
+         part * velocity / 1_000_000
+     };
+-    if high > u64::MAX - low {
++    if high >= /* ~ changed by cargo-mutants ~ */ u64::MAX - low {
+         u64::MAX
+     } else {
+         high + low
+     }
+ }

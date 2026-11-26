@@ -1,0 +1,61 @@
+# The libFuzzer builds of the fuzz targets (sched/fuzz-nightly). A package of
+# its own, outside the workspace: libFuzzer needs a nightly compiler and its
+# own runtime, which the rest of the build does not.
+#
+#   cargo +nightly fuzz run --fuzz-dir fuzz/libfuzzer result_message
+[package]
+name = "dp-fuzz-libfuzzer"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+dp-fuzz = { path = ".." }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "result_message"
+path = "../result_message/fuzz_target.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "proofjson"
+path = "../proofjson/fuzz_target.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cache_entry"
+path = "../cache_entry/fuzz_target.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cert_manifest"
+path = "../cert_manifest/fuzz_target.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config_parser"
+path = "../config_parser/fuzz_target.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "checker_output"
+path = "../checker_output/fuzz_target.rs"
+test = false
+doc = false
+bench = false

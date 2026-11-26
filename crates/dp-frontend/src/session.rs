@@ -41,14 +41,18 @@ use dp_core::{
     verdict::{self, Label, RemoteFacts, ResultFields, UnpatchedSolver},
 };
 use dp_formats::{
-    cache::{self, Entry, Origin},
+    cache::{Entry, Origin},
     cluster::{Job, JobKind, Message, Registry, SignedResult},
     dispatch::{DriverAnswer, FromWhy3find, ProverInfo, ProverResult, StrategyStep, ToWhy3find},
     hash::{self, Hash},
     lockfile::{current_platform, Kind, LockFile},
     proofjson::{DpEntry, InvalidEntry, Place, ReplayFields},
 };
-use crate::proofs::{self, GoalLabel};
+use crate::{
+    accept::{self, core_answer, core_hash, driver_answer},
+    cache::{self as result_cache, formats_atoms},
+    proofs::{self, GoalLabel},
+};
 use dp_shell::{
     env::{Env, NetEvent, OsEnv, Peer, RunSpec},
     solver,
@@ -60,7 +64,6 @@ use dp_shell::{
 /// Size limit of one `dispatch` message and of one cache entry. Working
 /// values, not proposals for `<TBD-22>`.
 const MESSAGE_LIMIT: usize = 1 << 30;
-const ENTRY_LIMIT: usize = 1 << 24;
 
 /// The Cluster of a Session: the Coordinator's address and the Worker
 /// registry, already verified against the operator signing key.
@@ -182,39 +185,8 @@ impl From<std::io::Error> for SessionError {
     }
 }
 
-fn core_hash(h: Hash) -> verdict::Hash {
-    let w = |i: usize| u64::from_be_bytes(h.0[8 * i..8 * i + 8].try_into().expect("8 bytes"));
-    verdict::Hash { w0: w(0), w1: w(1), w2: w(2), w3: w(3) }
-}
-
 fn file_hash(path: &Path) -> std::io::Result<Hash> {
     Ok(hash::sha256(&fs::read(path)?))
-}
-
-fn core_answer(answer: DriverAnswer) -> ProverAnswer {
-    match answer {
-        DriverAnswer::Valid => ProverAnswer::Valid,
-        DriverAnswer::Invalid => ProverAnswer::Invalid,
-        DriverAnswer::Timeout => ProverAnswer::Timeout,
-        DriverAnswer::OutOfMemory => ProverAnswer::OutOfMemory,
-        DriverAnswer::StepLimitExceeded => ProverAnswer::StepLimitExceeded,
-        DriverAnswer::Unknown => ProverAnswer::Unknown,
-        DriverAnswer::Failure => ProverAnswer::Failure,
-        DriverAnswer::HighFailure => ProverAnswer::HighFailure,
-    }
-}
-
-fn driver_answer(answer: ProverAnswer) -> DriverAnswer {
-    match answer {
-        ProverAnswer::Valid => DriverAnswer::Valid,
-        ProverAnswer::Invalid => DriverAnswer::Invalid,
-        ProverAnswer::Timeout => DriverAnswer::Timeout,
-        ProverAnswer::OutOfMemory => DriverAnswer::OutOfMemory,
-        ProverAnswer::StepLimitExceeded => DriverAnswer::StepLimitExceeded,
-        ProverAnswer::Unknown => DriverAnswer::Unknown,
-        ProverAnswer::Failure => DriverAnswer::Failure,
-        ProverAnswer::HighFailure => DriverAnswer::HighFailure,
-    }
 }
 
 fn json_string(text: &str) -> String {
@@ -679,10 +651,6 @@ impl<E: Env, W: Why3find> Session<E, W> {
         })
     }
 
-    fn cache_file(&self, atoms: &[cache::Atom]) -> PathBuf {
-        self.dir.join(".dp-cache").join(cache::cache_key(atoms).to_hex())
-    }
-
     /// Looks the run description of a call up in the Result_Cache. A hit is
     /// an entry whose stored lookup fields are those of the lookup and whose
     /// validation fields pass; it is returned as a cache-hit input, which
@@ -731,23 +699,18 @@ impl<E: Env, W: Why3find> Session<E, W> {
     ) -> Result<Option<(Input, Finished, DriverAnswer)>, SessionError> {
         let prover = prover.to_string();
         let wanted = cache_key::encode_key(&self.lookup_fields(call, &prover, seed)?);
-        let path = self.cache_file(&formats_atoms(&wanted));
-        let Ok(bytes) = fs::read(&path) else { return Ok(None) };
+        let path = result_cache::file(&self.dir, &formats_atoms(&wanted));
         let miss = |reason: &str| {
             eprintln!("dp-frontend: Result_Cache entry {} is a miss: {reason}", path.display());
         };
-        let entry = match Entry::decode(&bytes, ENTRY_LIMIT) {
-            Ok(entry) => entry,
-            Err(e) => {
-                miss(&e.to_string());
+        let entry = match result_cache::read(&self.dir, &wanted) {
+            result_cache::Read::Absent => return Ok(None),
+            result_cache::Read::Miss(_, reason) => {
+                miss(&reason);
                 return Ok(None);
             }
+            result_cache::Read::Entry(entry) => entry,
         };
-        // The stored lookup fields themselves, not only the key (criterion 5).
-        if !cache_key::lookup_ok(&core_atoms(&entry.lookup), &wanted) {
-            miss("its lookup fields are not those of the lookup");
-            return Ok(None);
-        }
         let (gid, micros) = {
             let c = &self.calls[&call];
             (c.gid.clone(), c.micros)
@@ -791,20 +754,8 @@ impl<E: Env, W: Why3find> Session<E, W> {
         let (task_hash, result_prover, remote) = match &entry.origin {
             Origin::Local => (local_task_hash, prover.clone(), None),
             Origin::Worker(signed) => {
-                let key = self.registry.as_ref().and_then(|registry| registry.key(&signed.fields.worker));
-                let facts = RemoteFacts {
-                    registered: key.is_some(),
-                    revoked: self.revoked.contains(&signed.fields.worker),
-                    signature_valid: key.is_some_and(|k| signed.verifies(&k)),
-                    submitted: signed.fields.prover == prover
-                        && signed.fields.seed == seed
-                        && signed.fields.binary_hash == entry.binary_hash,
-                    // The entry's own time limits were validated above; the
-                    // signed ones must be the same.
-                    limits_consistent: signed.fields.velocity == entry.velocity
-                        && signed.fields.local_micros == entry.local_micros,
-                    imports_consistent: signed.fields.imports_hash == hash::imports_hash(&[]),
-                };
+                let facts =
+                    accept::stored_result_facts(signed, self.registry.as_ref(), &self.revoked, &prover, seed, &entry);
                 (signed.fields.task_hash, signed.fields.prover.clone(), Some(facts))
             }
         };
@@ -882,7 +833,7 @@ impl<E: Env, W: Why3find> Session<E, W> {
             micros: finished.micros,
             origin,
         };
-        store::write_atomic(&self.cache_file(&entry.lookup), &entry.encode())?;
+        result_cache::write(&self.dir, &entry)?;
         Ok(())
     }
 
@@ -1715,19 +1666,7 @@ impl<E: Env, W: Why3find> Session<E, W> {
             return Ok(());
         };
         let (_, registry) = self.cluster.as_ref().expect("a Result arrives from the Cluster");
-        let key = registry.key(&signed.fields.worker);
-        let facts = RemoteFacts {
-            registered: key.is_some(),
-            revoked: self.revoked.contains(&signed.fields.worker),
-            signature_valid: key.is_some_and(|k| signed.verifies(&k)),
-            // Decided by dp-core: from the prover and the seed, and from the
-            // Calibration and the limits that the Result records.
-            submitted: true,
-            limits_consistent: true,
-            // A Result lists no imports, so the hash it may carry is that
-            // of the empty set (R1.3 criterion 7).
-            imports_consistent: signed.fields.imports_hash == hash::imports_hash(&[]),
-        };
+        let facts = accept::result_facts(&signed, Some(registry), &self.revoked);
         let authentic = facts.registered && facts.signature_valid && !facts.revoked;
         if !authentic {
             eprintln!(
@@ -2189,26 +2128,6 @@ fn final_write(
         }
     }
     Ok((labels, conflicts))
-}
-
-fn formats_atoms(atoms: &[cache_key::Atom]) -> Vec<cache::Atom> {
-    atoms
-        .iter()
-        .map(|a| match a {
-            cache_key::Atom::Bytes(b) => cache::Atom::Bytes(b.clone()),
-            cache_key::Atom::Num(n) => cache::Atom::Num(*n),
-        })
-        .collect()
-}
-
-fn core_atoms(atoms: &[cache::Atom]) -> Vec<cache_key::Atom> {
-    atoms
-        .iter()
-        .map(|a| match a {
-            cache::Atom::Bytes(b) => cache_key::Atom::Bytes(b.clone()),
-            cache::Atom::Num(n) => cache_key::Atom::Num(*n),
-        })
-        .collect()
 }
 
 /// Runs one Session and returns the exit status for Creusot_CLI.

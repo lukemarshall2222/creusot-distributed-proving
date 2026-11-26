@@ -1,0 +1,21 @@
+--- crates/dp-core/src/verdict.rs
++++ replace > with >= in position
+@@ -345,17 +345,17 @@
+ fn position(entries: &Vec<Verdict>, goal: GoalId) -> Result<usize, usize> {
+     let mut k = 0;
+     #[invariant(k@ <= entries@.len())]
+     #[invariant(forall<i> 0 <= i && i < k@ ==> entries[i].goal@ < goal@)]
+     while k < entries.len() {
+         if entries[k].goal == goal {
+             return Ok(k);
+         }
+-        if entries[k].goal > goal {
++        if entries[k].goal >= /* ~ changed by cargo-mutants ~ */ goal {
+             return Err(k);
+         }
+         k += 1;
+     }
+     Err(k)
+ }
+ 
+ #[requires(increasing(entries@))]

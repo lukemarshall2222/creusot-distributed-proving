@@ -27,6 +27,8 @@ use dp_testkit::sim::{script, Faults, Node, SimEnv, World, BINARY_HASH};
 use dp_worker::shell::{Config as WorkerConfig, Shell as WorkerShell};
 use ed25519_dalek::SigningKey;
 
+pub mod adversary;
+
 pub const ADDRESS: &str = "coordinator";
 /// The provers of the simulated project.
 pub const PROVER: &str = "stub@";
@@ -292,6 +294,8 @@ impl Setup {
 pub struct Cluster {
     pub world: Rc<RefCell<World>>,
     pub coordinator: Option<CoordinatorShell<SimEnv>>,
+    /// In place of the Coordinator: one that is not to be trusted.
+    pub adversary: Option<adversary::Adversary>,
     pub workers: BTreeMap<Node, WorkerShell<SimEnv>>,
     pub front_end: Session<SimEnv, Scripted>,
     keys: BTreeMap<Node, SigningKey>,
@@ -428,10 +432,22 @@ impl Cluster {
         // The Front_End connects once the Coordinator listens.
         let front_end = Session::start(SimEnv::new(&world, FRONT_END), why3find, config, Default::default())
             .expect("a simulated Session starts");
-        let mut cluster = Cluster { world, coordinator, workers: BTreeMap::new(), front_end, keys, speeds, dir };
+        let mut cluster =
+            Cluster { world, coordinator, adversary: None, workers: BTreeMap::new(), front_end, keys, speeds, dir };
         for node in nodes {
             cluster.start_worker(node);
         }
+        cluster
+    }
+
+    /// A Cluster whose Coordinator is an adversary (`adversary.rs`), with
+    /// `workers` honest Workers.
+    pub fn adversarial(seed: u64, workers: u32, script: Vec<Call>) -> Cluster {
+        let mut cluster = Cluster::new(seed, Faults::none(), workers, 0, script, 1);
+        // The Coordinator has not taken a turn: what the others sent to
+        // its node is read by the adversary.
+        cluster.coordinator = None;
+        cluster.adversary = Some(adversary::Adversary::new(SimEnv::new(&cluster.world, COORDINATOR), seed));
         cluster
     }
 
@@ -490,13 +506,16 @@ impl Cluster {
             if let Some(coordinator) = &mut self.coordinator {
                 coordinator.turn(Duration::ZERO).expect("simulated turn");
             }
+            if let Some(adversary) = &mut self.adversary {
+                adversary.turn();
+            }
             for worker in self.workers.values_mut() {
                 worker.turn(Duration::ZERO).expect("simulated turn");
             }
             self.front_end.turn(Duration::ZERO).expect("simulated turn");
             let waiting = self.front_end.bridge.pending() || {
                 let world = self.world.borrow();
-                (self.coordinator.is_some() && world.pending(COORDINATOR))
+                ((self.coordinator.is_some() || self.adversary.is_some()) && world.pending(COORDINATOR))
                     || self.workers.keys().any(|n| world.pending(*n))
                     || world.pending(FRONT_END)
             };

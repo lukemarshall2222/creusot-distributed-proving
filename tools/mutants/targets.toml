@@ -1,0 +1,36 @@
+# The soundness-critical targets of mutation testing (R7.13 criterion 5):
+# this file is the authoritative list. A mutant of a target that the tests
+# do not catch fails the gate, unless exclusions.toml lists it with an
+# artifact that shows the mutant to be equivalent.
+#
+# A target without `function` is every function of the file that is no
+# logic function (those exist for the proofs only; a mutant of one changes
+# nothing that runs). The helpers of a decision function are in its file,
+# so they are targets with it.
+#
+# `mutants-gate --check` fails when a function that a Soundness-critical
+# row of docs/traceability.toml names, and that exists in these crates, is
+# no target.
+
+# The crates whose tests must catch the mutants (R7.3 criterion 5).
+packages = ["dp-core"]
+
+# Share of the targets' mutants that the tests must catch, exclusions
+# aside. A working value for <TBD-19>: every one.
+threshold = 1.0
+
+[[target]]
+file = "crates/dp-core/src/verdict.rs"
+
+[[target]]
+file = "crates/dp-core/src/labels.rs"
+
+[[target]]
+file = "crates/dp-core/src/cache_key.rs"
+
+[[target]]
+file = "crates/dp-core/src/calibration.rs"
+
+[[target]]
+file = "crates/dp-core/src/frontend.rs"
+function = "decide"

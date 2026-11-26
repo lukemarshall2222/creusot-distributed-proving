@@ -1,0 +1,21 @@
+[package]
+name = "dp-fuzz"
+description = "Fuzz harnesses of the parsers that read untrusted bytes, and their smoke run (R7.10)"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+dp-formats.workspace = true
+dp-cert.workspace = true
+ed25519-dalek = "2"
+
+[[test]]
+name = "smoke"
+path = "smoke.rs"
+
+[lints]
+workspace = true

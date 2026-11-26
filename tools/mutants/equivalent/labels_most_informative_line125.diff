@@ -1,0 +1,19 @@
+--- crates/dp-core/src/labels.rs
++++ replace < with <= in most_informative
+@@ -117,15 +117,15 @@
+     let mut best = Outcome::Unresolved;
+     let mut i = 0;
+     #[invariant(i@ <= outcomes@.len())]
+     #[invariant(forall<j> 0 <= j && j < i@ ==> best.rank() <= outcomes[j].rank())]
+     #[invariant(best == Outcome::Unresolved
+         || exists<j> 0 <= j && j < i@ && outcomes[j] == best)]
+     while i < outcomes.len() {
+         let o = outcomes[i];
+-        if o.rank_u8() < best.rank_u8() {
++        if o.rank_u8() <= /* ~ changed by cargo-mutants ~ */ best.rank_u8() {
+             best = o;
+         }
+         i += 1;
+     }
+     best
+ }

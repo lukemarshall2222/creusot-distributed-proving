@@ -1,4 +1,4 @@
-//! `ci/tcb` (R7.8, design C20): the TCB_Document `docs/tcb.toml`.
+//! `ci/tcb-check` (R7.8, design C20): the TCB_Document `docs/tcb.toml`.
 //!
 //! The document lists what the labels of the System rest on: the trusted
 //! items (TB-n), the Assumptions (AS-n), the Non-goals (NG-n) and the
@@ -333,7 +333,7 @@ pub fn regenerate(tcb: &Tcb, requirements: &str) -> Tcb {
 
 const HEADER: &str = "# The TCB_Document (R7.8). The items are derived from requirements.md by\n\
 # `cargo run -p tcb-check -- --write`; the tools, their reasons and the\n\
-# every_label marks are written by hand. `ci/tcb` checks both.\n\n";
+# every_label marks are written by hand. `ci/tcb-check` checks both.\n\n";
 
 pub fn print(tcb: &Tcb) -> String {
     format!("{HEADER}{}", toml::to_string_pretty(tcb).expect("the document is plain data"))

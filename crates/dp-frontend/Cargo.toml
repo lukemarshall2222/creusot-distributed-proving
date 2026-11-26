@@ -14,7 +14,6 @@ dp-shell = { workspace = true, features = ["cluster"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
 [dev-dependencies]
-dp-coordinator = { path = "../dp-coordinator" }
 
 [lints]
 workspace = true

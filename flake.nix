@@ -136,6 +136,7 @@
               # `creusot` would still mean the flake input.
               packages = with pkgs.dp; [
                 pkgs.dp.creusot
+                pkgs.git
                 alt-ergo
                 apalache
                 carcara
@@ -153,13 +154,16 @@
             }
           );
 
-          # What the gating CI jobs need, and no more: without Kani, Lean,
-          # Apalache and the Certificate_Checkers, which no check uses yet.
+          # What the gating CI jobs need, and no more: without Kani and
+          # Apalache, which no check uses yet.
           ci = pkgs.mkShell (
             environment
             // {
               packages = with pkgs.dp; [
                 pkgs.dp.creusot
+                # ci/traceability asks git which files the commit has.
+                pkgs.git
+                lean
                 python
                 tlc
               ];

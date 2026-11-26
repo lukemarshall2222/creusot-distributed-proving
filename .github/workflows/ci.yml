@@ -32,11 +32,13 @@ jobs:
         run: ci/jobs/patches.sh
       - name: build the CI shell
         run: nix develop .#ci --command true
-      - name: ci/purity, ci/tcb, ci/traceability
+      - name: ci/purity, ci/tcb-check, ci/traceability
         run: nix develop .#ci --command ci/jobs/trust.sh
       # One script: the unit and property tests, the differential tests,
-      # the simulator tests and the canary harness.
-      - name: ci/test, ci/diff, ci/sim, ci/canaries
+      # the simulator tests, the canary harness, the replay tests, the
+      # tests with the certificate checker, the tests with a Cluster on one
+      # machine, and the smoke run of the fuzz harnesses.
+      - name: ci/test, ci/diff, ci/sim, ci/canaries, ci/certs, ci/replay, ci/integration-cluster, ci/fuzz-smoke
         run: nix develop .#ci --command ci/jobs/test.sh
         env:
           DP_GENERATED_LOCK: ${{ runner.temp }}/lock.toml
@@ -44,6 +46,10 @@ jobs:
         run: nix develop .#ci --command ci/jobs/creusot.sh
       - name: ci/tlc
         run: nix develop .#ci --command ci/jobs/tlc.sh
+      - name: ci/lean
+        run: nix develop .#ci --command ci/jobs/lean.sh
+        env:
+          DP_REQUIRE_LEAN: 1
       - name: keep the Lock_File generated for this platform
         if: always()
         uses: actions/upload-artifact@v7

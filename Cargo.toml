@@ -14,14 +14,19 @@ members = [
     "crates/dp-canon",
     "crates/dp-cert",
     "crates/dp-replay",
+    "fuzz",
     "tests/canaries",
     "tests/diff",
     "tests/integration",
+    "tests/replay",
     "tests/sim",
+    "tools/mutants",
     "tools/purity-check",
     "tools/tcb-check",
     "tools/traceability-check",
 ]
+# The libFuzzer builds need a nightly compiler; see fuzz/libfuzzer/Cargo.toml.
+exclude = ["fuzz/libfuzzer"]
 
 [workspace.package]
 version = "0.0.0"

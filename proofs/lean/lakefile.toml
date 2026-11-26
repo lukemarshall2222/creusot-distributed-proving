@@ -1,0 +1,13 @@
+name = "dp"
+defaultTargets = ["DP", "dp-lean-ref"]
+
+# The metatheory of the labels (R7.1, P7.1.2). No dependency but Lean's
+# own library.
+[[lean_lib]]
+name = "DP"
+
+# The executable reference definitions (R7.1 criterion 5): the Rust
+# decision functions are tested against them.
+[[lean_exe]]
+name = "dp-lean-ref"
+root = "DP.Ref.Main"

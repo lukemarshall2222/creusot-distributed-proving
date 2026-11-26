@@ -66,6 +66,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - One row per requirement from the Initial Traceability Table of `requirements.md` with Class, Properties, functions, trust items and the level-artifact-job triples of its Verification lines; every row starts with scope status deferred and is switched to in scope by the sub-task that delivers the last artifact its Verification lines name (R7.11 criterion 12, see Notes)
     - Canonical TOML printer; generator of `docs/traceability.md`
     - As built (2026-11-25): `docs/traceability.toml` has one row per requirement (42). Every field but the scope status is derived from `requirements.md` by `traceability-check --write`: the class and the functions from the Initial Traceability Table, the Property IDs from the Properties subsection, the artifact paths and CI jobs from the Verification lines. `docs/traceability.md` shows per row which artifacts exist. Two rows are in scope (R7.11, R7.12); the others are deferred, mostly because their Verification lines name planned paths that the build did not follow (for example `crates/dp-frontend/src/accept.rs`, whose code is in `session.rs`). Open: the trust items and the levels of a row; either the paths in `requirements.md` or the code layout has to move before most rows can be switched
+    - Since 2026-11-25 (later): seven rows are in scope (R1.3, R2.3, R7.2, R7.8, R7.11, R7.12, R7.13). To get there the code was moved to the paths that the Verification lines name: the acceptance facts to `crates/dp-frontend/src/accept.rs` and the Result_Cache directory to `cache.rs` (both out of `session.rs`, with unit tests), the replay tests to `tests/replay/` and `tests/replay/tamper/`, and the tests with a Cluster on one machine to `tests/integration/cluster/` with one file per topic; and the named property tests were written (`prop_verdict.rs`, `prop_accept.rs`, `prop_cache_key.rs`, `prop_calibration.rs` in dp-core). The CI steps carry the job names that the rows name; `sched.yml` has the scheduled jobs
     - _Requirements: 40.1, 40.5, 40.11_
     - _Properties: 37_
 
@@ -113,6 +114,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
 
   - [ ] 2.8 Implement `tools/mutants/` and the `sched/mutants-weekly` gate (C20)
     - cargo-mutants configuration for dp-core, dp-cert, dp-formats, dp-canon, dp-frontend and dp-replay; per-crate score threshold `<TBD-19>`; `targets.toml` generated from the `functions` fields of in-scope Soundness-critical rows; `exclusions.toml` schema whose equivalence artifacts (Creusot proof or Kani harness with recorded bounds) are run against their mutant; registered decision functions must be killed by dp-core or `tests/sim/` tests (R7.3 criterion 5)
+    - As built (2026-11-25): `tools/mutants/` with `targets.toml` (every function that is no logic function of `verdict.rs`, `labels.rs`, `cache_key.rs` and `calibration.rs`, and `decide` of `frontend.rs`; threshold 100 %), `exclusions.toml`, and the gate `mutants-gate`, which reads cargo-mutants' outcomes and fails on a surviving mutant of a target, on a target without mutants, below the threshold, and on an exclusion that matches no survivor or names no artifact. `ci/jobs/mutants.sh` runs both (`sched/mutants-weekly` in `sched.yml`, nine minutes for 388 mutants); the static check of the targets against the Soundness-critical rows runs in `ci/jobs/trust.sh`. First run, before the property tests of this day: 19 of 83 mutants of the targets caught. Now: 166 caught, none survived, 4 excluded as equivalent, each with its diff in `tools/mutants/equivalent/` and a Creusot proof of the mutated function against its unchanged contract (`tools/mutants/equivalence.sh`). Open: the other crates of the task (dp-cert, dp-formats, dp-canon, dp-frontend, dp-replay); mutants of non-target functions are reported by cargo-mutants and not gated (62 survive in dp-core, most of them in logic functions, which no test can see)
     - _Requirements: 42.1, 42.2, 42.3, 42.4, 32.5_
     - _Properties: 35, 37_
 
@@ -125,6 +127,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [ ] 2.10 Write self-tests for the mutation gate
     - **Property 37: Every requirement is mechanically verified and the tests catch bugs** (mutation part)
     - A fixture crate with a surviving mutant of a soundness-critical target (gate fails), a matching exclusion with a passing Kani artifact (gate passes), a failing artifact (gate fails), a score below the threshold (gate fails)
+    - As built (2026-11-25): unit tests of the gate on seeded outcomes: a surviving mutant of a target, the same with an exclusion, an exclusion without an artifact, at another line or for a caught mutant, a target without mutants, a score at and below the threshold. Not a fixture crate: the outcomes are written by hand in cargo-mutants' format
     - **Validates: Requirements 42.1, 42.2, 42.3, 42.4**
 
 - [ ] 3. Implement dp-formats for the stage-1 formats
@@ -300,21 +303,25 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [ ] 8.1 Prove `verdict_sound` in the Lean trace model
     - **Property 2: Verdict soundness in the Lean trace model** (unpartitioned part)
     - `proofs/lean/DP/Model.lean` (AS-12), `Trace.lean` with the reference `label`, `Verdict.lean` with `SolverSound`, `WorkerHonest`, `NoCollision`, `CheckerSound` and `verdict_sound` (P7.1.2)
+    - As built (2026-11-25): `proofs/lean/DP/Model.lean` (problems, hashes, solvers, certificates and what they did, all abstract: not the logic of AS-12), `Trace.lean` (the reference `classify`, `label`, `labelFromChecker`, `acceptRemote`, and a trace of Result and checker events with first-wins recording), `Verdict.lean` with `SolverSound`, `WorkerHonest`, `NoCollision`, `CheckerSound` and `verdict_sound`: every recorded Verdict is of a Goal whose local print is unsatisfiable; and `certified_sound`, part (b), from `CheckerSound` and `NoCollision` alone. `#print axioms` gives `propext`, `Classical.choice`, `Quot.sound`. The model takes `WorkerHonest` also for runs that the Front_End started itself, and has the soundness of the proof calculus (`refutes_unsat`) as a field of the world, not as a hypothesis about a tool. Open: the logic of AS-12 itself; cache hits and the race in the trace model
     - **Validates: Requirements 30.1, 30.2, 30.3**
 
   - [ ] 8.2 Implement the `ci/lean` and `ci/lean-partition` checks
     - Lake project whose main library globs `DP/*.lean` except `Partition.lean`, which has its own target; fail on `sorry` and on axioms outside `propext`, `Classical.choice`, `Quot.sound` in `#print axioms`; import-closure check that `Verdict.lean` imports none of `Admission`, `Canon`, `Hints`, `Compose`, `Partition`, `Certifiable`
+    - As built (2026-11-25): `ci/jobs/lean.sh` (step `ci/lean`; Lean is in the CI shell): `lake build`, no `sorry` in the sources, the axioms of `verdict_sound` and `certified_sound`, the imports of `Verdict.lean`, and the differential test of 8.4. Open: `ci/lean-partition`
     - _Requirements: 30.1, 30.2, 30.3_
     - _Properties: 2_
 
   - [ ] 8.3 Build the executable Lean references (`dp-lean-ref`)
     - `proofs/lean/DP/Ref/Main.lean` reads canonical S-expressions, runs a named reference definition and prints the result; first entry: `label`; Nix package for the binary
+    - As built (2026-11-25): `proofs/lean/DP/Ref/Main.lean`, the executable `dp-lean-ref`: one request per line (`label`, `checker`, `accept`, `classify` with their facts as bits), one answer per line. Not S-expressions, and built by `lake`, not a Nix package
     - _Requirements: 30.5, 23.11_
     - _Properties: 1, 27_
 
   - [ ] 8.4 Write the `label` differential test against the Lean reference
     - **Property 1: Proof labels come only from the two routes** (Lean reference part)
     - `tests/diff/label_lean_vs_rust/` on generated Session events
+    - As built (2026-11-25): `tests/diff/label_lean_vs_rust/` compares `label`, `label_from_checker_output`, `accept_remote` and `classify` of dp-core with the Lean references on every input (4,496 requests), not on generated Session events
     - **Validates: Requirements 30.2, 30.4, 30.5**
 
 - [ ] 9. Build the canary harness and the legacy differential tests
@@ -522,6 +529,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
   - [ ] 15.13 Write the Result acceptance property and fuzz tests
     - **Property 3: Accepted Results are bound to the local print, the submission and an authentic Worker**
     - `crates/dp-core/tests/prop_accept.rs` with umbrella `property_3_result_binding` (single-field mutations, forged tags, unregistered and revoked Workers, splitting pipelines, several signed registry versions delivered in every arrival order, P1.3.11); `fuzz/result_message/` extended to drive `accept_result` behind the parser (`ci/fuzz-smoke`, `sched/fuzz-nightly`); fills `arb_result`
+    - As built (2026-11-25): `prop_accept.rs` (every combination of the six remote facts with a bound and an unbound print, the reason of each missing fact, any changed word of the Task_Hash, and `decide` never proving what was discarded; no umbrella test and no registry versions), and `fuzz/`: six harnesses (`result_message` for every message of the cluster protocol, `proofjson`, `cache_entry`, `cert_manifest`, `config_parser`, `checker_output`), each with seeds, the property that what a parser accepts is canonical and decodes to itself, and a libFuzzer entry (`fuzz/libfuzzer/`, a package outside the workspace; it type-checks, and no job runs it yet). `fuzz/smoke.rs` runs each harness on its seeds, on mutations of them and on random bytes from a fixed generator (about 114,000 inputs in a minute, `ci/fuzz-smoke` inside `ci/test`); `sched/fuzz-nightly` runs it 200 times as long from a start that changes each night. It found nothing. The harness of the Result message does not drive `accept_result` behind the parser
     - **Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.9, 3.10, 3.11, 7.6, 30.7**
 
 - [ ] 16. Implement the Cluster shells
@@ -571,6 +579,7 @@ Requirement references use the spec tooling's numbering (`N.c` is criterion c of
     - **Property 3: Accepted Results are bound to the local print, the submission and an authentic Worker** (adversarial part)
     - `tests/sim/adversarial_coordinator.rs`: any message of the grammar, replays, swapped Results, self-registered Workers and forged revocations (P1.3.3, P1.3.9, P1.7.2); no proof label without the R7.1 conditions
     - Switch rows R1.3 and R1.7 to in scope with the switch step (Notes): this file is the last artifact of both, after `prop_accept.rs`, `fuzz/result_message/`, `prop_operator.rs` and `operator.rs`; `targets.toml` gains `accept_result`; registry entries for `accept_result` and the `coord.rs` functions of R1.7 (`eligible`, `apply_operator`, `status`) (R7.11 criterion 12)
+    - As built (2026-11-25): `tests/sim/adversary.rs` stands where the Coordinator stands, with the real shells of the Front_End and of two Workers around it. It assigns Jobs honestly, with the Printed_Goal of another Job or with another time limit; answers as a registered Worker or as an invented one with a key of its own; reports Jobs as failed or withholds them; forwards Results unchanged, twice, with a changed answer, under another Job, or replays old ones; and sends revocations that the operator did not sign. `tests/sim/adversarial_coordinator.rs`: over 40 fixed seeds it does each of these 14 things at least once and calls are still proved, and for any seed and calls (60 cases, 5,000 in `sched/sim-nightly`) a call is answered Valid only if its own Printed_Goal is provable, and no revocation is taken. With the signature check switched off by hand the test fails at once. Rows R1.3 and R7.2 switched; R1.7 still lacks `prop_operator.rs`. Open: messages that are not well-formed (the fuzz harness covers the parser), operator commands from the adversary
     - **Validates: Requirements 3.4, 3.6, 3.9, 7.6, 30.2**
 
   - [ ] 17.3 Write the simulation determinism test

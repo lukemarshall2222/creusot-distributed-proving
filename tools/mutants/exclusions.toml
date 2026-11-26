@@ -1,0 +1,39 @@
+# Mutants of targets that the tests cannot catch because they are
+# equivalent to the original (R7.13 criterion 7). Each entry names the
+# mutant as cargo-mutants prints it, with its line, and the artifact that
+# shows the equivalence. The gate fails on an entry that matches no
+# surviving mutant, so an entry cannot outlive its mutant.
+#
+# The artifacts are the mutants themselves as diffs in equivalent/, and
+# tools/mutants/equivalence.sh, which applies them and has Creusot prove
+# the changed functions against their unchanged contracts. A contract that
+# fixes the result of a function leaves no room for a mutant that the proof
+# accepts to differ.
+
+[[exclusion]]
+file = "crates/dp-core/src/calibration.rs"
+line = 39
+mutant = "replace > with >= in scale"
+reason = "Chooses between two computations of the same number: part * velocity / 10^6, directly or with the velocity split. At equality the product still fits, so both branches are defined and equal."
+artifact = "tools/mutants/equivalent/calibration_scale_line39.diff: Creusot proves result@ == scaled(micros@, velocity@) for the mutant"
+
+[[exclusion]]
+file = "crates/dp-core/src/calibration.rs"
+line = 45
+mutant = "replace > with >= in scale"
+reason = "At equality high + low is the largest time itself, which is what the other branch returns."
+artifact = "tools/mutants/equivalent/calibration_scale_line45.diff: Creusot proves result@ == scaled(micros@, velocity@) for the mutant"
+
+[[exclusion]]
+file = "crates/dp-core/src/labels.rs"
+line = 125
+mutant = "replace < with <= in most_informative"
+reason = "Replaces the best outcome so far by one of the same rank, and two outcomes of one rank are the same outcome (rank_injective)."
+artifact = "tools/mutants/equivalent/labels_most_informative_line125.diff: Creusot proves the contract of most_informative for the mutant; with the lemma rank_injective the contract fixes the result"
+
+[[exclusion]]
+file = "crates/dp-core/src/verdict.rs"
+line = 353
+mutant = "replace > with >= in position"
+reason = "The case of equality returned in the line before, so the comparison is never reached with equal Goals."
+artifact = "tools/mutants/equivalent/verdict_position_line353.diff: Creusot proves the contract of position for the mutant, which fixes Ok(k) and Err(k)"
