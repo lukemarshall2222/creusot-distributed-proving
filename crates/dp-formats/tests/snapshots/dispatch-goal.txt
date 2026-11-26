@@ -1,0 +1,7 @@
+(goal
+  g3
+  arith.mlw
+  Arith
+  Mixed
+  ((split_vc 1))
+  #7468656f7279205461736b0a2020676f616c20673a20747275650a656e640a)

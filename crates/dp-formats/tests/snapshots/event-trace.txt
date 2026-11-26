@@ -1,0 +1,1 @@
+(trace coordinator 12 Assign 40000 "Submit { job: 4, prover: 1 }" "[Send { peer: 10 }]")

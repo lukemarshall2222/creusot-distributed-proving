@@ -11,7 +11,7 @@ use std::{
     path::PathBuf,
 };
 
-use dp_formats::sexp::{self, Sexp};
+use dp_formats::trace::Record;
 
 use crate::store::Files;
 
@@ -109,15 +109,15 @@ impl TraceWriter {
         if matches!(self.sink, Sink::None) {
             return Ok(());
         }
-        let mut line = sexp::print(&Sexp::list([
-            Sexp::atom("trace"),
-            Sexp::atom(&self.component),
-            Sexp::atom(self.seq.to_string()),
-            Sexp::atom(action),
-            Sexp::atom(now.to_string()),
-            Sexp::atom(input),
-            Sexp::atom(effects),
-        ]));
+        let mut line = Record {
+            component: self.component.clone(),
+            seq: self.seq,
+            action: action.to_string(),
+            now,
+            input: input.to_string(),
+            effects: effects.to_string(),
+        }
+        .encode();
         line.push(b'\n');
         match &mut self.sink {
             Sink::None => Ok(()),
@@ -203,8 +203,8 @@ mod tests {
         assert_eq!(lines.len(), 3);
         // The sequence numbers of the last three steps, in order.
         for (line, seq) in lines.iter().zip(["8", "9", "10"]) {
-            let record = sexp::parse(line.as_bytes(), 1 << 16).unwrap();
-            assert_eq!(record.as_list().unwrap()[2].as_str(), Some(seq), "{line}");
+            let record = Record::decode(line.as_bytes(), 1 << 16).unwrap();
+            assert_eq!(record.seq.to_string(), seq, "{line}");
         }
         // A writer that is off keeps nothing, and still counts.
         let mut off = TraceWriter::off("fe");

@@ -1,0 +1,58 @@
+; The `dispatch` format (design decisions D-2 and D-3): what the Front_End,
+; a Worker's calibration and the Replay_Tool exchange with why3find in
+; dispatch mode over its standard input and output, one canonical
+; S-expression after the other. Codec: crates/dp-formats/src/dispatch.rs
+; (`FromWhy3find`, `ToWhy3find`). The pipe crosses no trust boundary; the
+; codec is strict all the same.
+;
+; A `rid` names a prover call, a `gid` a goal and a `qid` a question of
+; the parent; each is chosen by its sender and returned in the answer.
+
+from-why3find   = hello / goal / cache-get / prove / cancel / cache-set / done
+                / printed / task / provers-answer / calibration-answer / answer-read / error
+to-why3find     = cache / answer / stored / print / task-print / provers / calibration / read-answer
+
+hello           = "(" %s"5:hello" number ")"                         ; the version of the format
+goal            = "(" %s"4:goal" text text text text "(" *path-step ")" bytes ")"
+                                                                   ; gid, file, theory, name, the tactics above it, its task
+path-step       = "(" text number ")"                              ; a tactic and the index of the child
+cache-get       = "(" %s"9:cache-get" text text text number ")"      ; rid, gid, prover, time limit in microseconds
+prove           = "(" %s"5:prove" text text step text number ")"     ; rid, gid, step, prover, time limit in microseconds
+step            = %s"4:fast" / %s"8:parallel" / %s"13:parallel-long" / %s"6:replay"
+cancel          = "(" %s"6:cancel" text ")"                          ; rid
+cache-set       = "(" %s"9:cache-set" text text text result ")"      ; rid, gid, prover
+done            = "(" %s"4:done" ")"
+printed         = "(" %s"7:printed" text number bytes ")"            ; qid, the number of tasks, the print
+task            = "(" %s"4:task" text bytes ")"                      ; qid, the task
+provers-answer  = "(" %s"7:provers" text *prover ")"                 ; qid
+prover          = "(" text text text text text ")"                 ; prover, digest, driver, command, extension
+calibration-answer = "(" %s"11:calibration" text number ")"          ; qid, millionths
+answer-read     = "(" %s"11:answer-read" text driver-answer ")"      ; qid
+driver-answer   = %s"5:valid" / %s"7:invalid" / %s"7:timeout" / %s"11:outofmemory"
+                / %s"17:steplimitexceeded" / %s"7:unknown" / %s"7:failure" / %s"11:highfailure"
+error           = "(" %s"5:error" text text ")"                      ; qid, message
+
+cache           = "(" %s"5:cache" text result ")"                    ; rid
+answer          = "(" %s"6:answer" text result ")"                   ; rid
+stored          = "(" %s"6:stored" text (%s"5:store" / %s"4:skip") ")" ; rid
+print           = "(" %s"5:print" text text text "(" *text ")" ")"   ; qid, gid, prover, transformations
+task-print      = "(" %s"10:task-print" text text ")"                ; qid, gid
+provers         = "(" %s"7:provers" text ")"                         ; qid
+calibration     = "(" %s"11:calibration" text text ")"               ; qid, prover
+read-answer     = "(" %s"11:read-answer" text text number bytes ")"  ; qid, prover, exit status, output
+
+result          = "(" %s"8:noresult" ")" / "(" %s"6:failed" ")"
+                / "(" %s"5:valid" number ")" / "(" %s"7:unknown" number ")" / "(" %s"7:timeout" number ")"
+                                                                   ; with the time in microseconds
+
+; Shared rules. Every value is a canonical S-expression
+; (canonical-sexp.abnf): an atom is its length in decimal, a colon and
+; that many octets; a list has no whitespace between its items.
+
+number  = atom                        ; its octets are a decimal number below 2^64 without leading zeros
+text    = atom                        ; its octets are UTF-8
+bytes   = atom
+atom    = length ":" *OCTET           ; exactly <length> octets follow the colon
+length  = "0" / (%x31-39 *DIGIT)
+DIGIT   = %x30-39
+OCTET   = %x00-FF

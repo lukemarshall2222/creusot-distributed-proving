@@ -1,0 +1,28 @@
+; The event trace (R1.5 criterion 10, design decision D-11): the steps of
+; one component, one record per line. Codec:
+; crates/dp-formats/src/trace.rs (`Record`). A record is a canonical
+; S-expression; an input or the effects may hold line feeds, so a reader
+; finds the end of a record by its lengths.
+
+trace           = *( record LF )
+record          = "(" %s"5:trace"
+                      text                 ; the component
+                      number               ; the number of the step, from 1
+                      text                 ; the action of the TLA+ specification
+                      number               ; the component's clock in microseconds
+                      text                 ; the input of the step
+                      text                 ; its effects; empty where none are recorded
+                  ")"
+LF              = %x0A
+
+; Shared rules. Every value is a canonical S-expression
+; (canonical-sexp.abnf): an atom is its length in decimal, a colon and
+; that many octets; a list has no whitespace between its items.
+
+number  = atom                        ; its octets are a decimal number below 2^64 without leading zeros
+text    = atom                        ; its octets are UTF-8
+bytes   = atom
+atom    = length ":" *OCTET           ; exactly <length> octets follow the colon
+length  = "0" / (%x31-39 *DIGIT)
+DIGIT   = %x30-39
+OCTET   = %x00-FF

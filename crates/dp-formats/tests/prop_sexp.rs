@@ -2,16 +2,10 @@
 // P-ID: P7.10.1
 
 use dp_formats::sexp::{parse, parse_prefix, print, Error, ErrorKind, Prefix, Sexp, MAX_DEPTH};
+use dp_testkit::gen::sexp::arb_sexp;
 use proptest::prelude::*;
 
 const LIMIT: usize = 1 << 20;
-
-fn arb_sexp() -> impl Strategy<Value = Sexp> {
-    let leaf = proptest::collection::vec(any::<u8>(), 0..20).prop_map(Sexp::Atom);
-    leaf.prop_recursive(6, 64, 8, |inner| {
-        proptest::collection::vec(inner, 0..8).prop_map(Sexp::List)
-    })
-}
 
 proptest! {
     #![proptest_config(dp_testkit::config::cases("prop_sexp", 256))]

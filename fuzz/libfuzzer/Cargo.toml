@@ -73,3 +73,17 @@ path = "../lock_file/fuzz_target.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "dispatch"
+path = "../dispatch/fuzz_target.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "trace_record"
+path = "../trace_record/fuzz_target.rs"
+test = false
+doc = false
+bench = false

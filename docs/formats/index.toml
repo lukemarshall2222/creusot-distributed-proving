@@ -64,6 +64,22 @@ roundtrip = "crates/dp-formats/tests/lockfile_canonical.rs"
 fuzz = "fuzz/lock_file/"
 size_limit = "1048576"
 
+[[format]]
+name = "dispatch"
+grammar = "docs/formats/dispatch.abnf"
+codec = "crates/dp-formats/src/dispatch.rs"
+roundtrip = "crates/dp-formats/tests/roundtrip.rs"
+fuzz = "fuzz/dispatch/"
+size_limit = "1073741824"
+
+[[format]]
+name = "event-trace"
+grammar = "docs/formats/event-trace.abnf"
+codec = "crates/dp-formats/src/trace.rs"
+roundtrip = "crates/dp-formats/tests/roundtrip.rs"
+fuzz = "fuzz/trace_record/"
+size_limit = "<TBD-22>"
+
 [[pending]]
 name = "worker-registry"
 missing = ["grammar", "fuzz"]

@@ -7,6 +7,7 @@
 //! | `arb_result` | `result` | Results with single-field mutations |
 //! | `arb_cache_entry` | `cache_entry` | entries; one changed field |
 //! | `arb_coordinator_ops` | `coordinator_ops` | inputs of the Coordinator machine |
+//! | (formats) | `sexp`, `message`, `dispatch`, `proofjson` | values of the exchanged formats, for the round-trip tests |
 //! | `arb_checker_tuple` | `checker_tuple` | the facts of a checker run |
 //! | `arb_session_events` | `session_events` | inputs of the Front_End machine with their evidence |
 //! | `arb_fault_schedule` | `fault_schedule` | crashes, restarts, partitions, the network; fair schedules |
@@ -17,6 +18,10 @@ pub mod cache_entry;
 pub mod checker_tuple;
 pub mod config_text;
 pub mod coordinator_ops;
+pub mod dispatch;
 pub mod fault_schedule;
+pub mod message;
+pub mod proofjson;
 pub mod result;
 pub mod session_events;
+pub mod sexp;

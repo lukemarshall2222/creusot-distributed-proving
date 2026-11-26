@@ -10,3 +10,4 @@ pub mod cache;
 pub mod canonical_check;
 pub mod proofjson;
 pub mod dptoml;
+pub mod trace;

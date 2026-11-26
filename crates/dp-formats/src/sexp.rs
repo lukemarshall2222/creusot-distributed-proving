@@ -212,37 +212,204 @@ fn parse_value(bytes: &[u8], limit: usize) -> Result<Prefix, Error> {
     }
 }
 
-/// A readable rendering for logs and error messages. It is not canonical
-/// and is never parsed.
+/// The width that `pretty` keeps a line within where it can.
+const PRETTY_WIDTH: usize = 100;
+
+/// A rendering for people: in logs, in error messages and in the files
+/// that show what a format looks like. It is not the canonical form, and
+/// nothing that is signed, hashed or exchanged is in it; but it loses
+/// nothing, and `parse_pretty` reads it back to the same value.
+///
+/// - An atom of printable ASCII without white space, parentheses, quotes
+///   or a backslash, that does not start with `#`, is written as it is.
+/// - Any other atom that is text (UTF-8 without control characters) is
+///   written between double quotes, with `\"` and `\\` for those two
+///   characters.
+/// - Every other atom, and the empty one, is written as `#` and the
+///   hexadecimal digits of its bytes.
+/// - A list is written on one line if it fits, and otherwise with its
+///   first item after the parenthesis and every further item on a line of
+///   its own, two columns in.
 pub fn pretty(value: &Sexp) -> String {
     let mut out = String::new();
-    pretty_into(value, &mut out);
+    pretty_into(value, 0, &mut out);
     out
 }
 
-fn pretty_into(value: &Sexp, out: &mut String) {
-    match value {
-        Sexp::Atom(a) => {
-            let plain = !a.is_empty()
-                && a.len() <= 64
-                && a.iter().all(|b| b.is_ascii_graphic() && !matches!(b, b'(' | b')' | b'"'));
-            if plain {
-                out.push_str(std::str::from_utf8(a).expect("ASCII"));
-            } else if a.len() > 64 {
-                out.push_str(&format!("<{} bytes>", a.len()));
-            } else {
-                out.push_str(&format!("{:?}", String::from_utf8_lossy(a)));
+fn pretty_atom(a: &[u8], out: &mut String) {
+    let bare = !a.is_empty()
+        && a[0] != b'#'
+        && a.iter().all(|b| b.is_ascii_graphic() && !matches!(b, b'(' | b')' | b'"' | b'\\'));
+    if bare {
+        out.push_str(std::str::from_utf8(a).expect("ASCII"));
+        return;
+    }
+    match std::str::from_utf8(a) {
+        Ok(text) if !a.is_empty() && !text.chars().any(char::is_control) => {
+            out.push('"');
+            for c in text.chars() {
+                if matches!(c, '"' | '\\') {
+                    out.push('\\');
+                }
+                out.push(c);
+            }
+            out.push('"');
+        }
+        _ => {
+            out.push('#');
+            for byte in a {
+                out.push_str(&format!("{byte:02x}"));
             }
         }
+    }
+}
+
+/// The value on one line.
+fn pretty_flat(value: &Sexp, out: &mut String) {
+    match value {
+        Sexp::Atom(a) => pretty_atom(a, out),
         Sexp::List(items) => {
             out.push('(');
             for (i, item) in items.iter().enumerate() {
                 if i > 0 {
                     out.push(' ');
                 }
-                pretty_into(item, out);
+                pretty_flat(item, out);
             }
             out.push(')');
         }
     }
 }
+
+fn pretty_into(value: &Sexp, indent: usize, out: &mut String) {
+    let mut flat = String::new();
+    pretty_flat(value, &mut flat);
+    let Sexp::List(items) = value else {
+        out.push_str(&flat);
+        return;
+    };
+    if indent + flat.chars().count() <= PRETTY_WIDTH || items.len() < 2 && !matches!(items.first(), Some(Sexp::List(_))) {
+        out.push_str(&flat);
+        return;
+    }
+    out.push('(');
+    for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+            out.push_str(&" ".repeat(indent + 2));
+        }
+        pretty_into(item, indent + if i == 0 { 1 } else { 2 }, out);
+    }
+    out.push(')');
+}
+
+/// Why a pretty-printed text was not read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PrettyError {
+    pub what: &'static str,
+    /// The byte offset in the text.
+    pub offset: usize,
+}
+
+impl fmt::Display for PrettyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} at byte {}", self.what, self.offset)
+    }
+}
+
+impl std::error::Error for PrettyError {}
+
+/// Reads what `pretty` writes, and the same notation written by hand:
+/// one value, with white space between items wherever a person put it.
+pub fn parse_pretty(text: &str) -> Result<Sexp, PrettyError> {
+    let bytes = text.as_bytes();
+    let mut at = 0;
+    let value = pretty_value(text, &mut at, 0)?;
+    while at < bytes.len() && bytes[at].is_ascii_whitespace() {
+        at += 1;
+    }
+    if at < bytes.len() {
+        return Err(PrettyError { what: "text after the value", offset: at });
+    }
+    Ok(value)
+}
+
+fn pretty_value(text: &str, at: &mut usize, depth: usize) -> Result<Sexp, PrettyError> {
+    let bytes = text.as_bytes();
+    let fail = |what, offset| Err(PrettyError { what, offset });
+    while *at < bytes.len() && bytes[*at].is_ascii_whitespace() {
+        *at += 1;
+    }
+    let start = *at;
+    match bytes.get(start) {
+        None => fail("the text ends where a value is expected", start),
+        Some(b')') => fail("a closing parenthesis without its list", start),
+        Some(b'(') => {
+            if depth >= MAX_DEPTH {
+                return fail("lists nested too deep", start);
+            }
+            *at += 1;
+            let mut items = Vec::new();
+            loop {
+                while *at < bytes.len() && bytes[*at].is_ascii_whitespace() {
+                    *at += 1;
+                }
+                match bytes.get(*at) {
+                    None => return fail("the text ends inside a list", *at),
+                    Some(b')') => {
+                        *at += 1;
+                        return Ok(Sexp::List(items));
+                    }
+                    Some(_) => items.push(pretty_value(text, at, depth + 1)?),
+                }
+            }
+        }
+        Some(b'"') => {
+            let mut out = String::new();
+            let mut chars = text[start + 1..].char_indices();
+            loop {
+                match chars.next() {
+                    None => return fail("the text ends inside a quoted atom", bytes.len()),
+                    Some((i, '"')) => {
+                        *at = start + 1 + i + 1;
+                        return Ok(Sexp::atom(out));
+                    }
+                    Some((i, '\\')) => match chars.next() {
+                        Some((_, c @ ('"' | '\\'))) => out.push(c),
+                        _ => return fail("a backslash before something other than a quote or a backslash", start + 1 + i),
+                    },
+                    Some((i, c)) if c.is_control() => return fail("a control character in a quoted atom", start + 1 + i),
+                    Some((_, c)) => out.push(c),
+                }
+            }
+        }
+        Some(b'#') => {
+            let mut end = start + 1;
+            while end < bytes.len() && bytes[end].is_ascii_hexdigit() {
+                end += 1;
+            }
+            let digits = &text[start + 1..end];
+            let ends = bytes.get(end).is_none_or(|b| b.is_ascii_whitespace() || matches!(b, b'(' | b')'));
+            if digits.len() % 2 != 0 || !ends || digits.bytes().any(|b| b.is_ascii_uppercase()) {
+                return fail("`#` is followed by pairs of lower-case hexadecimal digits", start);
+            }
+            let value = (0..digits.len() / 2)
+                .map(|i| u8::from_str_radix(&digits[2 * i..2 * i + 2], 16).expect("hexadecimal digits"))
+                .collect::<Vec<u8>>();
+            *at = end;
+            Ok(Sexp::atom(value))
+        }
+        Some(_) => {
+            let mut end = start;
+            while end < bytes.len() && bytes[end].is_ascii_graphic() && !matches!(bytes[end], b'(' | b')' | b'"' | b'\\') {
+                end += 1;
+            }
+            if end == start || bytes.get(end).is_some_and(|b| !b.is_ascii_whitespace() && !matches!(b, b'(' | b')')) {
+                return fail("a character that no atom is written with", end);
+            }
+            *at = end;
+            Ok(Sexp::atom(&bytes[start..end]))
+        }
+    }
+}
+

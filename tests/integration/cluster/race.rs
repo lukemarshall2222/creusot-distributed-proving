@@ -70,7 +70,13 @@ fn a_portfolio_of_provers_races_and_its_winners_replay() {
     // lost by every member is answered from the Result_Cache at once: the
     // same members would only lose it again.
     assert!(stderr.contains("2 proved-standalone Verdicts (2 from Workers, "), "{stderr}");
-    assert!(!stderr.contains("discarded"), "{stderr}");
+    // No Result is discarded for what it says. One that was on its way
+    // when its race was decided arrives for a Job that is no longer open,
+    // which a busy machine makes likely (seen 2026-11-26 at a load of 12);
+    // that is the only discard that an honest Cluster gives.
+    for line in stderr.lines().filter(|l| l.contains("discarded:")) {
+        assert!(line.ends_with("discarded: no such open Job"), "{stderr}");
+    }
     // Every proof names a member of the Portfolio and the Worker that ran it.
     let proofs = proofs(&s);
     let mut winners = Vec::new();

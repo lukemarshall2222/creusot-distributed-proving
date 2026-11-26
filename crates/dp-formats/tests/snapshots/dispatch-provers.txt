@@ -1,0 +1,1 @@
+(provers q2 (z3@5.3.2 0123abcd z3_487 "z3 -smt2 -T:%t sat.random_seed=42 %f" .smt2))

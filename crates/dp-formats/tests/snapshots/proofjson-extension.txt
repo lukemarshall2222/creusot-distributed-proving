@@ -1,0 +1,18 @@
+(dp-entry
+  proved-standalone
+  ((#9191919191919191919191919191919191919191919191919191919191919191
+     alt_ergo
+     alt-ergo
+     2.6.4
+     #a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2
+     (worker w10)
+     (7)
+     (1250000)
+     (6250000)
+     5000000))
+  ()
+  #b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3
+  absent
+  absent
+  (conflict)
+  ((cvc5 1.4.1 #c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4 (local))))
