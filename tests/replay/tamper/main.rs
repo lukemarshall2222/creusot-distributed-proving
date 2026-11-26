@@ -77,8 +77,14 @@ fn a_proof_file_of_another_lock_file_is_not_confirmed() {
     let Some(e) = env() else { return };
     let dir = project("lock");
     prove(&e, &dir);
-    // The same pins in another file: its hash is not the recorded one.
-    let other = format!("{}\n# another Lock_File\n", e.lock);
+    // The same pins in another layout are no Lock_File at all (R7.10
+    // criterion 8): the tool reads nothing and confirms nothing.
+    let (status, report) = replay(&e, &dir, &format!("{}\n# another Lock_File\n", e.lock));
+    assert_eq!(status, Some(2), "{report}");
+    assert!(!report.contains("confirmed "), "{report}");
+    // A Lock_File with one more pin: the same solvers, and another hash
+    // than the recorded one.
+    let other = format!("{}\n[[tool]]\nname = \"one-more\"\nversion = \"1\"\nkind = \"lean\"\n", e.lock);
     let (status, report) = replay(&e, &dir, &other);
     assert_eq!(status, Some(1), "{report}");
     assert!(report.contains("lock-mismatch"), "{report}");

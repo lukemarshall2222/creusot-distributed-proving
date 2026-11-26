@@ -42,7 +42,7 @@ Generated from `docs/traceability.toml` by `traceability-check --write`; do not 
 | R7.7 | Process | in scope | 6 | 5 of 5 |  |
 | R7.8 | Process | in scope | 6 | 4 of 4 |  |
 | R7.9 | Process | in scope | 2 | 1 of 1 |  |
-| R7.10 | Soundness-critical | deferred | 9 | 5 of 9 | `crates/dp-formats/src/canonical_check.rs`, `verification/kani/parsers.rs`, `crates/dp-canon/tests/`, `tests/diff/smtlib_parser/` |
+| R7.10 | Soundness-critical | deferred | 9 | 6 of 9 | `verification/kani/parsers.rs`, `crates/dp-canon/tests/`, `tests/diff/smtlib_parser/` |
 | R7.11 | Process | in scope | 11 | 2 of 2 |  |
 | R7.12 | Functional | in scope | 3 | 1 of 1 |  |
 | R7.13 | Process | in scope | 6 | 5 of 5 |  |

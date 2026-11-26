@@ -159,7 +159,8 @@ fn a_pin_mismatch_stops_creusot_cli_before_any_proof_is_written() {
         .lines()
         .map(|l| if l.starts_with("hash = \"sha256:") { format!("hash = \"sha256:{}\"", "0".repeat(64)) } else { l.to_string() })
         .collect::<Vec<_>>()
-        .join("\n");
+        .join("\n")
+        + "\n";
     let lock_path = dir.join("lock.toml");
     fs::write(&lock_path, tampered).unwrap();
     let out = Command::new("cargo")

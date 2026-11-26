@@ -237,7 +237,9 @@ fn lock(certify: bool) -> (LockFile, hash::Hash) {
             BINARY_HASH.to_hex()
         ));
     }
-    (LockFile::parse(&text).expect("a well-formed Lock_File"), hash::sha256(text.as_bytes()))
+    // In the canonical layout, as a Lock_File that a Session reads is.
+    let text = LockFile::parse_lenient(&text).expect("a well-formed Lock_File").print();
+    (LockFile::parse(&text).expect("a canonical Lock_File"), hash::sha256(text.as_bytes()))
 }
 
 /// How fast the machines of a Cluster are: local time over reference time,

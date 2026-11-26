@@ -40,15 +40,29 @@ roundtrip = "crates/dp-cert/tests/prop_store.rs"
 fuzz = "fuzz/cert_manifest/"
 size_limit = "65536"
 
-[[pending]]
+[[format]]
 name = "protocol-messages"
-missing = ["grammar"]
-reason = "R1.7 is in scope. The codec, the round-trip test and the fuzz target of the Result message cover every message of the protocol; only the Result message has its grammar."
+grammar = "docs/formats/protocol-messages.abnf"
+codec = "crates/dp-formats/src/cluster.rs"
+roundtrip = "crates/dp-formats/tests/prop_cluster.rs"
+fuzz = "fuzz/result_message/"
+size_limit = "268435456"
 
-[[pending]]
+[[format]]
 name = "status-report"
-missing = ["grammar"]
-reason = "R1.7 is in scope. The report is one of the protocol messages and shares their codec, round-trip test and fuzz target."
+grammar = "docs/formats/status-report.abnf"
+codec = "crates/dp-formats/src/cluster.rs"
+roundtrip = "crates/dp-formats/tests/prop_cluster.rs"
+fuzz = "fuzz/result_message/"
+size_limit = "268435456"
+
+[[format]]
+name = "lock-file"
+grammar = "docs/formats/lock-file.abnf"
+codec = "crates/dp-formats/src/lockfile.rs"
+roundtrip = "crates/dp-formats/tests/lockfile_canonical.rs"
+fuzz = "fuzz/lock_file/"
+size_limit = "1048576"
 
 [[pending]]
 name = "worker-registry"
@@ -59,11 +73,6 @@ reason = "R1.3 is in scope. The registry is read and its signature checked in cr
 name = "checker-output"
 missing = ["grammar", "roundtrip"]
 reason = "R5.3 and R5.4 are in scope. The classifier of the checker's output is fuzzed (fuzz/checker_output/); the checker-output record of the Certificate_Store, which is what round-trips, is not written yet."
-
-[[pending]]
-name = "lock-file"
-missing = ["grammar", "roundtrip", "fuzz"]
-reason = "R7.7 is in scope. The Lock_File is TOML with a strict reader (crates/dp-formats/src/lockfile.rs) and no canonical printer yet, so there is nothing to round-trip."
 
 [[pending]]
 name = "tcb-checker-entries"

@@ -135,5 +135,21 @@ fn a_lock_file_that_cannot_be_read_stops_the_session() {
         assert_eq!(out.status.code(), Some(2), "{what}: {stderr}");
         assert_eq!(snapshot(&dir), before, "{what}: the project directory changed");
     }
+    // R7.10 criterion 8: the same pins in another layout are no Lock_File
+    // either. Its hash is in every Verdict, so one set of pins has one text.
+    let comment = lock.replacen("[[tool]]\n", "[[tool]]\n# a note\n", 1);
+    let reordered = {
+        let start = lock.find("name = ").unwrap();
+        let end = start + lock[start..].find("kind = ").unwrap();
+        let (name, version) = lock[start..end].split_once('\n').unwrap();
+        format!("{}{version}{name}\n{}", &lock[..start], &lock[end..])
+    };
+    for (what, text) in [("empty line", format!("{lock}\n")), ("comment", comment), ("order", reordered), ("no header", lock[lock.find('\n').unwrap() + 1..].to_string())] {
+        let out = session(&frontend, &patched, &text, &dir);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(2), "{what}: {stderr}");
+        assert!(stderr.contains("lock-file: not the canonical form of its value, at byte"), "{what}: {stderr}");
+        assert_eq!(snapshot(&dir), before, "{what}: the project directory changed");
+    }
     fs::remove_dir_all(dir).unwrap();
 }

@@ -112,6 +112,9 @@ pub struct World {
     /// hash is not the hash of what the Result lists: registered and
     /// authentic, and still not to be believed (R1.3 criterion 7).
     pub import_liars: BTreeMap<Node, [u8; 32]>,
+    /// Nodes whose proof producer prints a proof of another problem: a
+    /// well-formed certificate that the checker does not accept.
+    pub wrong_proofs: BTreeSet<Node>,
     /// The file store of every node. It outlives a crash of its node: a
     /// file is written whole or not at all.
     pub files: BTreeMap<(Node, PathBuf), Vec<u8>>,
@@ -141,6 +144,7 @@ impl World {
             velocity: BTreeMap::new(),
             forging: BTreeSet::new(),
             import_liars: BTreeMap::new(),
+            wrong_proofs: BTreeSet::new(),
             files: BTreeMap::new(),
             most_runs: BTreeMap::new(),
             started: Vec::new(),
@@ -354,7 +358,8 @@ impl Env for SimEnv {
             };
         } else if spec.command.contains("--dump-proofs") && behaviour.output == b"unsat\n" {
             // The scripted proof producer: the answer, then the proof.
-            behaviour.output = [b"unsat\n(\n".as_slice(), &scripted_proof(&spec.input), b")\n"].concat();
+            let proved: &[u8] = if w.wrong_proofs.contains(&self.node) { b"another problem" } else { &spec.input };
+            behaviour.output = [b"unsat\n(\n".as_slice(), &scripted_proof(proved), b")\n"].concat();
         }
         let velocity = w.velocity.get(&self.node).copied().unwrap_or(1_000_000);
         let local = u128::from(behaviour.micros) * u128::from(velocity) / 1_000_000;

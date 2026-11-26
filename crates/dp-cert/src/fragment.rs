@@ -256,7 +256,17 @@ mod tests {
         assert!(!ok("(step @p1 |:rule refl| :rule dp_bad)"));
         assert!(ok("(step @p1 (= \":rule dp_bad\" x) :rule refl)"));
         assert!(ok("(step @p1 (f (:rule dp_bad)) :rule refl)"));
-        // A string with a doubled quote does not end at it.
+        // A string with a doubled quote does not end at it, wherever in
+        // the proof it stands.
+        assert!(ok("(step @p1 (= \"a\"\"b\" x) :rule refl)"));
+        assert!(ok("(assume @p0 (= x 0))\n(step @p1 (= \"\"\"\" x) :rule refl)\n(step @p2 (= \"a\"\"\" \"\"\"b\") :rule trans)"));
+        // Each alone, so that a reader that loses its place in one string
+        // cannot find it again in the next: a string that is one quote, an
+        // empty string, and an empty string before a closing parenthesis.
+        assert!(ok("(step @p1 (= \"\"\"\" x) :rule refl)"));
+        assert!(ok("(step @p1 (= \"\" x) :rule refl)"));
+        assert!(ok("(step @p1 :rule refl :args (\"\"))"));
+        assert!(!ok("(step @p1 :rule dp_bad :args (\"\" \":rule refl\"))"));
         assert!(!ok("(step @p1 (= \"a\"\" :rule refl) x\") :rule dp_bad)"));
         // The name of a step is no command name.
         assert!(!ok("(stepx @p1 :rule refl)"));

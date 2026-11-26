@@ -814,3 +814,40 @@ fn a_proof_file_is_rewritten_in_the_file_store() {
     assert!(written.contains("dp-lock") && written.contains("\"dp\""), "{written}");
     assert!(!path.exists());
 }
+
+// P-ID: P5.3.4, P7.1.3
+//
+// The checker runs and says no: every producer, on the Workers and at
+// home, prints a well-formed proof of another problem. The certificate is
+// in the supported fragment, so it reaches the checker, which does not
+// accept it; nothing is certified and no call is answered as proved.
+// (No test had a checker that rejects inside a Session before 2026-11-26:
+// the mutation run of that day showed that `accepted` could be ignored
+// there without a test noticing.)
+#[test]
+fn a_certificate_that_the_checker_rejects_certifies_nothing() {
+    let script = mixed();
+    let mut cluster = Cluster::with(36, Faults::none(), 2, 0, script.clone(), certifying(&script));
+    for node in [dp_sim::FRONT_END, WORKERS, WORKERS + 1] {
+        cluster.world.borrow_mut().wrong_proofs.insert(node);
+    }
+    cluster.run_until(2 * horizon(&script));
+    assert!(script.iter().any(|call| truth(call) == Reply::Valid), "the script has a provable call");
+    for rid in 0..script.len() {
+        assert!(cluster.answer(rid).is_some_and(|(reply, _)| reply != Reply::Valid), "call {rid}");
+    }
+    let labels = cluster.front_end.labels();
+    for g in &labels["sim.mlw"] {
+        assert!(!g.proof && g.entry.label != "certified", "{}: {}", g.name, g.entry.label);
+    }
+    // The checker did run, on the wrong proof, on the Front_End's machine.
+    let wrong = dp_testkit::sim::scripted_proof(b"another problem");
+    let world = cluster.world.borrow();
+    let checked = world.started.iter().filter(|(node, _, input)| *node == dp_sim::FRONT_END && *input == wrong).count();
+    assert!(checked >= 1, "the checker never ran on the certificate");
+    // With honest producers the same Session certifies (the control).
+    drop(world);
+    let mut honest = Cluster::with(36, Faults::none(), 2, 0, script.clone(), certifying(&script));
+    honest.run_until(2 * horizon(&script));
+    assert_eq!(label_of(&honest, "G0"), "certified");
+}

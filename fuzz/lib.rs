@@ -19,10 +19,14 @@ pub mod cert_manifest;
 pub mod checker_output;
 #[path = "config_parser/harness.rs"]
 pub mod config_parser;
+#[path = "lock_file/harness.rs"]
+pub mod lock_file;
 #[path = "proofjson/harness.rs"]
 pub mod proofjson;
 #[path = "result_message/harness.rs"]
 pub mod result_message;
+#[path = "sexp/harness.rs"]
+pub mod sexp;
 
 /// Size limit that the harnesses give the parsers.
 pub const LIMIT: usize = 1 << 16;
@@ -30,7 +34,9 @@ pub const LIMIT: usize = 1 << 16;
 /// A harness and its seeds, by the name of its directory.
 pub type Target = (&'static str, fn(&[u8]), fn() -> Vec<Vec<u8>>);
 
-pub const TARGETS: [Target; 6] = [
+pub const TARGETS: [Target; 8] = [
+    ("sexp", sexp::run, sexp::seeds),
+    ("lock_file", lock_file::run, lock_file::seeds),
     ("result_message", result_message::run, result_message::seeds),
     ("proofjson", proofjson::run, proofjson::seeds),
     ("cache_entry", cache_entry::run, cache_entry::seeds),

@@ -29,7 +29,7 @@ fn expected(copy: &Copy) -> Expected {
 
 /// The problems of a copy; a Lock_File that does not parse is one problem.
 fn problems(copy: &Copy) -> Vec<String> {
-    match LockFile::parse(&copy.lock) {
+    match LockFile::parse_lenient(&copy.lock) {
         Ok(lock) => check(&lock, &expected(copy), &copy.cargo_lock),
         Err(e) => vec![format!("the Lock_File is refused: {e}")],
     }
@@ -116,7 +116,7 @@ fn an_entry_without_a_hash_is_found() {
 #[test]
 fn a_patched_build_marked_unpatched_is_refused() {
     let copy = repository();
-    let lock = LockFile::parse(&copy.lock).unwrap();
+    let lock = LockFile::parse_lenient(&copy.lock).unwrap();
     let patched: Vec<_> = lock.tool.iter().filter(|t| !t.patches.is_empty()).collect();
     assert!(patched.len() >= 2);
     for tool in patched {
@@ -185,7 +185,7 @@ fn a_changed_cargo_lock_is_found() {
 #[test]
 fn the_evidence_of_a_pinned_hash_is_two_equal_rebuilds_or_the_published_checksum() {
     let copy = repository();
-    let lock = LockFile::parse(&copy.lock).unwrap();
+    let lock = LockFile::parse_lenient(&copy.lock).unwrap();
     let before = evidence(&lock, &expected(&copy));
     let mut tried = 0;
     for name in ["alt-ergo", "z3", "cvc5", "cvc4"] {
@@ -200,7 +200,7 @@ fn the_evidence_of_a_pinned_hash_is_two_equal_rebuilds_or_the_published_checksum
             let (start, end) = entry(&c.lock, name);
             let changed = c.lock[start..end].replace(line, &upstream);
             c.lock.replace_range(start..end, &changed);
-            evidence(&LockFile::parse(&c.lock).expect("the changed Lock_File parses"), &expected(&c))
+            evidence(&LockFile::parse_lenient(&c.lock).expect("the changed Lock_File parses"), &expected(&c))
         };
         let wrong = format!("sha256:{}", "0".repeat(64));
         assert!(!lacks(&with(format!("upstream = {{ tag = \"t\", rebuild_hashes = [\"{hash}\", \"{hash}\"] }}"))));

@@ -132,7 +132,7 @@ mod tests {
             String::new()
         };
         let prover = if kind.ends_with("solver") { "prover = \"x\"\n" } else { "" };
-        LockFile::parse(&format!("[[tool]]\nname = \"dep\"\nversion = \"1\"\nkind = \"{kind}\"\n{prover}patches = [{patches}]\n{platform}"))
+        LockFile::parse_lenient(&format!("[[tool]]\nname = \"dep\"\nversion = \"1\"\nkind = \"{kind}\"\n{prover}patches = [{patches}]\n{platform}"))
             .unwrap()
     }
 
@@ -175,7 +175,7 @@ mod tests {
         found(&one(PATCH), &lock("why3find", NAMED, false), "without a pinned hash");
         // A patched build as an Unpatched_Solver does not even parse.
         let text = format!("[[tool]]\nname = \"dep\"\nversion = \"1\"\nkind = \"unpatched-solver\"\nprover = \"x\"\npatches = [{NAMED}]\n");
-        assert!(LockFile::parse(&text).is_err());
+        assert!(LockFile::parse_lenient(&text).is_err());
     }
 
     #[test]

@@ -23,7 +23,7 @@ fn repository() -> Copy {
 fn changed(change: impl FnOnce(&mut Copy)) -> Vec<String> {
     let mut copy = repository();
     change(&mut copy);
-    match LockFile::parse(&copy.lock) {
+    match LockFile::parse_lenient(&copy.lock) {
         Ok(lock) => check(&copy.patches, &lock),
         Err(e) => vec![format!("the Lock_File is refused: {e}")],
     }

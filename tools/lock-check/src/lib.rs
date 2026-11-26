@@ -217,7 +217,7 @@ mod tests {
     }
 
     fn parse(text: &str) -> LockFile {
-        LockFile::parse(text).unwrap()
+        LockFile::parse_lenient(text).unwrap()
     }
 
     #[test]
@@ -252,7 +252,7 @@ mod tests {
         // Cargo.lock changed since the Lock_File was generated.
         found(&good, &expected(), "version = 5\n", "rust-libraries (x86_64-linux): pins");
         // An entry without a version does not even parse.
-        assert!(LockFile::parse(&good.replacen("version = \"1\"", "version = \"\"", 1)).is_err());
+        assert!(LockFile::parse_lenient(&good.replacen("version = \"1\"", "version = \"\"", 1)).is_err());
     }
 
     #[test]

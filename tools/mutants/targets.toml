@@ -37,3 +37,48 @@ file = "crates/dp-core/src/fragment.rs"
 [[target]]
 file = "crates/dp-core/src/frontend.rs"
 function = "decide"
+
+# The crates that are judged as a whole (R7.13 criterion 2): the share of
+# a crate's mutants that the tests of the named packages catch may not
+# fall below its threshold. The thresholds are working values for
+# <TBD-19>, set from the runs of 2026-11-26 so that a score cannot fall
+# without the gate failing. A crate below a threshold that the project
+# wants is work on its tests, not a reason to lower the number. dp-canon
+# has no code yet.
+#
+# dp-replay was measured with the time limit of the weekly job: all 73 of
+# its mutants that compile are caught. The other three were measured with
+# a time limit that was too short for their test packages, so a mutant
+# that only made the tests slow was counted as one that hangs, which
+# counts as caught. Their thresholds are therefore the share of mutants
+# that a failing test caught, which no later run can fall below by the
+# measurement alone; the first weekly run gives their scores, and the
+# thresholds are to be raised to them:
+#   dp-formats   366 of 421 by a failing test, 55 by the time limit, none survived
+#   dp-cert      119 of 161 by a failing test, 41 by the time limit, 1 survived
+#                (its test was added after the run)
+#   dp-frontend  226 of 370 by a failing test, 91 by the time limit, 53 survived
+#
+# The tests of dp-replay run the programs dp-replay and dp-frontend, which
+# they find beside themselves; dp-frontend is among its test packages so
+# that the program is built.
+
+[[crate]]
+name = "dp-formats"
+tests = ["dp-formats", "dp-fuzz"]
+threshold = 0.86
+
+[[crate]]
+name = "dp-cert"
+tests = ["dp-cert", "dp-certs-tests"]
+threshold = 0.73
+
+[[crate]]
+name = "dp-replay"
+tests = ["dp-replay", "dp-replay-tests", "dp-frontend"]
+threshold = 1.0
+
+[[crate]]
+name = "dp-frontend"
+tests = ["dp-frontend", "dp-sim"]
+threshold = 0.61

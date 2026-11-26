@@ -450,7 +450,20 @@ impl Message {
         Sexp::List(std::iter::once(a(tag)).chain(fields).collect())
     }
 
+    /// Reads a message. One that is not the canonical print of what it
+    /// reads as is discarded (R1.3 criterion 8, R7.10 criterion 8).
     pub fn decode(s: &Sexp) -> Result<Message, DecodeError> {
+        let message = Message::decode_value(s)?;
+        let format = match message {
+            Message::Result(_) => crate::canonical_check::RESULT_MESSAGE,
+            _ => crate::canonical_check::PROTOCOL_MESSAGE,
+        };
+        crate::canonical_check::check(format, &sexp::print(s), &sexp::print(&message.encode()))
+            .map_err(|e| DecodeError(e.to_string()))?;
+        Ok(message)
+    }
+
+    fn decode_value(s: &Sexp) -> Result<Message, DecodeError> {
         let l = items(s)?;
         let Some(tag) = l.first().and_then(Sexp::as_str) else {
             return err("missing tag");

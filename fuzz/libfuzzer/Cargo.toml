@@ -59,3 +59,17 @@ path = "../checker_output/fuzz_target.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "sexp"
+path = "../sexp/fuzz_target.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lock_file"
+path = "../lock_file/fuzz_target.rs"
+test = false
+doc = false
+bench = false

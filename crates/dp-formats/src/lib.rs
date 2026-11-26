@@ -7,5 +7,6 @@ pub mod dispatch;
 pub mod lockfile;
 pub mod cluster;
 pub mod cache;
+pub mod canonical_check;
 pub mod proofjson;
 pub mod dptoml;

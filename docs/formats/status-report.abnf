@@ -1,0 +1,30 @@
+; The operator status report (R1.7 criteria 8, 9 and 12; design decision
+; D-20): the Coordinator's answer to a status request, one message of the
+; dp protocol. Codec: crates/dp-formats/src/cluster.rs (`Message::Status`,
+; `WorkerStatus`). The operator's tool prints it as text; the text is not
+; read back.
+
+status          = "(" %s"6:status"
+                      number               ; the incarnation of the Coordinator
+                      "(" *worker-status ")"
+                      number               ; Jobs that wait for a Worker
+                      number               ; Front_Ends that are connected
+                  ")"
+worker-status   = "(" text                 ; the Worker
+                      "(" [text] ")"       ; the Job that it runs
+                      (%s"8:draining" / %s"7:serving")
+                      "(" *text ")"        ; its provers
+                  ")"
+
+; Shared rules. Every value is a canonical S-expression
+; (canonical-sexp.abnf): an atom is its length in decimal, a colon and
+; that many octets; a list has no whitespace between its items.
+
+hash    = %s"32:" 32OCTET
+number  = atom                        ; its octets are a decimal number below 2^64 without leading zeros
+text    = atom                        ; its octets are UTF-8
+bytes   = atom
+atom    = length ":" *OCTET           ; exactly <length> octets follow the colon
+length  = "0" / (%x31-39 *DIGIT)
+DIGIT   = %x30-39
+OCTET   = %x00-FF

@@ -1,0 +1,82 @@
+; The messages of the dp protocol (R1.1, R1.5 to R1.7): what the Front_End,
+; the Coordinator, the Workers and the operator's tool send each other,
+; one canonical S-expression after the other on a connection. Codec:
+; crates/dp-formats/src/cluster.rs (`Message`). A message that is not the
+; canonical print of the value that it reads as is discarded.
+
+message         = frontend-hello / worker-hello / submit / assign / heartbeat / idle / cancel
+                / result-message / failed / status-request / welcome / status
+                / operator / operator-result / revocation
+
+frontend-hello  = "(" %s"14:frontend-hello" text ")"            ; the Session
+worker-hello    = "(" %s"12:worker-hello" text "(" *offer ")" ")"
+offer           = "(" text number ")"                           ; a prover and the Worker's Calibration for it
+submit          = "(" %s"6:submit" job ")"
+assign          = "(" %s"6:assign" "(" job ")" number number ")" ; the local time limit and the Calibration it was scaled with
+heartbeat       = "(" %s"9:heartbeat" ")"
+idle            = "(" %s"4:idle" ")"
+cancel          = "(" %s"6:cancel" text ")"                     ; the Job
+result-message  = "(" %s"6:result" result-fields signature ")"  ; result-message.abnf
+failed          = "(" %s"6:failed" text text ")"                ; the Job and the reason
+status-request  = "(" %s"14:status-request" ")"
+welcome         = "(" %s"7:welcome" number ")"                  ; the incarnation of the Coordinator
+operator        = "(" %s"8:operator" command signature ")"
+operator-result = "(" %s"15:operator-result" number (%s"5:taken" / %s"7:refused") ")"
+revocation      = "(" %s"10:revocation" command signature ")"   ; as the operator signed it
+
+; The fields of a Job, in a `submit` directly and in an `assign` as a list.
+job             = (%s"5:prove" / %s"7:certify")
+                  text                 ; the Job: the Session and a number
+                  text                 ; the prover
+                  bytes                ; what identifies the Driver
+                  text                 ; the extension of the prover's input file
+                  number               ; the reference time limit in microseconds
+                  optional-number      ; the seed
+                  bytes                ; the Printed_Goal
+
+; An operator command (R1.7): serial number, operation, Worker. The
+; signature is Ed25519 over the print of `("dp/sig/operator/v1" command)`.
+command         = "(" number (%s"5:drain" / %s"6:remove" / %s"6:revoke") text ")"
+
+status          = "(" %s"6:status"
+                      number               ; the incarnation of the Coordinator
+                      "(" *worker-status ")"
+                      number               ; Jobs that wait for a Worker
+                      number               ; Front_Ends that are connected
+                  ")"
+worker-status   = "(" text                 ; the Worker
+                      "(" [text] ")"       ; the Job that it runs
+                      (%s"8:draining" / %s"7:serving")
+                      "(" *text ")"        ; its provers
+                  ")"
+
+result-fields   = "(" text            ; the Job
+                      hash            ; the Task_Hash of the print that was run
+                      text            ; the prover
+                      optional-number ; the seed of a race member
+                      hash            ; the hash of the solver binary
+                      text            ; the Worker
+                      optional-number ; the exit status; none when the run was ended
+                      end
+                      bytes           ; what the solver printed
+                      number          ; elapsed microseconds
+                      number          ; the Worker's Calibration
+                      number          ; the local time limit in microseconds
+                      hash            ; the hash of the import set
+                  ")"
+optional-number = "(" [number] ")"
+end             = %s"9:timed-out" / %s"6:exited"
+signature       = %s"64:" 64OCTET     ; Ed25519, over the print of result-fields
+
+; Shared rules. Every value is a canonical S-expression
+; (canonical-sexp.abnf): an atom is its length in decimal, a colon and
+; that many octets; a list has no whitespace between its items.
+
+hash    = %s"32:" 32OCTET
+number  = atom                        ; its octets are a decimal number below 2^64 without leading zeros
+text    = atom                        ; its octets are UTF-8
+bytes   = atom
+atom    = length ":" *OCTET           ; exactly <length> octets follow the colon
+length  = "0" / (%x31-39 *DIGIT)
+DIGIT   = %x30-39
+OCTET   = %x00-FF

@@ -219,6 +219,13 @@ impl DpEntry {
     }
 
     pub fn decode(bytes: &[u8], limit: usize) -> Result<DpEntry, DecodeError> {
+        let entry = DpEntry::decode_value(bytes, limit)?;
+        crate::canonical_check::check(crate::canonical_check::PROOFJSON_EXTENSION, bytes, &entry.encode())
+            .map_err(|e| DecodeError(e.to_string()))?;
+        Ok(entry)
+    }
+
+    fn decode_value(bytes: &[u8], limit: usize) -> Result<DpEntry, DecodeError> {
         let s = sexp::parse(bytes, limit).map_err(|e| DecodeError(e.to_string()))?;
         let Some([tag, label, replay, imports, imports_hash, certificate, tree, conflict, invalid]) =
             s.as_list()
@@ -282,9 +289,13 @@ impl DpEntry {
     pub fn from_member(member: &str, limit: usize) -> Result<DpEntry, DecodeError> {
         let bytes = base64_decode(member).ok_or_else(|| DecodeError("base64".into()))?;
         let entry = DpEntry::decode(&bytes, limit)?;
-        if entry.to_member() != member {
-            return err("not canonical");
-        }
+        // The base64 text has one form too: its padding bits are zero.
+        crate::canonical_check::check(
+            crate::canonical_check::PROOFJSON_EXTENSION,
+            member.as_bytes(),
+            entry.to_member().as_bytes(),
+        )
+        .map_err(|e| DecodeError(e.to_string()))?;
         Ok(entry)
     }
 }

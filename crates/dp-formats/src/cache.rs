@@ -111,6 +111,13 @@ impl Entry {
     /// are rejected (R7.10 criterion 8), and the caller treats the lookup as
     /// a miss (R7.5 criterion 5).
     pub fn decode(bytes: &[u8], limit: usize) -> Result<Entry, DecodeError> {
+        let entry = Entry::decode_value(bytes, limit)?;
+        crate::canonical_check::check(crate::canonical_check::CACHE_ENTRY, bytes, &entry.encode())
+            .map_err(|e| DecodeError(e.to_string()))?;
+        Ok(entry)
+    }
+
+    fn decode_value(bytes: &[u8], limit: usize) -> Result<Entry, DecodeError> {
         let s = sexp::parse(bytes, limit).map_err(|e| DecodeError(e.to_string()))?;
         let Some([tag, lookup, validation, result, origin]) = s.as_list() else {
             return err("entry");

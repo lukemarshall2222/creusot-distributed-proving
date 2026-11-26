@@ -31,6 +31,78 @@ pub struct Targets {
     pub packages: Vec<String>,
     pub threshold: f64,
     pub target: Vec<Target>,
+    /// The crates that are judged as a whole, by their score.
+    #[serde(default, rename = "crate")]
+    pub crates: Vec<CrateRule>,
+}
+
+/// A crate whose mutants are judged by their number: the share that the
+/// tests catch may not fall below the threshold (R7.13 criterion 2).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CrateRule {
+    /// The package; its mutants are those of `crates/<name>/src/`.
+    pub name: String,
+    /// The packages whose tests must catch them.
+    pub tests: Vec<String>,
+    /// The least share of its mutants that the tests catch.
+    pub threshold: f64,
+}
+
+/// The mutants of a crate in a run, by what became of them.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Score {
+    pub name: String,
+    pub caught: usize,
+    pub missed: usize,
+    /// Mutants that did not compile; they show nothing.
+    pub unviable: usize,
+}
+
+impl Score {
+    /// The share of the mutants that compiled which the tests caught.
+    pub fn share(&self) -> f64 {
+        match self.caught + self.missed {
+            0 => 0.0,
+            judged => self.caught as f64 / judged as f64,
+        }
+    }
+}
+
+/// Judges the crates that have a score threshold: the score of each, and
+/// a problem for a crate that the run has no mutant of, whose threshold is
+/// no share, or whose score is below its threshold.
+pub fn judge_crates(mutants: &[Mutant], targets: &Targets) -> (Vec<Score>, Vec<String>) {
+    let mut scores = Vec::new();
+    let mut problems = Vec::new();
+    for rule in &targets.crates {
+        let prefix = format!("crates/{}/src/", rule.name);
+        let mut score = Score { name: rule.name.clone(), ..Score::default() };
+        for m in mutants.iter().filter(|m| m.file.starts_with(&prefix)) {
+            match m.summary.as_str() {
+                "CaughtMutant" | "Timeout" => score.caught += 1,
+                "MissedMutant" => score.missed += 1,
+                _ => score.unviable += 1,
+            }
+        }
+        if !(0.0..=1.0).contains(&rule.threshold) || rule.tests.is_empty() {
+            problems.push(format!("crate {}: its threshold is no share, or it names no tests", rule.name));
+        }
+        if score.caught + score.missed == 0 {
+            problems.push(format!("crate {}: the run has no mutant of it", rule.name));
+        } else if score.share() < rule.threshold {
+            problems.push(format!(
+                "crate {}: {} of {} mutants were caught ({:.1} %); the threshold is {:.1} %",
+                rule.name,
+                score.caught,
+                score.caught + score.missed,
+                score.share() * 100.0,
+                rule.threshold * 100.0
+            ));
+        }
+        scores.push(score);
+    }
+    (scores, problems)
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -390,5 +462,81 @@ mod tests {
         let (targets, _) = read_targets(&root).unwrap();
         let problems = check_targets(&root, &targets).unwrap();
         assert!(problems.is_empty(), "{}", problems.join("\n"));
+    }
+
+    // P-ID: P7.13.2 (a crate's score may not fall below its threshold)
+    #[test]
+    fn a_crate_is_judged_by_the_share_of_its_mutants_that_are_caught() {
+        let mutant = |file: &str, summary: &str| Mutant {
+            file: file.to_string(),
+            function: "f".to_string(),
+            line: 1,
+            description: "replace f".to_string(),
+            summary: summary.to_string(),
+        };
+        let rules = |threshold: f64| -> Targets {
+            toml::from_str(&format!(
+                "packages = []\nthreshold = 1.0\ntarget = []\n[[crate]]\nname = \"dp-formats\"\ntests = [\"dp-formats\"]\nthreshold = {threshold}\n"
+            ))
+            .unwrap()
+        };
+        // Three caught (a hang counts), one missed, one that does not
+        // compile, and a mutant of another crate, which is not counted.
+        let run = vec![
+            mutant("crates/dp-formats/src/sexp.rs", "CaughtMutant"),
+            mutant("crates/dp-formats/src/sexp.rs", "CaughtMutant"),
+            mutant("crates/dp-formats/src/cache.rs", "Timeout"),
+            mutant("crates/dp-formats/src/cache.rs", "MissedMutant"),
+            mutant("crates/dp-formats/src/cache.rs", "Unviable"),
+            mutant("crates/dp-formats-more/src/lib.rs", "MissedMutant"),
+            mutant("crates/dp-core/src/verdict.rs", "MissedMutant"),
+        ];
+        let (scores, problems) = judge_crates(&run, &rules(0.75));
+        assert_eq!(scores, [Score { name: "dp-formats".into(), caught: 3, missed: 1, unviable: 1 }]);
+        assert_eq!(scores[0].share(), 0.75);
+        assert_eq!(problems, Vec::<String>::new());
+        // Just above the score: the gate fails and says the numbers.
+        let (_, problems) = judge_crates(&run, &rules(0.76));
+        assert_eq!(problems, ["crate dp-formats: 3 of 4 mutants were caught (75.0 %); the threshold is 76.0 %"]);
+        // One more surviving mutant fails a threshold that held.
+        let mut worse = run.clone();
+        worse.push(mutant("crates/dp-formats/src/hash.rs", "MissedMutant"));
+        assert_eq!(judge_crates(&worse, &rules(0.75)).1.len(), 1);
+        // A run without a mutant of the crate, or with none that compiled,
+        // shows nothing and fails; so does a threshold that is no share.
+        assert_eq!(judge_crates(&run[5..], &rules(0.0)).1, ["crate dp-formats: the run has no mutant of it"]);
+        assert_eq!(judge_crates(&run[4..5], &rules(0.0)).1, ["crate dp-formats: the run has no mutant of it"]);
+        assert!(judge_crates(&run, &rules(1.5)).1.iter().any(|p| p.contains("its threshold is no share")));
+        let nameless: Targets =
+            toml::from_str("packages = []\nthreshold = 1.0\ntarget = []\n[[crate]]\nname = \"dp-formats\"\ntests = []\nthreshold = 0.5\n").unwrap();
+        assert!(judge_crates(&run, &nameless).1.iter().any(|p| p.contains("it names no tests")));
+        // No rule, no judgement.
+        let none: Targets = toml::from_str("packages = []\nthreshold = 1.0\ntarget = []\n").unwrap();
+        assert_eq!(judge_crates(&run, &none), (vec![], vec![]));
+    }
+
+    // The crates of the target list exist, and so do the packages whose
+    // tests judge them.
+    #[test]
+    fn the_crates_of_the_target_list_and_their_test_packages_exist() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let (targets, _) = read_targets(&root).unwrap();
+        assert!(targets.crates.len() >= 4);
+        let manifests: String = ["crates", "tests", "fuzz", "tools"]
+            .iter()
+            .flat_map(|dir| {
+                let mut found = vec![root.join(dir).join("Cargo.toml")];
+                found.extend(fs::read_dir(root.join(dir)).into_iter().flatten().flatten().map(|e| e.path().join("Cargo.toml")));
+                found
+            })
+            .filter_map(|path| fs::read_to_string(path).ok())
+            .collect();
+        for rule in &targets.crates {
+            assert!(root.join("crates").join(&rule.name).join("src").is_dir(), "{}", rule.name);
+            for package in &rule.tests {
+                assert!(manifests.contains(&format!("name = \"{package}\"")), "{package}");
+            }
+            assert!((0.0..=1.0).contains(&rule.threshold), "{}", rule.name);
+        }
     }
 }

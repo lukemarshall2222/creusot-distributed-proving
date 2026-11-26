@@ -339,4 +339,72 @@ mod tests {
         assert_ne!(tree_hash(&dir).unwrap(), first);
         fs::remove_dir_all(dir).unwrap();
     }
+
+    // P-ID: P5.3.4 (what counts as the checker's acceptance)
+    #[test]
+    fn only_a_normal_end_that_says_correct_is_an_acceptance() {
+        assert!(accepted(Some(0), b"correct\n"));
+        assert!(accepted(Some(0), b"some note\ncorrect\n\n"));
+        // The word without the status, and the status without the word.
+        assert!(!accepted(Some(1), b"correct\n"));
+        assert!(!accepted(None, b"correct\n"));
+        assert!(!accepted(Some(0), b""));
+        assert!(!accepted(Some(0), b"incorrect\n"));
+        assert!(!accepted(Some(0), b"correct\nError: something else\n"));
+        assert!(!accepted(Some(0), b"correct!\n"));
+        assert!(!accepted(Some(1), b"incorrect\n"));
+    }
+
+    #[test]
+    fn each_form_of_a_step_taken_on_trust_is_seen() {
+        assert!(has_trusted_step(b"(step @p1 :rule trust)\n"));
+        assert!(has_trusted_step(b"(step @p1 :rule hole :args (x))\n"));
+        assert!(has_trusted_step(b"(assume @p0 x)\n(trust x)\n"));
+        assert!(!has_trusted_step(b"(step @p1 :rule trans)\n(assume @p2 (trusted x))\n"));
+        assert!(!has_trusted_step(b""));
+    }
+
+    // The command lines and the pipeline are what the Session runs and
+    // what a certificate's Task_Hash covers: they are not empty, and they
+    // are what this module says.
+    #[test]
+    fn the_command_lines_and_the_pipeline_are_as_stated() {
+        assert_eq!(pipeline(), ["eliminate_recursion", "eliminate_match"]);
+        assert_eq!(pipeline_hash(), b"eliminate_recursion\neliminate_match");
+        let produce = proof_command("/a path/cvc5");
+        assert!(produce.starts_with("'/a path/cvc5' --tlimit=%T "), "{produce}");
+        assert!(produce.ends_with(" %f"), "{produce}");
+        for option in PROOF_OPTIONS {
+            assert!(produce.contains(option), "{option}");
+        }
+        assert!(PROOF_OPTIONS.contains(&"--no-proof-allow-trust") && PROOF_OPTIONS.contains(&"--proof-format=cpc"));
+        let check = check_command("/bin/ethos", Path::new("/sig"));
+        assert_eq!(check, "'/bin/ethos' '--include=/sig/Cpc.eo' --reference=%r --require-proof-of-false %f");
+    }
+
+    // An entry of which one file alone was changed is damaged, whichever
+    // file it is; and the error says so.
+    #[test]
+    fn one_changed_file_of_an_entry_is_damage() {
+        let c = certificate();
+        let content = c.content_hash();
+        let files: std::collections::BTreeMap<PathBuf, Vec<u8>> =
+            c.files().into_iter().map(|(name, bytes)| (Path::new("store").join(content.to_hex()).join(name), bytes)).collect();
+        let load = |changed: Option<&str>| {
+            Certificate::load_with(Path::new("store"), content, &mut |path| {
+                let mut bytes = files.get(path).cloned().ok_or_else(|| io::Error::other("no such file"))?;
+                if changed.is_some_and(|name| path.ends_with(name)) {
+                    bytes.push(b'x');
+                }
+                Ok(bytes)
+            })
+        };
+        assert_eq!(load(None).unwrap(), c);
+        for name in ["goal", "proof", "manifest"] {
+            let error = load(Some(name)).unwrap_err();
+            assert!(matches!(error, StoreError::Damaged(_)), "{name}");
+            assert!(error.to_string().starts_with("the certificate entry is damaged: "), "{error}");
+        }
+        assert_eq!(StoreError::Io(io::Error::other("disk")).to_string(), "disk");
+    }
 }
