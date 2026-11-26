@@ -67,6 +67,7 @@ const MESSAGE_LIMIT: usize = 1 << 30;
 
 /// The Cluster of a Session: the Coordinator's address and the Worker
 /// registry, already verified against the operator signing key.
+#[derive(Clone)]
 pub struct Cluster {
     pub address: String,
     pub registry: Registry,
@@ -99,6 +100,7 @@ pub struct Member {
     pub seed: Option<u64>,
 }
 
+#[derive(Clone)]
 pub struct Config {
     /// The patched why3find.
     pub why3find: PathBuf,
@@ -143,6 +145,9 @@ pub struct Config {
     /// Where the event trace goes and how much of it is kept (R1.5 criteria
     /// 18 and 19).
     pub trace: Option<(PathBuf, Retention)>,
+    /// How many records the default trace keeps in memory when no trace
+    /// file is configured.
+    pub trace_keep: usize,
     /// The hash of the Lock_File, for the member `dp-lock` of the proof
     /// files (R7.7 criterion 5).
     pub lock_hash: Hash,
@@ -703,7 +708,7 @@ impl<E: Env, W: Why3find> Session<E, W> {
         let miss = |reason: &str| {
             eprintln!("dp-frontend: Result_Cache entry {} is a miss: {reason}", path.display());
         };
-        let entry = match result_cache::read(&self.dir, &wanted) {
+        let entry = match result_cache::read(&mut self.env, &self.dir, &wanted) {
             result_cache::Read::Absent => return Ok(None),
             result_cache::Read::Miss(_, reason) => {
                 miss(&reason);
@@ -833,7 +838,7 @@ impl<E: Env, W: Why3find> Session<E, W> {
             micros: finished.micros,
             origin,
         };
-        result_cache::write(&self.dir, &entry)?;
+        result_cache::write(&mut self.env, &self.dir, &entry)?;
         Ok(())
     }
 
@@ -1863,7 +1868,7 @@ impl<E: Env, W: Why3find> Session<E, W> {
                                     eprintln!("dp-frontend: the operator revoked Worker {:?}", command.worker);
                                 }
                                 // Later Sessions of the project know it too.
-                                if let Err(e) = crate::revocations::add(&self.dir, &command) {
+                                if let Err(e) = crate::revocations::add(&mut self.env, &self.dir, &command) {
                                     eprintln!("dp-frontend: the revocation could not be stored: {e}");
                                 }
                             } else {
@@ -1964,7 +1969,7 @@ impl<E: Env, W: Why3find> Session<E, W> {
         let registry = config.cluster.as_ref().map(|c| c.registry.clone());
         // Revocations that earlier Sessions of this project saw.
         let revoked = match &operator {
-            Some(key) => crate::revocations::load(&config.dir, key),
+            Some(key) => crate::revocations::load(&mut env, &config.dir, key),
             None => BTreeSet::new(),
         };
         let cluster = config.cluster.and_then(|c| match env.connect(&c.address) {
@@ -1982,7 +1987,8 @@ impl<E: Env, W: Why3find> Session<E, W> {
         });
         let trace = match &config.trace {
             Some((path, retention)) => TraceWriter::to_file("front-end", path.clone(), *retention)?,
-            None => TraceWriter::off("front-end"),
+            // On by default: the most recent steps, in memory (D-11).
+            None => TraceWriter::in_memory("front-end", config.trace_keep),
         };
         let silence = config.silence_limit.as_micros() as u64;
         let beat = config.beat_period.as_micros() as u64;
@@ -2192,6 +2198,17 @@ pub fn run(config: Config) -> Result<i32, SessionError> {
         session.env.kill(call);
     }
     session.trace.finish()?;
+    // A Session that failed says what it did last: the steps that the
+    // default trace kept go to the project's cache directory. Not after a
+    // pin mismatch: such a Session leaves the project as it was (R7.7
+    // criterion 3), and what stopped it is in its message.
+    if matches!(&result, Err(e) if !matches!(e, SessionError::Pin(_))) {
+        let kept = session.trace.kept();
+        let path = session.dir.join(".dp-cache").join("last-trace");
+        if !kept.is_empty() && session.env.write_file(&path, &kept).is_ok() {
+            eprintln!("dp-frontend: the last steps of the Session are in {}", path.display());
+        }
+    }
     let files = goal_labels(session.state(), &session.goals);
     let Session { bridge, state, counts, cache_hits, remote_proofs, spent, dir, lock_hash, cert_sources, .. } = session;
     match result {

@@ -1,65 +1,13 @@
 // Feature: creusot-distributed-proving, Property 29: Cache hits reuse only what nothing could have changed
 // P-ID: P7.5.1, P7.5.2, P7.10.1 (Result_Cache entry)
 
-use dp_formats::cache::{cache_key, Atom, Entry, Origin};
-use dp_formats::cluster::{ResultFields, SignedResult};
-use dp_formats::dispatch::DriverAnswer;
-use dp_formats::hash::Hash;
-use ed25519_dalek::SigningKey;
+use dp_formats::cache::{cache_key, Atom, Entry};
+use dp_testkit::gen::cache_entry::{change, entry, lookup, FIELDS};
 use proptest::prelude::*;
 
-fn atom() -> impl Strategy<Value = Atom> {
-    prop_oneof![
-        proptest::collection::vec(any::<u8>(), 0..12).prop_map(Atom::Bytes),
-        any::<u64>().prop_map(Atom::Num),
-    ]
-}
-
-fn lookup() -> impl Strategy<Value = Vec<Atom>> {
-    proptest::collection::vec(atom(), 0..10)
-}
-
-fn origin() -> impl Strategy<Value = Origin> {
-    prop_oneof![
-        Just(Origin::Local),
-        (any::<[u8; 32]>(), "[a-z0-9/]{0,8}", any::<Option<u64>>(), proptest::collection::vec(any::<u8>(), 0..20))
-            .prop_map(|(key, id, seed, output)| {
-                let fields = ResultFields {
-                    job_id: id.clone(),
-                    task_hash: Hash([1; 32]),
-                    prover: id.clone(),
-                    seed,
-                    binary_hash: Hash([2; 32]),
-                    worker: id,
-                    status: Some(0),
-                    timed_out: false,
-                    output,
-                    elapsed_micros: 5,
-                    velocity: 1_000_000,
-                    local_micros: 9,
-                    imports_hash: Hash([5; 32]),
-                };
-                Origin::Worker(SignedResult::sign(fields, &SigningKey::from_bytes(&key)))
-            }),
-    ]
-}
-
-fn entry() -> impl Strategy<Value = Entry> {
-    (lookup(), any::<[u8; 32]>(), any::<u64>(), any::<u64>(), any::<[u8; 32]>(),
-     proptest::sample::select(DriverAnswer::ALL.to_vec()), any::<u64>(), origin())
-        .prop_map(|(lookup, binary, velocity, local_micros, imports, answer, micros, origin)| Entry {
-            lookup,
-            binary_hash: Hash(binary),
-            velocity,
-            local_micros,
-            imports_hash: Hash(imports),
-            answer,
-            micros,
-            origin,
-        })
-}
-
 proptest! {
+    #![proptest_config(dp_testkit::config::cases("prop_cache", 256))]
+
     #[test]
     fn entries_round_trip(e in entry()) {
         prop_assert_eq!(Entry::decode(&e.encode(), 1 << 20), Ok(e));
@@ -93,5 +41,16 @@ proptest! {
         if let Ok(other) = Entry::decode(&bytes, 1 << 20) {
             prop_assert_ne!(other, e);
         }
+    }
+
+    /// One changed lookup or validation field is another entry, with
+    /// another encoding; the key changes exactly with the lookup fields.
+    #[test]
+    fn a_changed_field_is_another_entry(e in entry(), which in 0..FIELDS) {
+        let g = change(&e, which);
+        prop_assert_ne!(&g, &e);
+        prop_assert_ne!(g.encode(), e.encode());
+        prop_assert_eq!(Entry::decode(&g.encode(), 1 << 20), Ok(g.clone()));
+        prop_assert_eq!(cache_key(&g.lookup) == cache_key(&e.lookup), which != FIELDS - 1);
     }
 }

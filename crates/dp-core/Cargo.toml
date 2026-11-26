@@ -13,6 +13,7 @@ creusot-std = "0.15.0"
 
 # Test-only; not part of the dependency closure that R7.3 restricts.
 [dev-dependencies]
+dp-testkit = { path = "../dp-testkit" }
 proptest = "1"
 
 [lints.rust]

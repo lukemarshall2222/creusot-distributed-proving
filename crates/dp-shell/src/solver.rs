@@ -249,12 +249,36 @@ impl Run {
     fn kill_group(&mut self) {
         // The solver leads its own process group: this ends the solver and
         // every process it started (R1.4 criterion 5, R1.5 criterion 17).
-        let _ = Command::new("kill")
-            .args(["-KILL", "--", &format!("-{}", self.child.id())])
-            .stderr(Stdio::null())
-            .status();
+        // By the system's `kill` at its fixed places first: a `kill` that
+        // PATH happens to hold may take other arguments, and a program
+        // that cannot be started at all must not leave the group running.
+        let group = format!("-{}", self.child.id());
+        let signal = |signal: &str| -> Option<bool> {
+            ["/bin/kill", "/usr/bin/kill", "kill"].iter().find_map(|program| {
+                Command::new(program)
+                    .args([signal, "--", &group])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+                    .ok()
+                    .map(|status| status.success())
+            })
+        };
+        signal("-KILL");
         let _ = self.child.kill();
         let _ = self.child.wait();
+        // One signal is not always enough: a process that the solver was
+        // just starting can be missed (seen on macOS, one run in six of
+        // the test below). The group is signalled until none of it is left.
+        for _ in 0..50 {
+            // Signal 0 asks whether the group has a member; a failure to
+            // ask is taken as an answer of yes.
+            if signal("-0") == Some(false) {
+                break;
+            }
+            signal("-KILL");
+            std::thread::sleep(Duration::from_millis(5));
+        }
     }
 
     fn clean(&self) {

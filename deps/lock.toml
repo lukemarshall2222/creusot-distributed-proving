@@ -82,3 +82,84 @@ patches = ["patches/creusot/0001-prove-backend-option.patch"]
 [[tool.platform]]
 platform = "aarch64-darwin"
 hash = "sha256:f3ec5ad5d0bc5b0ee53bf0fe45f1049bcf5d2866522a95d7ca13a761bd55a6a9"
+
+[[tool]]
+name = "why3"
+version = "05bf4ddf55cb3042f34c3bc0ed3aff56a226978a"
+kind = "why3"
+
+[[tool.platform]]
+platform = "aarch64-darwin"
+hash = "sha256:a41ca4ac969baa483fa57b1585cae6253b71eeaa7d96dc440ec0e6c07bf79ff9"
+
+[[tool]]
+name = "carcara"
+version = "394edbb15ba95c47893f1d821fddde7e016af178"
+kind = "checker"
+
+[[tool.platform]]
+platform = "aarch64-darwin"
+hash = "sha256:7b8285303588a26d07d9f1aeaceb9862ca856639a918fae2cc90568ebb1807d3"
+
+[[tool]]
+name = "lean"
+version = "4.29.1"
+kind = "lean"
+
+[[tool.platform]]
+platform = "aarch64-darwin"
+hash = "sha256:cbc37292fd05d842e68eec3eef654574768a50ace2e39165dd3c76dbdf31e54a"
+
+[[tool]]
+name = "tlc"
+version = "1.7.4"
+kind = "tla"
+
+[[tool.platform]]
+platform = "aarch64-darwin"
+hash = "sha256:62f691354aaed5e0c11e686f39435e36bbbc83067c78dba0f9fac46970af9f09"
+
+[[tool]]
+name = "apalache"
+version = "0.63.0"
+kind = "tla"
+
+[[tool.platform]]
+platform = "aarch64-darwin"
+hash = "sha256:8599e4417f088431b77cb0a1124a777a885d5073b6092145efe46d466e7649a1"
+
+[[tool]]
+name = "kani"
+version = "0.68.0"
+kind = "kani"
+
+[[tool.platform]]
+platform = "aarch64-darwin"
+hash = "sha256:00ffc19e1e863a36dac6f87c577c13794e44278afe20b8c93b6e4b3961c15de4"
+
+[[tool]]
+name = "cargo-mutants"
+version = "27.1.0"
+kind = "cargo-mutants"
+
+[[tool.platform]]
+platform = "aarch64-darwin"
+hash = "sha256:870b686fd36ee696a89d0e995a9c42c27196f7ab7a729ebf0ea5a8ec9bc0285e"
+
+[[tool]]
+name = "rust-toolchain"
+version = "1.99.0-nightly-2026-08-03"
+kind = "toolchain"
+
+[[tool.platform]]
+platform = "aarch64-darwin"
+hash = "sha256:95f7b25443520b0fc048e3f00c4609916bbad3b690fca788da3792f2b79c1a77"
+
+[[tool]]
+name = "rust-libraries"
+version = "Cargo.lock"
+kind = "library"
+
+[[tool.platform]]
+platform = "aarch64-darwin"
+hash = "sha256:be4360b7e4665dd256188ea406da6f01ccc667f6798d18fb008aff3cd54cdbc4"

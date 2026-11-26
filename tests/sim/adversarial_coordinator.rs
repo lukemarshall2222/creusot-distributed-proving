@@ -106,7 +106,7 @@ fn cases() -> u32 {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: cases(), failure_persistence: None, ..ProptestConfig::default() })]
+    #![proptest_config(dp_testkit::config::cases("adversarial_coordinator", cases()))]
 
     /// P1.3.3: for any schedule of the adversary and any calls, the calls
     /// answered Valid are among those whose own Printed_Goal is provable.

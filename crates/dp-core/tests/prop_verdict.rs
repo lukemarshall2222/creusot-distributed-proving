@@ -187,7 +187,7 @@ fn any_label() -> impl Strategy<Value = Label> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 300, failure_persistence: None, ..ProptestConfig::default() })]
+    #![proptest_config(dp_testkit::config::cases("prop_verdict", 300))]
 
     /// R7.2 criterion 5: the most informative outcome is the one of the
     /// smallest rank, and unresolved when there is none.

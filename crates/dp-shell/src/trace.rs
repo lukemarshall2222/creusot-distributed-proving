@@ -31,6 +31,9 @@ pub struct TraceWriter {
 
 enum Sink {
     None,
+    /// The most recent records, kept in memory only: the default, so that
+    /// a component that fails can say what it did last (D-11).
+    Memory { keep: usize, ring: VecDeque<Vec<u8>> },
     Complete(BufWriter<fs::File>),
     Bounded { path: PathBuf, keep: usize, ring: VecDeque<Vec<u8>> },
 }
@@ -39,6 +42,25 @@ impl TraceWriter {
     /// A writer that keeps nothing.
     pub fn off(component: &str) -> TraceWriter {
         TraceWriter { component: component.to_string(), seq: 0, sink: Sink::None }
+    }
+
+    /// A writer that keeps the most recent `keep` records in memory. What
+    /// it keeps is read with `kept`; nothing is written anywhere.
+    pub fn in_memory(component: &str, keep: usize) -> TraceWriter {
+        TraceWriter { component: component.to_string(), seq: 0, sink: Sink::Memory { keep, ring: VecDeque::new() } }
+    }
+
+    /// The records that a bounded writer holds, oldest first, one per line.
+    pub fn kept(&self) -> Vec<u8> {
+        match &self.sink {
+            Sink::Memory { ring, .. } | Sink::Bounded { ring, .. } => ring.iter().flatten().copied().collect(),
+            Sink::None | Sink::Complete(_) => Vec::new(),
+        }
+    }
+
+    /// Number of steps recorded so far, kept or not.
+    pub fn steps(&self) -> u64 {
+        self.seq
     }
 
     pub fn to_file(component: &str, path: PathBuf, retention: Retention) -> io::Result<TraceWriter> {
@@ -79,7 +101,7 @@ impl TraceWriter {
         match &mut self.sink {
             Sink::None => Ok(()),
             Sink::Complete(file) => file.write_all(&line),
-            Sink::Bounded { keep, ring, .. } => {
+            Sink::Bounded { keep, ring, .. } | Sink::Memory { keep, ring } => {
                 ring.push_back(line);
                 while ring.len() > *keep {
                     ring.pop_front();
@@ -92,7 +114,7 @@ impl TraceWriter {
     /// Flushes the records that are kept.
     pub fn finish(&mut self) -> io::Result<()> {
         match &mut self.sink {
-            Sink::None => Ok(()),
+            Sink::None | Sink::Memory { .. } => Ok(()),
             Sink::Complete(file) => file.flush(),
             Sink::Bounded { path, ring, .. } => {
                 let mut file = BufWriter::new(fs::File::create(&*path)?);
@@ -136,5 +158,29 @@ mod tests {
             assert_eq!(lines(&bounded), all[n.saturating_sub(keep)..].to_vec());
         }
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    // P-ID: P1.5.15
+    #[test]
+    fn the_default_writer_keeps_the_last_records_in_memory() {
+        let mut t = TraceWriter::in_memory("fe", 3);
+        assert!(t.enabled() && t.kept().is_empty());
+        for i in 0..10u64 {
+            t.record("Tick", i, "x").unwrap();
+        }
+        t.finish().unwrap();
+        assert_eq!(t.steps(), 10);
+        let kept = String::from_utf8(t.kept()).unwrap();
+        let lines: Vec<&str> = kept.lines().collect();
+        assert_eq!(lines.len(), 3);
+        // The sequence numbers of the last three steps, in order.
+        for (line, seq) in lines.iter().zip(["8", "9", "10"]) {
+            let record = sexp::parse(line.as_bytes(), 1 << 16).unwrap();
+            assert_eq!(record.as_list().unwrap()[2].as_str(), Some(seq), "{line}");
+        }
+        // A writer that is off keeps nothing, and still counts.
+        let mut off = TraceWriter::off("fe");
+        off.record("Tick", 0, "x").unwrap();
+        assert!(!off.enabled() && off.kept().is_empty() && off.steps() == 1);
     }
 }

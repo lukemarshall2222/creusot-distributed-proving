@@ -240,6 +240,7 @@ version = "0.0.0"
 dependencies = [
  "dp-core",
  "dp-formats",
+ "dp-testkit",
  "proptest",
 ]
 
@@ -265,6 +266,7 @@ name = "dp-core"
 version = "0.0.0"
 dependencies = [
  "creusot-std",
+ "dp-testkit",
  "proptest",
 ]
 
@@ -281,6 +283,7 @@ dependencies = [
 name = "dp-formats"
 version = "0.0.0"
 dependencies = [
+ "dp-testkit",
  "ed25519-dalek",
  "proptest",
  "serde",
@@ -381,6 +384,7 @@ dependencies = [
  "dp-formats",
  "dp-shell",
  "ed25519-dalek",
+ "proptest",
 ]
 
 [[package]]
@@ -559,6 +563,15 @@ name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
+
+[[package]]
+name = "lock-check"
+version = "0.0.0"
+dependencies = [
+ "dp-formats",
+ "serde",
+ "toml",
+]
 
 [[package]]
 name = "memchr"

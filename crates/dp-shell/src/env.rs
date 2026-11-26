@@ -93,6 +93,11 @@ pub trait Env {
     fn kill(&mut self, run: u64);
     /// The runs that ended since the last call.
     fn finished(&mut self) -> io::Result<Vec<(u64, RunEnd)>>;
+    /// The file store: the whole contents of a file.
+    fn read_file(&mut self, path: &Path) -> io::Result<Vec<u8>>;
+    /// Writes a file so that, whenever the component stops, the file is
+    /// absent, or as it was, or complete with these contents (P5.4.5).
+    fn write_file(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()>;
 }
 
 /// The production adapter: TCP, the OS clock and OS processes.
@@ -291,5 +296,13 @@ impl Env for OsEnv {
             }
         }
         Ok(ended)
+    }
+
+    fn read_file(&mut self, path: &Path) -> io::Result<Vec<u8>> {
+        fs::read(path)
+    }
+
+    fn write_file(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        crate::store::write_atomic(path, bytes)
     }
 }

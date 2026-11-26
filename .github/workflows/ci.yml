@@ -1,9 +1,10 @@
-# CI on Linux (task 1.4, first version). Each step named ci/<job> runs
-# ci/jobs/<job>.sh, which also runs on a developer machine.
+# CI on Linux (task 1.4). Each step named ci/<job> runs ci/jobs/<job>.sh,
+# which also runs on a developer machine. The jobs are those of the CI job
+# list of requirements.md (R7.11); ci/traceability checks that this file
+# and sched.yml define every one of them and no other.
 #
-# Not here yet: the other jobs of the R7.11 job list (ci/lean, ci/kani,
-# ci/traceability and the rest), which have nothing to check so far, and
-# the scheduled jobs.
+# A job whose inputs do not exist yet passes with a notice; ci/traceability
+# fails for a requirement row in scope that names something missing.
 name: ci
 
 on:
@@ -13,6 +14,11 @@ on:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  # A Lock_File generated for this platform, when the committed one does
+  # not pin it (ci/jobs/common.sh).
+  DP_GENERATED_LOCK: ${{ github.workspace }}/.generated-lock.toml
 
 jobs:
   # The gating checks. One job, so that the solvers, Why3 and Creusot are
@@ -28,34 +34,55 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix', 'deps/**', 'patches/**') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
           gc-max-store-size-linux: 8G
-      - name: ci/patches
-        run: ci/jobs/patches.sh
       - name: build the CI shell
         run: nix develop .#ci --command true
-      - name: ci/purity, ci/tcb-check, ci/traceability
-        run: nix develop .#ci --command ci/jobs/trust.sh
-      # One script: the unit and property tests, the differential tests,
-      # the simulator tests, the canary harness, the replay tests, the
-      # tests with the certificate checker, the tests with a Cluster on one
-      # machine, and the smoke run of the fuzz harnesses.
-      - name: ci/test, ci/diff, ci/sim, ci/canaries, ci/certs, ci/replay, ci/integration-cluster, ci/fuzz-smoke
+      - name: ci/patches
+        run: nix develop .#ci --command ci/jobs/patches.sh
+      - name: ci/purity
+        run: nix develop .#ci --command ci/jobs/purity.sh
+      - name: ci/tcb-check
+        run: nix develop .#ci --command ci/jobs/tcb-check.sh
+      - name: ci/test
         run: nix develop .#ci --command ci/jobs/test.sh
-        env:
-          DP_GENERATED_LOCK: ${{ runner.temp }}/lock.toml
+      - name: ci/certs
+        run: nix develop .#ci --command ci/jobs/certs.sh
+      - name: ci/canaries
+        run: nix develop .#ci --command ci/jobs/canaries.sh
+      - name: ci/diff
+        run: nix develop .#ci --command ci/jobs/diff.sh
+      - name: ci/fuzz-smoke
+        run: nix develop .#ci --command ci/jobs/fuzz-smoke.sh
+      - name: ci/sim
+        run: nix develop .#ci --command ci/jobs/sim.sh
+      - name: ci/replay
+        run: nix develop .#ci --command ci/jobs/replay.sh
+      - name: ci/integration-cluster
+        run: nix develop .#ci --command ci/jobs/integration-cluster.sh
       - name: ci/creusot
         run: nix develop .#ci --command ci/jobs/creusot.sh
       - name: ci/tlc
         run: nix develop .#ci --command ci/jobs/tlc.sh
+      - name: ci/trace-validation
+        run: nix develop .#ci --command ci/jobs/trace-validation.sh
       - name: ci/lean
         run: nix develop .#ci --command ci/jobs/lean.sh
         env:
           DP_REQUIRE_LEAN: 1
+      - name: ci/lean-partition
+        run: nix develop .#ci --command ci/jobs/lean-partition.sh
+      - name: ci/corpus-check
+        run: nix develop .#ci --command ci/jobs/corpus-check.sh
+      - name: ci/eval-smoke
+        run: nix develop .#ci --command ci/jobs/eval-smoke.sh
+      - name: ci/eval-report
+        run: nix develop .#ci --command ci/jobs/eval-report.sh
       - name: keep the Lock_File generated for this platform
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: lock-${{ runner.os }}-${{ runner.arch }}
-          path: ${{ runner.temp }}/lock.toml
+          path: .generated-lock.toml
+          include-hidden-files: true
           if-no-files-found: ignore
 
   # Reported, not gating yet: Kani has not been built on Linux by this
@@ -81,6 +108,23 @@ jobs:
       - uses: cachix/install-nix-action@v31
       - name: ci/repro-build
         run: ci/jobs/repro-build.sh
+
+  # After every other ci/ job has ended (R7.11 criterion 9), whatever the
+  # two jobs that do not gate yet reported.
+  traceability:
+    needs: [checks, kani, repro-build]
+    if: ${{ !cancelled() && needs.checks.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - uses: nix-community/cache-nix-action/restore@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix', 'deps/**', 'patches/**') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+      - name: ci/traceability
+        run: nix develop .#ci --command ci/jobs/traceability.sh
 
   # Reported, not gating yet: the pinned tools that no check uses so far and
   # the OCI images of the integration cluster. None has been built on Linux.

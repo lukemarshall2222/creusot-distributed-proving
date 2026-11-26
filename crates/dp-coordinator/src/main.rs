@@ -154,7 +154,8 @@ fn main() -> ExitCode {
         let bound = env.listen(address)?;
         let trace = match options.get("--trace") {
             Some(path) => TraceWriter::to_file("coordinator", path.into(), Retention::Complete)?,
-            None => TraceWriter::off("coordinator"),
+            // On by default: the most recent steps, in memory (D-11).
+            None => TraceWriter::in_memory("coordinator", 1000),
         };
         // The operator's verification key: without it no command is taken.
         let operator = match options.get("--operator-key") {

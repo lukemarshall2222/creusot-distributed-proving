@@ -61,6 +61,8 @@ fn entry() -> impl Strategy<Value = DpEntry> {
 }
 
 proptest! {
+    #![proptest_config(dp_testkit::config::cases("prop_proofjson", 256))]
+
     #[test]
     fn base64_round_trips(bytes in proptest::collection::vec(any::<u8>(), 0..40)) {
         let text = base64_encode(&bytes);

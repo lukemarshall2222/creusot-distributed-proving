@@ -1,17 +1,18 @@
-# Scheduled jobs (R7.11 job list): checks that take too long for every push.
+# Scheduled jobs (R7.11 job list): checks that take too long for every
+# push. Each step named sched/<job> runs ci/jobs/<job>.sh. A job without
+# inputs ends with status 78 and records no run, so the requirement rows
+# that name it stay pending.
 name: sched
 
 on:
   schedule:
-    # Every night, and the mutation job on Mondays.
+    # Every night, and the weekly jobs on Mondays.
     - cron: "47 2 * * *"
     - cron: "17 3 * * 1"
   workflow_dispatch:
 
 jobs:
-  # Longer runs of what ci/test runs briefly: the fuzz harnesses on many
-  # more inputs from a start that changes every night, and the simulation
-  # with the adversarial Coordinator on many more schedules.
+  # Longer runs of what the push jobs run briefly.
   nightly:
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '47 2 * * *'
     runs-on: ubuntu-latest
@@ -25,15 +26,32 @@ jobs:
           restore-prefixes-first-match: nix-${{ runner.os }}-
           gc-max-store-size-linux: 8G
       - name: sched/fuzz-nightly
-        run: nix develop .#ci --command cargo test --release -p dp-fuzz
+        run: nix develop .#ci --command ci/jobs/fuzz-nightly.sh
         env:
-          DP_FUZZ_ROUNDS: 200
           DP_FUZZ_SEED: ${{ github.run_number }}
       - name: sched/sim-nightly
-        run: nix develop .#ci --command cargo test --release -p dp-sim
-        env:
-          DP_SIM_CASES: 5000
+        run: nix develop .#ci --command ci/jobs/sim-nightly.sh
+      - name: sched/canaries-full
+        run: nix develop .#ci --command ci/jobs/canaries-full.sh
 
+  # Inputs: specifications with an Apalache configuration next to them.
+  apalache:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '47 2 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix', 'deps/**', 'patches/**') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 8G
+      - name: sched/apalache-nightly
+        if: hashFiles('verification/tla/*.apalache.json') != ''
+        run: nix develop --command ci/jobs/apalache-nightly.sh
+
+  # cargo-mutants on the soundness-critical targets, and the gate.
   mutants:
     if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 3 * * 1'
     runs-on: ubuntu-latest
@@ -43,12 +61,11 @@ jobs:
       - uses: cachix/install-nix-action@v31
       - uses: nix-community/cache-nix-action@v7
         with:
-          primary-key: nix-sched-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix', 'deps/**') }}
-          restore-prefixes-first-match: nix-
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix', 'deps/**', 'patches/**') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
           gc-max-store-size-linux: 8G
-      # cargo-mutants on the soundness-critical targets, and the gate.
       - name: sched/mutants-weekly
-        run: nix develop --command ci/jobs/mutants.sh
+        run: nix develop --command ci/jobs/mutants-weekly.sh
         env:
           MUTANTS_OUT: ${{ runner.temp }}/mutants
       - name: keep the outcomes
@@ -58,3 +75,20 @@ jobs:
           name: mutants
           path: ${{ runner.temp }}/mutants/mutants.out/*.txt
           if-no-files-found: ignore
+
+  # Inputs: the experiment runner of the evaluation.
+  eval:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 3 * * 1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock', 'flake.nix', 'deps/**', 'patches/**') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 8G
+      - name: sched/eval
+        if: hashFiles('eval/run.sh') != ''
+        run: nix develop .#ci --command ci/jobs/eval.sh

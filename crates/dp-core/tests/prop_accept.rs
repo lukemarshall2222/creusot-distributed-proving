@@ -85,7 +85,7 @@ fn each_missing_fact_has_its_reason() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 500, failure_persistence: None, ..ProptestConfig::default() })]
+    #![proptest_config(dp_testkit::config::cases("prop_accept", 500))]
 
     /// A Task_Hash that differs from the local one in any word is not
     /// accepted (P1.3.1).

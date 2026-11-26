@@ -45,7 +45,7 @@ fn the_reference_machine_keeps_every_limit() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 2000, failure_persistence: None, ..ProptestConfig::default() })]
+    #![proptest_config(dp_testkit::config::cases("prop_calibration", 2000))]
 
     #[test]
     fn scale_is_the_rounded_down_product_or_the_largest_time(micros in value(), velocity in value()) {

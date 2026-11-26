@@ -123,7 +123,7 @@ fn fields_of_equal_length_and_other_contents_are_told_apart() {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 500, failure_persistence: None, ..ProptestConfig::default() })]
+    #![proptest_config(dp_testkit::config::cases("prop_cache_key", 500))]
 
     #[test]
     fn the_encoding_is_a_function_of_the_fields(f in lookup_fields()) {

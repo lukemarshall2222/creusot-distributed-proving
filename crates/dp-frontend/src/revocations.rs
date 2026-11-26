@@ -14,15 +14,15 @@ use dp_formats::{
     cluster::{Operation, SignedCommand},
     sexp::{self, Sexp},
 };
-use dp_shell::store;
+use dp_shell::env::Env;
 use ed25519_dalek::VerifyingKey;
 
 fn file(dir: &Path) -> std::path::PathBuf {
     dir.join(".dp-cache").join("revocations")
 }
 
-fn read(dir: &Path) -> Vec<SignedCommand> {
-    let Ok(bytes) = std::fs::read(file(dir)) else { return Vec::new() };
+fn read(env: &mut impl Env, dir: &Path) -> Vec<SignedCommand> {
+    let Ok(bytes) = env.read_file(&file(dir)) else { return Vec::new() };
     let Ok(parsed) = sexp::parse(&bytes, 1 << 24) else { return Vec::new() };
     let Some([tag, entries @ ..]) = parsed.as_list() else { return Vec::new() };
     if tag.as_str() != Some("revocations") {
@@ -33,8 +33,8 @@ fn read(dir: &Path) -> Vec<SignedCommand> {
 
 /// The Workers that stored revocations revoke, as far as the operator's
 /// key confirms them.
-pub fn load(dir: &Path, operator: &VerifyingKey) -> BTreeSet<String> {
-    read(dir)
+pub fn load(env: &mut impl Env, dir: &Path, operator: &VerifyingKey) -> BTreeSet<String> {
+    read(env, dir)
         .into_iter()
         .filter(|c| c.operation == Operation::Revoke && c.verifies(operator))
         .map(|c| c.worker)
@@ -42,14 +42,14 @@ pub fn load(dir: &Path, operator: &VerifyingKey) -> BTreeSet<String> {
 }
 
 /// Adds a revocation to the file.
-pub fn add(dir: &Path, command: &SignedCommand) -> io::Result<()> {
-    let mut entries = read(dir);
+pub fn add(env: &mut impl Env, dir: &Path, command: &SignedCommand) -> io::Result<()> {
+    let mut entries = read(env, dir);
     if entries.contains(command) {
         return Ok(());
     }
     entries.push(command.clone());
     let list = std::iter::once(Sexp::atom("revocations")).chain(entries.iter().map(|c| Sexp::List(c.encode())));
-    store::write_atomic(&file(dir), &sexp::print(&Sexp::List(list.collect())))
+    env.write_file(&file(dir), &sexp::print(&Sexp::List(list.collect())))
 }
 
 #[cfg(test)]
@@ -64,19 +64,20 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let operator = SigningKey::from_bytes(&[1; 32]);
         let stranger = SigningKey::from_bytes(&[2; 32]);
-        assert!(load(&dir, &operator.verifying_key()).is_empty());
-        add(&dir, &SignedCommand::sign(1, Operation::Revoke, "w1", &operator)).unwrap();
-        add(&dir, &SignedCommand::sign(2, Operation::Revoke, "w2", &stranger)).unwrap();
+        let env = &mut dp_shell::env::OsEnv::new("dp-revocations-test").unwrap();
+        assert!(load(env, &dir, &operator.verifying_key()).is_empty());
+        add(env, &dir, &SignedCommand::sign(1, Operation::Revoke, "w1", &operator)).unwrap();
+        add(env, &dir, &SignedCommand::sign(2, Operation::Revoke, "w2", &stranger)).unwrap();
         // not a revocation, though the operator signed it
-        add(&dir, &SignedCommand::sign(3, Operation::Drain, "w3", &operator)).unwrap();
-        add(&dir, &SignedCommand::sign(1, Operation::Revoke, "w1", &operator)).unwrap();
-        let revoked = load(&dir, &operator.verifying_key());
+        add(env, &dir, &SignedCommand::sign(3, Operation::Drain, "w3", &operator)).unwrap();
+        add(env, &dir, &SignedCommand::sign(1, Operation::Revoke, "w1", &operator)).unwrap();
+        let revoked = load(env, &dir, &operator.verifying_key());
         assert_eq!(revoked.into_iter().collect::<Vec<_>>(), vec!["w1".to_string()]);
         // under another operator key nothing of it counts
-        assert_eq!(load(&dir, &stranger.verifying_key()).into_iter().collect::<Vec<_>>(), vec!["w2".to_string()]);
+        assert_eq!(load(env, &dir, &stranger.verifying_key()).into_iter().collect::<Vec<_>>(), vec!["w2".to_string()]);
         // a damaged file adds nothing
         std::fs::write(file(&dir), b"(11:revocations").unwrap();
-        assert!(load(&dir, &operator.verifying_key()).is_empty());
+        assert!(load(env, &dir, &operator.verifying_key()).is_empty());
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

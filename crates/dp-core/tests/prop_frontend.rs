@@ -136,7 +136,7 @@ fn session() -> impl Strategy<Value = Vec<Input>> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(2000))]
+    #![proptest_config(dp_testkit::config::cases("prop_frontend", 2000))]
 
     #[test]
     fn a_session_keeps_its_promises(

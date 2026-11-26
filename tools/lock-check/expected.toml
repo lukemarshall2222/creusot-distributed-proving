@@ -1,0 +1,48 @@
+# The tools that the Lock_File pins (R7.7 criterion 1), by the name and
+# the kind of their entries. `lock-check` fails when one of them has no
+# entry, when an entry is for a tool that is not listed here, and when a
+# tool listed as pending has an entry after all.
+#
+# `platforms` are the platforms that every entry lists once the Lock_File
+# is complete. A platform that an entry lacks is reported with the
+# evidence (`lock-check --evidence`), not as a missing tool.
+
+platforms = ["aarch64-darwin", "x86_64-linux", "aarch64-linux"]
+
+tool = [
+    { name = "creusot", kind = "creusot" },
+    { name = "why3", kind = "why3" },
+    { name = "why3find-dispatch", kind = "why3find" },
+    { name = "alt-ergo", kind = "unpatched-solver" },
+    { name = "z3", kind = "unpatched-solver" },
+    { name = "cvc5", kind = "unpatched-solver" },
+    { name = "cvc4", kind = "unpatched-solver" },
+    { name = "ethos", kind = "checker" },
+    { name = "cpc-signature", kind = "checker-signature" },
+    { name = "carcara", kind = "checker" },
+    { name = "lean", kind = "lean" },
+    { name = "tlc", kind = "tla" },
+    { name = "apalache", kind = "tla" },
+    { name = "kani", kind = "kani" },
+    { name = "cargo-mutants", kind = "cargo-mutants" },
+    { name = "rust-toolchain", kind = "toolchain" },
+    { name = "rust-libraries", kind = "library" },
+]
+
+# Tools of criterion 1 that cannot be pinned yet, each with the reason.
+
+[[pending]]
+name = "alethe-rule-list"
+reason = "The list of the Alethe rules of the supported fragment is defined with the Carcara route, in stage 5 of the plan."
+
+[[pending]]
+name = "ocaml-toolchain"
+reason = "The OCaml compiler is an input of the Nix builds of Why3 and why3find and no package of the flake, so there is no entry point to hash; the hashes of the two builds cover it."
+
+[[pending]]
+name = "ocaml-libraries"
+reason = "As the OCaml toolchain: inputs of the Nix builds of Why3 and why3find."
+
+[[pending]]
+name = "lean-libraries"
+reason = "The Lean library of this repository uses Lean's own library only, which the entry of the toolchain covers."

@@ -251,7 +251,7 @@ fn run(
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(300))]
+    #![proptest_config(dp_testkit::config::cases("faults", 300))]
 
     // Crashes, restarts, partitions, loss, duplicates and delays, with an
     // honest or a forging Coordinator: every call is answered, once; no
@@ -649,6 +649,62 @@ fn a_restarted_coordinator_remembers_revocations_and_serial_numbers() {
     assert!(!cluster.operate(2, Operation::Remove, WORKERS + 1, &operator_key()));
     assert!(cluster.operate(4, Operation::Drain, WORKERS + 1, &operator_key()));
     // The Front_End's project remembers the revocation too.
-    let stored = dp_frontend::revocations::load(&cluster.dir, &operator_key().verifying_key());
+    let stored = dp_frontend::revocations::load(&mut dp_testkit::sim::SimEnv::new(&cluster.world, dp_sim::FRONT_END), &cluster.dir, &operator_key().verifying_key());
     assert!(stored.contains("w10"), "{stored:?}");
+}
+
+/// R1.6: the Front_End's machine stops in the middle of a Session, with
+/// and without its peers noticing, and a new Session starts on the same
+/// project. Every call is answered again and truthfully, and what the
+/// first Session stored in the Result_Cache is not run again.
+#[test]
+fn a_front_end_that_crashes_starts_again_and_reuses_what_it_stored() {
+    for noticed in [true, false] {
+        let script = mixed();
+        let setup = Setup { cache: true, ..Setup::plain() };
+        let mut cluster = Cluster::with(21, Faults::none(), 2, 0, script.clone(), setup);
+        cluster.run_until(45_000);
+        let answered: Vec<usize> = (0..script.len()).filter(|rid| cluster.answer(*rid).is_some()).collect();
+        assert!(!answered.is_empty() && answered.len() < script.len(), "{answered:?}");
+        let before: Vec<(usize, Reply)> = answered.iter().map(|rid| (*rid, cluster.answer(*rid).unwrap().0)).collect();
+        let runs = cluster.world.borrow().started.len();
+        cluster.crash_front_end(noticed);
+        cluster.run_until(60_000);
+        cluster.restart_front_end();
+        // Nothing of the first Session's memory is there: no answer yet.
+        assert!(cluster.answer(script.len() - 1).is_none());
+        cluster.run_until(60_000 + horizon(&script));
+        for (rid, call) in script.iter().enumerate() {
+            let reply = cluster.answer(rid).unwrap_or_else(|| panic!("noticed {noticed}: call {rid} has no answer")).0;
+            assert!(reply != Reply::Valid || truth(call) == Reply::Valid, "call {rid}: {reply:?}");
+        }
+        // The calls that were answered before the crash have the same
+        // answers, from the Result_Cache: no solver ran on them again.
+        let again: Vec<Vec<u8>> = cluster.world.borrow().started[runs..].iter().map(|(_, _, input)| input.clone()).collect();
+        for (rid, reply) in before {
+            assert_eq!(cluster.answer(rid).unwrap().0, reply, "call {rid}");
+            assert!(!again.contains(&script[rid].text), "noticed {noticed}: call {rid} was run again");
+        }
+    }
+}
+
+/// The Coordinator's state file and the Front_End's revocations are in
+/// the simulated file store of their machines, and nowhere on disk.
+#[test]
+fn what_the_shells_store_is_in_the_simulated_file_store() {
+    let script = mixed();
+    let setup = Setup { cache: true, ..Setup::plain() };
+    let mut cluster = Cluster::with(22, Faults::none(), 2, 0, script.clone(), setup);
+    cluster.run_until(horizon(&script));
+    assert!(cluster.operate(1, Operation::Revoke, WORKERS, &operator_key()));
+    let world = cluster.world.borrow();
+    let of = |node: u32| -> Vec<String> {
+        world.files.keys().filter(|(n, _)| *n == node).map(|(_, p)| p.display().to_string()).collect()
+    };
+    assert!(of(COORDINATOR).iter().any(|p| p.ends_with("coordinator.state")), "{:?}", of(COORDINATOR));
+    let front_end = of(dp_sim::FRONT_END);
+    assert!(front_end.iter().any(|p| p.ends_with(".dp-cache/revocations")), "{front_end:?}");
+    // One entry per call that ran to an answer.
+    assert!(front_end.iter().filter(|p| p.contains(".dp-cache/") && !p.ends_with("revocations")).count() >= 4, "{front_end:?}");
+    assert!(!cluster.dir.join(".dp-cache").exists() && !cluster.dir.join("coordinator.state").exists());
 }

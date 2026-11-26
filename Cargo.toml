@@ -21,6 +21,7 @@ members = [
     "tests/integration",
     "tests/replay",
     "tests/sim",
+    "tools/lock-check",
     "tools/mutants",
     "tools/patch-check",
     "tools/purity-check",

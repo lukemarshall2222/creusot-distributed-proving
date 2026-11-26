@@ -39,7 +39,7 @@ fn store() -> PathBuf {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 150, failure_persistence: None, ..ProptestConfig::default() })]
+    #![proptest_config(dp_testkit::config::cases("prop_store", 150))]
 
     #[test]
     fn an_entry_is_read_back_and_storing_again_changes_nothing(c in certificate()) {

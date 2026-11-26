@@ -3,33 +3,11 @@
 # the pinned upstream version and builds, and the patched why3find passes
 # its harness against the unpatched one with real provers.
 #
-# Run from the repository root. Needs Nix; does not need a dev shell.
+# Run from the repository root inside `nix develop .#ci`.
 set -eu
 
-status=0
-for patch in patches/*/*.patch; do
-  for field in 'Purpose:' 'Requirements: R' 'Upstream:'; do
-    if ! sed '/^---$/q' "$patch" | grep -q "^$field"; then
-      echo "ci/patches: $patch: header lacks \"$field\"" >&2
-      status=1
-    fi
-  done
-done
-# The Lock_File names every patch in the entry of the build that applies
-# it, and names no patch that is not there (R7.7 criterion 8).
-for patch in patches/*/*.patch; do
-  if ! grep -q "^patches = .*\"$patch\"" deps/lock.toml; then
-    echo "ci/patches: no Lock_File entry names $patch" >&2
-    status=1
-  fi
-done
-for named in $(grep '^patches = ' deps/lock.toml | grep -o '"[^"]*"' | tr -d '"'); do
-  if [ ! -f "$named" ]; then
-    echo "ci/patches: the Lock_File names $named, which does not exist" >&2
-    status=1
-  fi
-done
-[ "$status" -eq 0 ] || exit "$status"
+# The static part: headers, sizes and Lock_File entries of the patches.
+cargo run --quiet -p patch-check
 
 # Building applies each patch to the pinned source; an apply or build error
 # fails here.

@@ -1,0 +1,14 @@
+[package]
+name = "lock-check"
+description = "ci/repro-build, static part: the Lock_File is complete and has its evidence (R7.7 criteria 6 and 9)"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+dp-formats.workspace = true
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+[lints]
+workspace = true

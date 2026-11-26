@@ -281,6 +281,33 @@ fn tracked_files(root: &Path) -> Result<BTreeSet<String>, String> {
     Ok(String::from_utf8_lossy(&out.stdout).lines().map(str::to_string).collect())
 }
 
+/// The CI job list of `requirements.md` (R7.11): the jobs that the
+/// sentence "The *CI job list* is: ..." names.
+pub fn job_list(requirements: &str) -> BTreeSet<String> {
+    requirements
+        .lines()
+        .find(|l| l.contains("The *CI job list* is:"))
+        .map(|l| quoted(l).into_iter().filter(|t| is_job(t)).map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
+/// R7.11 criterion 10: the workflows define every job of the CI job list,
+/// and no `ci/` or `sched/` job outside it.
+pub fn check_jobs(requirements: &str, jobs: &BTreeSet<String>) -> Vec<String> {
+    let list = job_list(requirements);
+    let mut problems = Vec::new();
+    if list.is_empty() {
+        problems.push("requirements.md states no CI job list".to_string());
+    }
+    for job in list.difference(jobs) {
+        problems.push(format!("{job}: in the CI job list, and no workflow defines it"));
+    }
+    for job in jobs.difference(&list) {
+        problems.push(format!("{job}: defined by a workflow, and not in the CI job list"));
+    }
+    problems
+}
+
 /// The CI jobs that the workflow runs: its steps named `ci/<job>`.
 pub fn workflow_jobs(workflow: &str) -> BTreeSet<String> {
     workflow
@@ -315,6 +342,21 @@ pub fn run(root: &Path, write: bool) -> Result<Vec<String>, String> {
         fs::write(&rendered_path, render(&table, &tracked)).map_err(|e| e.to_string())?;
     }
     let mut problems = check(&table, &requirements, &tracked, &jobs);
+    problems.extend(check_jobs(&requirements, &jobs));
+    // Every job has its script, and every script is a job (R7.11: one
+    // script per job under ci/jobs).
+    for job in &jobs {
+        let script = format!("ci/jobs/{}.sh", job.rsplit('/').next().unwrap_or(job));
+        if !tracked.contains(&script) {
+            problems.push(format!("{job}: no script {script}"));
+        }
+    }
+    for script in tracked.iter().filter(|f| f.starts_with("ci/jobs/") && f.ends_with(".sh")) {
+        let name = &script["ci/jobs/".len()..script.len() - 3];
+        if name != "common" && !jobs.iter().any(|j| j.rsplit('/').next() == Some(name)) {
+            problems.push(format!("{script}: a script of no job"));
+        }
+    }
     if read(&rendered_path).ok().as_deref() != Some(render(&table, &tracked).as_str()) {
         problems.push("docs/traceability.md is not current (run traceability-check --write)".to_string());
     }
@@ -416,6 +458,21 @@ mod tests {
         found(&|_| {}, &more, "R1.2: properties differ");
         let renamed = REQUIREMENTS.replace("`tests/escalation.rs`", "`tests/escalate.rs`");
         found(&|_| {}, &renamed, "R1.2: artifacts differ");
+    }
+
+    #[test]
+    fn the_workflows_define_exactly_the_job_list() {
+        let requirements = "- The *CI job list* is: `ci/test`, `ci/sim` and `ci/traceability`, which run on every pull request; and `sched/eval`, which runs on a schedule.\n";
+        let list = job_list(requirements);
+        assert_eq!(list.len(), 4);
+        let defined = |names: &[&str]| -> BTreeSet<String> { names.iter().map(|n| n.to_string()).collect() };
+        assert!(check_jobs(requirements, &defined(&["ci/test", "ci/sim", "ci/traceability", "sched/eval"])).is_empty());
+        let problems = check_jobs(requirements, &defined(&["ci/test", "ci/traceability", "sched/eval", "ci/extra"]));
+        assert_eq!(
+            problems,
+            ["ci/sim: in the CI job list, and no workflow defines it", "ci/extra: defined by a workflow, and not in the CI job list"]
+        );
+        assert!(!check_jobs("no list here", &defined(&[])).is_empty());
     }
 
     #[test]

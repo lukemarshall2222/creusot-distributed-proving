@@ -2,18 +2,9 @@
 // P-ID: P7.1.7 (authentication scheme), P7.10.1 (cluster messages)
 
 use dp_formats::cluster::*;
-use dp_formats::hash::Hash;
 use dp_formats::sexp::{parse, print};
-use ed25519_dalek::SigningKey;
+use dp_testkit::gen::result::{blob, fields, key, mutate, text as s};
 use proptest::prelude::*;
-
-fn s() -> impl Strategy<Value = String> {
-    "[a-zA-Z0-9@._/ -]{0,12}"
-}
-
-fn blob() -> impl Strategy<Value = Vec<u8>> {
-    proptest::collection::vec(any::<u8>(), 0..40)
-}
 
 fn job() -> impl Strategy<Value = Job> {
     (any::<bool>(), s(), s(), blob(), s(), any::<u64>(), any::<Option<u64>>(), blob()).prop_map(
@@ -28,32 +19,6 @@ fn job() -> impl Strategy<Value = Job> {
             goal,
         },
     )
-}
-
-fn fields() -> impl Strategy<Value = ResultFields> {
-    (s(), any::<[u8; 32]>(), s(), any::<Option<u64>>(), any::<[u8; 32]>(), s(), any::<Option<u32>>(), any::<bool>(), blob(), any::<u64>())
-        .prop_map(|(job_id, task_hash, prover, seed, binary_hash, worker, status, timed_out, output, elapsed_micros)| {
-            ResultFields {
-                job_id,
-                task_hash: Hash(task_hash),
-                prover,
-                seed,
-                binary_hash: Hash(binary_hash),
-                worker,
-                status,
-                timed_out,
-                output,
-                elapsed_micros,
-                // every signed field is covered by `mutate` below
-                velocity: 1_000_000,
-                local_micros: 7,
-                imports_hash: Hash([3; 32]),
-            }
-        })
-}
-
-fn key() -> impl Strategy<Value = SigningKey> {
-    any::<[u8; 32]>().prop_map(|b| SigningKey::from_bytes(&b))
 }
 
 fn command() -> impl Strategy<Value = SignedCommand> {
@@ -92,28 +57,9 @@ fn message() -> impl Strategy<Value = Message> {
     ]
 }
 
-/// One changed field of a Result.
-fn mutate(f: &ResultFields, which: u8) -> ResultFields {
-    let mut g = f.clone();
-    match which % 13 {
-        12 => g.imports_hash.0[7] ^= 2,
-        10 => g.velocity += 1,
-        11 => g.local_micros += 1,
-        9 => g.seed = Some(g.seed.map_or(0, |s| s.wrapping_add(1))),
-        0 => g.job_id.push('x'),
-        1 => g.task_hash.0[0] ^= 1,
-        2 => g.prover.push('x'),
-        3 => g.binary_hash.0[31] ^= 0x80,
-        4 => g.worker.push('x'),
-        5 => g.status = Some(g.status.map_or(0, |s| s.wrapping_add(1))),
-        6 => g.timed_out = !g.timed_out,
-        7 => g.output.push(b'u'),
-        _ => g.elapsed_micros = g.elapsed_micros.wrapping_add(1),
-    }
-    g
-}
-
 proptest! {
+    #![proptest_config(dp_testkit::config::cases("prop_cluster", 256))]
+
     #[test]
     fn messages_round_trip(m in message()) {
         prop_assert_eq!(Message::decode(&parse(&print(&m.encode()), 1 << 20).unwrap()), Ok(m));
@@ -165,6 +111,8 @@ fn hex_round_trips_and_rejects_bad_text() {
 }
 
 proptest! {
+    #![proptest_config(dp_testkit::config::cases("prop_cluster", 256))]
+
     // P-ID: P1.7.6
     #[test]
     fn an_operator_command_verifies_only_as_signed(c in command(), other in key(), which in 0u8..3) {

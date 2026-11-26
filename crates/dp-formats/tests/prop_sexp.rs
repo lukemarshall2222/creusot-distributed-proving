@@ -14,6 +14,8 @@ fn arb_sexp() -> impl Strategy<Value = Sexp> {
 }
 
 proptest! {
+    #![proptest_config(dp_testkit::config::cases("prop_sexp", 256))]
+
     #[test]
     fn parse_inverts_print(v in arb_sexp()) {
         prop_assert_eq!(parse(&print(&v), LIMIT), Ok(v));

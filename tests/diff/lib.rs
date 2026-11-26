@@ -61,7 +61,7 @@ pub fn project(name: &str, provers: &str) -> PathBuf {
     fs::write(
         dir.join("why3find.json"),
         format!(
-            r#"{{ "fast": 0.2, "time": 1.0, "depth": 4, "packages": [], "provers": [ {provers} ], "tactics": [ "split_vc" ], "drivers": [], "warnoff": [] }}"#
+            r#"{{ "fast": 0.2, "time": 1.0, "depth": 4, "packages": [], "provers": [ {provers} ], "tactics": [ "split_vc" ], "drivers": [], "warnoff": [], "profile": [ {{ "prover": "alt-ergo@2.6.4", "size": 17, "time": 0.58 }} ] }}"#
         ),
     )
     .unwrap();

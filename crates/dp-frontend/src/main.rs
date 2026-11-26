@@ -77,6 +77,7 @@ fn main() -> ExitCode {
         certify_all: options.certify_all,
         export: std::env::var_os("DP_EXPORT_DIR").map(PathBuf::from),
         trace: options.trace,
+        trace_keep: options.trace_keep,
         lock_hash,
         // Corpus measurement: needs DP_RECORD.
         matrix: std::env::var("DP_MATRIX_SECONDS")

@@ -13,7 +13,6 @@ use ed25519_dalek::VerifyingKey;
 use dp_formats::sexp::{self, Sexp};
 use dp_shell::{
     env::{Env, NetEvent, Peer},
-    store,
     trace::TraceWriter,
 };
 
@@ -93,7 +92,7 @@ impl<E: Env> Shell<E> {
     /// such a state stops the start: starting empty would forget
     /// revocations.
     pub fn with_state(
-        env: E,
+        mut env: E,
         mut config: Config,
         trace: TraceWriter,
         operator: Option<VerifyingKey>,
@@ -101,7 +100,7 @@ impl<E: Env> Shell<E> {
     ) -> io::Result<Shell<E>> {
         let mut durable = Durable { incarnation: 0, serial: config.serial, revocations: Vec::new() };
         if let Some(path) = &state_file {
-            match std::fs::read(path) {
+            match env.read_file(path) {
                 Ok(bytes) => {
                     durable = Durable::decode(&bytes)
                         .ok_or_else(|| io::Error::other(format!("{}: not a Coordinator state", path.display())))?;
@@ -115,7 +114,7 @@ impl<E: Env> Shell<E> {
                 r.operation == Operation::Revoke && operator.as_ref().is_some_and(|key| r.verifies(key))
             });
             durable.incarnation += 1;
-            store::write_atomic(path, &durable.encode())?;
+            env.write_file(path, &durable.encode())?;
         }
         config.serial = config.serial.max(durable.serial);
         Ok(Shell {
@@ -141,14 +140,15 @@ impl<E: Env> Shell<E> {
         self.incarnation
     }
 
-    fn persist(&self) -> io::Result<()> {
+    fn persist(&mut self) -> io::Result<()> {
         let Some(path) = &self.state_file else { return Ok(()) };
         let durable = Durable {
             incarnation: self.incarnation,
             serial: self.state().serial,
             revocations: self.revocations.clone(),
         };
-        store::write_atomic(path, &durable.encode())
+        let path = path.clone();
+        self.env.write_file(&path, &durable.encode())
     }
 
     fn revoked(&self, worker: &str) -> bool {

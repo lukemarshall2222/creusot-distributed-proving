@@ -274,6 +274,9 @@ pub struct Setup {
     /// The call's own prover also runs on the Front_End's machine as a
     /// member of every race.
     pub local_member: bool,
+    /// The Session uses the Result_Cache, in the simulated file store of
+    /// its machine: what one Session stores, the next one finds.
+    pub cache: bool,
 }
 
 impl Setup {
@@ -286,6 +289,7 @@ impl Setup {
             other_prints: BTreeMap::new(),
             certify: false,
             local_member: false,
+            cache: false,
         }
     }
 }
@@ -302,11 +306,41 @@ pub struct Cluster {
     speeds: Speeds,
     /// The project directory of the simulated Session.
     pub dir: std::path::PathBuf,
+    /// What a Session of this Cluster is started with: a Front_End that
+    /// crashed starts again from these.
+    session_config: session::Config,
+    script: Vec<Call>,
+    prints: BTreeMap<(u64, String), Vec<u8>>,
+    step: StrategyStep,
+    /// The Front_End's machine is down.
+    front_end_down: bool,
 }
 
 impl Drop for Cluster {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// why3find as the script has it, from its first call.
+fn scripted(
+    world: &Rc<RefCell<World>>,
+    script: &[Call],
+    velocity: u64,
+    prints: &BTreeMap<(u64, String), Vec<u8>>,
+    step: StrategyStep,
+) -> Scripted {
+    Scripted {
+        world: Rc::clone(world),
+        script: script.to_vec(),
+        next: 0,
+        announced: BTreeSet::new(),
+        out: VecDeque::new(),
+        questions: 0,
+        velocity,
+        answers: BTreeMap::new(),
+        prints: prints.clone(),
+        step,
     }
 }
 
@@ -316,7 +350,7 @@ fn coordinator_shell(world: &Rc<RefCell<World>>, state: Option<std::path::PathBu
     CoordinatorShell::with_state(
         SimEnv::new(world, COORDINATOR),
         config,
-        TraceWriter::off("coordinator"),
+        TraceWriter::in_memory("coordinator", 200),
         Some(operator_key().verifying_key()),
         state,
     )
@@ -359,7 +393,7 @@ impl Cluster {
     }
 
     pub fn with(seed: u64, faults: Faults, workers: u32, strangers: u32, script: Vec<Call>, setup: Setup) -> Cluster {
-        let Setup { seeds, speeds, portfolio, first_pass_on_cluster, other_prints, certify, local_member } = setup;
+        let Setup { seeds, speeds, portfolio, first_pass_on_cluster, other_prints, certify, local_member, cache } = setup;
         let world = World::new(seed, faults);
         world.borrow_mut().listen(COORDINATOR, ADDRESS);
         world.borrow_mut().set_velocity(FRONT_END, speeds.front_end);
@@ -384,8 +418,8 @@ impl Cluster {
         let config = session::Config {
             why3find: Default::default(),
             lock,
-            // No Result_Cache: nothing of a simulated Session is on disk.
-            args: vec!["--no-cache".into()],
+            // Without `cache`, no Result_Cache: every call is run.
+            args: if cache { Vec::new() } else { vec!["--no-cache".into()] },
             dir: dir.clone(),
             jobs: 2,
             cluster: Some(session::Cluster {
@@ -414,26 +448,32 @@ impl Cluster {
             certify_all: false,
             export: None,
             trace: None,
+            trace_keep: 200,
             lock_hash,
             matrix: None,
         };
-        let why3find = Scripted {
-            world: Rc::clone(&world),
-            script,
-            next: 0,
-            announced: BTreeSet::new(),
-            out: VecDeque::new(),
-            questions: 0,
-            velocity: speeds.front_end,
-            answers: BTreeMap::new(),
-            prints: other_prints.into_iter().map(|(goal, text)| ((goal, OTHER_PROVER.to_string()), text)).collect(),
-            step: if first_pass_on_cluster { StrategyStep::Fast } else { StrategyStep::Parallel },
-        };
+        let prints: BTreeMap<(u64, String), Vec<u8>> =
+            other_prints.into_iter().map(|(goal, text)| ((goal, OTHER_PROVER.to_string()), text)).collect();
+        let step = if first_pass_on_cluster { StrategyStep::Fast } else { StrategyStep::Parallel };
+        let why3find = scripted(&world, &script, speeds.front_end, &prints, step);
         // The Front_End connects once the Coordinator listens.
-        let front_end = Session::start(SimEnv::new(&world, FRONT_END), why3find, config, Default::default())
+        let front_end = Session::start(SimEnv::new(&world, FRONT_END), why3find, config.clone(), Default::default())
             .expect("a simulated Session starts");
-        let mut cluster =
-            Cluster { world, coordinator, adversary: None, workers: BTreeMap::new(), front_end, keys, speeds, dir };
+        let mut cluster = Cluster {
+            world,
+            coordinator,
+            adversary: None,
+            workers: BTreeMap::new(),
+            front_end,
+            keys,
+            speeds,
+            dir,
+            session_config: config,
+            script,
+            prints,
+            step,
+            front_end_down: false,
+        };
         for node in nodes {
             cluster.start_worker(node);
         }
@@ -449,6 +489,24 @@ impl Cluster {
         cluster.coordinator = None;
         cluster.adversary = Some(adversary::Adversary::new(SimEnv::new(&cluster.world, COORDINATOR), seed));
         cluster
+    }
+
+    /// The Front_End's machine stops: the Session is gone with everything
+    /// that it held in memory. What it wrote to its file store stays.
+    pub fn crash_front_end(&mut self, noticed: bool) {
+        self.world.borrow_mut().crash(FRONT_END, noticed);
+        self.front_end_down = true;
+    }
+
+    /// A new Session on the Front_End's machine, on the same project:
+    /// why3find makes every call of the script again, from the first.
+    pub fn restart_front_end(&mut self) {
+        self.world.borrow_mut().restart(FRONT_END);
+        let why3find = scripted(&self.world, &self.script, self.speeds.front_end, &self.prints, self.step);
+        self.front_end =
+            Session::start(SimEnv::new(&self.world, FRONT_END), why3find, self.session_config.clone(), Default::default())
+                .expect("a simulated Session starts");
+        self.front_end_down = false;
     }
 
     pub fn start_coordinator(&mut self) {
@@ -512,12 +570,14 @@ impl Cluster {
             for worker in self.workers.values_mut() {
                 worker.turn(Duration::ZERO).expect("simulated turn");
             }
-            self.front_end.turn(Duration::ZERO).expect("simulated turn");
-            let waiting = self.front_end.bridge.pending() || {
+            if !self.front_end_down {
+                self.front_end.turn(Duration::ZERO).expect("simulated turn");
+            }
+            let waiting = (!self.front_end_down && self.front_end.bridge.pending()) || {
                 let world = self.world.borrow();
                 ((self.coordinator.is_some() || self.adversary.is_some()) && world.pending(COORDINATOR))
                     || self.workers.keys().any(|n| world.pending(*n))
-                    || world.pending(FRONT_END)
+                    || (!self.front_end_down && world.pending(FRONT_END))
             };
             if !waiting {
                 return;

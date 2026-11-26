@@ -14,6 +14,15 @@ Generated from `docs/tcb.toml` by `tcb-check --write`; do not edit.
 | cpc-signature | certified | NG-4 | The rules that Ethos checks CPC proofs against; a wrong rule would let a wrong proof pass. |
 | why3find-dispatch | every label | NG-2 | Prints every Goal and counts its tasks (TB-23): every label is bound to its print. The dispatch patch is part of what is trusted. |
 | creusot | every label | NG-1, NG-4 | Translates the Rust source to the Goals that are proved, and starts the Front_End through the backend patch. |
+| why3 | every label | NG-2 | Generates the verification conditions, applies the transformations and prints every Goal with the pinned drivers. |
+| carcara | nothing yet | NG-4 | The checker of Alethe proofs. Pinned for the Carcara route of stage 5; no label rests on it until that route exists. |
+| lean | the metatheorems, no label | NG-4 | Checks verdict_sound and the reference definitions that the Rust decision functions are compared with. |
+| tlc | the protocol models, no label | NG-4 | Model-checks Coordinator.tla and Cluster.tla and validates traces of the Coordinator's shell. |
+| apalache | nothing yet | NG-4 | Pinned for the nightly bounded checks of the protocol models; no specification has an Apalache configuration yet. |
+| kani | bounded checks of dp-core, no label | NG-4 | Checks the compiled arithmetic of scale and the comparison of Cache_Key encodings within recorded bounds. |
+| cargo-mutants | the mutation gate, no label | NG-4 | Makes the mutants that the tests of the soundness-critical functions must catch. |
+| rust-toolchain | every label | NG-4 | Compiles the System: the decision core that Creusot proves is trusted as compiled. |
+| rust-libraries | every label | NG-4 | The Rust libraries that the System is built with, as Cargo.lock pins them: hashing, signatures, parsing of configuration files. |
 
 ## Items
 

@@ -4,8 +4,8 @@
 #
 #   deps/gen-lock.sh > deps/lock.toml      (from the repository root)
 #
-# This is the part of task 1.3 that dp-frontend needs so far. Still missing:
-# the other tools of R7.7 criterion 1, the other platforms, and the evidence
+# Still missing (tools/lock-check lists what is pending and why):
+# the other platforms, the OCaml toolchain and libraries, and the evidence
 # of R7.7 criterion 9 for each Unpatched_Solver entry, which is why
 # `rebuild_hashes` is empty.
 #
@@ -110,3 +110,55 @@ patches = ["patches/creusot/0001-prove-backend-option.patch"]
 platform = "$platform"
 hash = "sha256:$(sha "$(real "$wrapper/bin/cargo-creusot")")"
 ENTRY
+
+# The other tools of R7.7 criterion 1. The hash is that of the tool's
+# entry point in its Nix build: the file that is run.
+other() { # package binary name kind [version]
+  out=$(nix build ".#$1" --no-link --print-out-paths | head -1)
+  # The version is the end of the store path's name, after the package name.
+  version=${5:-$(basename "$out" | sed -E 's/^[a-z0-9]{32}-//; s/^[a-zA-Z0-9]*(-[a-zA-Z][a-zA-Z0-9]*)*-//')}
+  cat <<ENTRY
+
+[[tool]]
+name = "$3"
+version = "$version"
+kind = "$4"
+
+[[tool.platform]]
+platform = "$platform"
+hash = "sha256:$(sha "$(real "$out/bin/$2")")"
+ENTRY
+}
+
+other why3 why3 why3 why3 05bf4ddf55cb3042f34c3bc0ed3aff56a226978a
+other carcara carcara carcara checker 394edbb15ba95c47893f1d821fddde7e016af178
+other lean lean lean lean
+other tlc tlc tlc tla
+other apalache apalache-mc apalache tla
+other kani kani kani kani
+other cargo-mutants cargo-mutants cargo-mutants cargo-mutants
+other rust-toolchain cargo rust-toolchain toolchain
+
+# The Rust libraries of the System: the lock file of the workspace, without
+# the `source` and `checksum` lines of the packages that Creusot's shell
+# provides from its own build (inside the shell cargo writes their entries
+# without them). tools/lock-check computes the same text.
+normalized=${TMPDIR:-/tmp}/dp-cargo-lock.$$
+awk '
+  $0 == "[[package]]" { provided = 0 }
+  /^name = "/ { provided = ($0 == "name = \"creusot-std\"" || $0 == "name = \"creusot-std-proc\"" || $0 == "name = \"pearlite-syn\"") }
+  provided && (/^source = / || /^checksum = /) { next }
+  { print }
+' Cargo.lock > "$normalized"
+cat <<ENTRY
+
+[[tool]]
+name = "rust-libraries"
+version = "Cargo.lock"
+kind = "library"
+
+[[tool.platform]]
+platform = "$platform"
+hash = "sha256:$(sha "$normalized")"
+ENTRY
+rm -f "$normalized"

@@ -8,13 +8,13 @@
 //! (`validate_entry`, `cache_label`) from facts that the Session computes.
 
 use std::{
-    fs, io,
+    io,
     path::{Path, PathBuf},
 };
 
 use dp_core::cache_key;
 use dp_formats::cache::{self, Entry};
-use dp_shell::store;
+use dp_shell::env::Env;
 
 /// Size limit of one entry. A working value, not a proposal for `<TBD-22>`.
 pub const ENTRY_LIMIT: usize = 1 << 24;
@@ -54,10 +54,11 @@ pub enum Read {
     Entry(Entry),
 }
 
-/// Reads the entry for the encoded run description `wanted`.
-pub fn read(dir: &Path, wanted: &[cache_key::Atom]) -> Read {
+/// Reads the entry for the encoded run description `wanted` from the file
+/// store of `env`.
+pub fn read(env: &mut impl Env, dir: &Path, wanted: &[cache_key::Atom]) -> Read {
     let path = file(dir, &formats_atoms(wanted));
-    let Ok(bytes) = fs::read(&path) else { return Read::Absent };
+    let Ok(bytes) = env.read_file(&path) else { return Read::Absent };
     let entry = match Entry::decode(&bytes, ENTRY_LIMIT) {
         Ok(entry) => entry,
         Err(e) => return Read::Miss(path, e.to_string()),
@@ -70,8 +71,8 @@ pub fn read(dir: &Path, wanted: &[cache_key::Atom]) -> Read {
 }
 
 /// Stores an entry under the key of its lookup fields, atomically.
-pub fn write(dir: &Path, entry: &Entry) -> io::Result<()> {
-    store::write_atomic(&file(dir, &entry.lookup), &entry.encode())
+pub fn write(env: &mut impl Env, dir: &Path, entry: &Entry) -> io::Result<()> {
+    env.write_file(&file(dir, &entry.lookup), &entry.encode())
 }
 
 #[cfg(test)]
@@ -94,20 +95,22 @@ mod tests {
 
     #[test]
     fn an_entry_answers_only_the_lookup_of_its_own_fields() {
+        use std::fs;
         let dir = std::env::temp_dir().join(format!("dp-cache-unit-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
+        let env = &mut dp_shell::env::OsEnv::new("dp-cache-unit").unwrap();
         let a = vec![cache_key::Atom::Bytes(b"goal".to_vec()), cache_key::Atom::Num(1)];
         let b = vec![cache_key::Atom::Bytes(b"goal".to_vec()), cache_key::Atom::Num(2)];
-        assert_eq!(read(&dir, &a), Read::Absent);
-        write(&dir, &entry(a.clone())).unwrap();
-        assert_eq!(read(&dir, &a), Read::Entry(entry(a.clone())));
-        assert_eq!(read(&dir, &b), Read::Absent);
+        assert_eq!(read(env, &dir, &a), Read::Absent);
+        write(env, &dir, &entry(a.clone())).unwrap();
+        assert_eq!(read(env, &dir, &a), Read::Entry(entry(a.clone())));
+        assert_eq!(read(env, &dir, &b), Read::Absent);
         // The entry of `a` under the key of `b`: the stored fields decide.
         fs::copy(file(&dir, &formats_atoms(&a)), file(&dir, &formats_atoms(&b))).unwrap();
-        assert!(matches!(read(&dir, &b), Read::Miss(_, reason) if reason.contains("lookup fields")));
+        assert!(matches!(read(env, &dir, &b), Read::Miss(_, reason) if reason.contains("lookup fields")));
         // Bytes that are no entry.
         fs::write(file(&dir, &formats_atoms(&a)), b"(not an entry").unwrap();
-        assert!(matches!(read(&dir, &a), Read::Miss(..)));
+        assert!(matches!(read(env, &dir, &a), Read::Miss(..)));
         fs::remove_dir_all(dir).unwrap();
     }
 }

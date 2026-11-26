@@ -84,6 +84,8 @@ fn to_why3find() -> impl Strategy<Value = ToWhy3find> {
 }
 
 proptest! {
+    #![proptest_config(dp_testkit::config::cases("prop_dispatch", 256))]
+
     #[test]
     fn messages_from_why3find_round_trip(m in from_why3find()) {
         let bytes = print(&m.encode());

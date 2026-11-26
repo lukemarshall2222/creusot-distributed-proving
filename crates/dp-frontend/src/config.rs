@@ -37,6 +37,8 @@ pub struct Options {
     pub check_limit: Option<Duration>,
     pub proof_limit: usize,
     pub trace: Option<(std::path::PathBuf, Retention)>,
+    /// Records that the default trace keeps in memory.
+    pub trace_keep: usize,
 }
 
 /// An option's value with where it came from, for error messages.
@@ -277,5 +279,6 @@ pub fn load(dir: &Path) -> Result<Options, String> {
             };
             (dir.join(f.value), retention)
         }),
+        trace_keep: keep.value as usize,
     })
 }

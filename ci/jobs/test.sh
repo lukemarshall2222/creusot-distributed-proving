@@ -1,32 +1,11 @@
 #!/bin/sh
-# ci/test and ci/diff: the unit, property, end-to-end and differential tests
-# of the workspace, with real provers.
-#
-# Run from the repository root inside `nix develop .#ci`.
+# ci/test: the unit and property tests of every crate and tool, and the
+# end-to-end tests of the Front_End on one machine with real provers. The
+# suites with jobs of their own (canaries, certs, diff, fuzz-smoke,
+# integration-cluster, replay, sim) run there.
 set -eu
-
-# The committed Lock_File pins the platforms it lists. On another platform
-# the tests use a Lock_File generated from this flake's builds, which checks
-# the mechanism, not the committed pins.
-platform=$(nix eval --raw --impure --expr builtins.currentSystem)
-if ! grep -q "platform = \"$platform\"" deps/lock.toml; then
-  generated=${DP_GENERATED_LOCK:-$(mktemp)}
-  deps/gen-lock.sh > "$generated"
-  echo "ci/test: deps/lock.toml has no entries for $platform; using $generated" >&2
-  export DP_LOCK="$generated"
-fi
-
-# A test that cannot find its tools fails; it does not pass with a notice.
-export DP_REQUIRE_TOOLS=1
-
-# The end-to-end tests start the workspace executables.
-cargo build --workspace
-cargo test --workspace
-
-# dp-replay has no networking code (R7.6 criterion 1): it builds on its own
-# without the `cluster` feature of dp-shell, which holds the transport.
-if cargo tree -p dp-replay -e features --prefix none | grep -q 'dp-shell feature "cluster"'; then
-  echo "ci/test: dp-replay depends on the cluster feature of dp-shell" >&2
-  exit 1
-fi
-cargo check -p dp-replay
+. ci/jobs/common.sh
+cargo test --workspace \
+  --exclude dp-canaries --exclude dp-certs-tests --exclude dp-diff --exclude dp-fuzz \
+  --exclude dp-integration --exclude dp-replay-tests --exclude dp-sim
+cargo test -p dp-integration --test cli_labels --test pins

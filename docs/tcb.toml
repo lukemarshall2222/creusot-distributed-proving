@@ -64,6 +64,60 @@ items = [
 ]
 reason = "Translates the Rust source to the Goals that are proved, and starts the Front_End through the backend patch."
 
+[[tool]]
+name = "why3"
+trusted_for = "every label"
+items = ["NG-2"]
+reason = "Generates the verification conditions, applies the transformations and prints every Goal with the pinned drivers."
+
+[[tool]]
+name = "carcara"
+trusted_for = "nothing yet"
+items = ["NG-4"]
+reason = "The checker of Alethe proofs. Pinned for the Carcara route of stage 5; no label rests on it until that route exists."
+
+[[tool]]
+name = "lean"
+trusted_for = "the metatheorems, no label"
+items = ["NG-4"]
+reason = "Checks verdict_sound and the reference definitions that the Rust decision functions are compared with."
+
+[[tool]]
+name = "tlc"
+trusted_for = "the protocol models, no label"
+items = ["NG-4"]
+reason = "Model-checks Coordinator.tla and Cluster.tla and validates traces of the Coordinator's shell."
+
+[[tool]]
+name = "apalache"
+trusted_for = "nothing yet"
+items = ["NG-4"]
+reason = "Pinned for the nightly bounded checks of the protocol models; no specification has an Apalache configuration yet."
+
+[[tool]]
+name = "kani"
+trusted_for = "bounded checks of dp-core, no label"
+items = ["NG-4"]
+reason = "Checks the compiled arithmetic of scale and the comparison of Cache_Key encodings within recorded bounds."
+
+[[tool]]
+name = "cargo-mutants"
+trusted_for = "the mutation gate, no label"
+items = ["NG-4"]
+reason = "Makes the mutants that the tests of the soundness-critical functions must catch."
+
+[[tool]]
+name = "rust-toolchain"
+trusted_for = "every label"
+items = ["NG-4"]
+reason = "Compiles the System: the decision core that Creusot proves is trusted as compiled."
+
+[[tool]]
+name = "rust-libraries"
+trusted_for = "every label"
+items = ["NG-4"]
+reason = "The Rust libraries that the System is built with, as Cargo.lock pins them: hashing, signatures, parsing of configuration files."
+
 [[item]]
 id = "F1"
 kind = "fairness"

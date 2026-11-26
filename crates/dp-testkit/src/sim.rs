@@ -106,6 +106,9 @@ pub struct World {
     /// hash is not the hash of what the Result lists: registered and
     /// authentic, and still not to be believed (R1.3 criterion 7).
     pub import_liars: BTreeMap<Node, [u8; 32]>,
+    /// The file store of every node. It outlives a crash of its node: a
+    /// file is written whole or not at all.
+    pub files: BTreeMap<(Node, PathBuf), Vec<u8>>,
     /// The largest number of solver runs that a node had at once.
     pub most_runs: BTreeMap<Node, usize>,
     /// Every solver run that was started: node, time and input.
@@ -132,6 +135,7 @@ impl World {
             velocity: BTreeMap::new(),
             forging: BTreeSet::new(),
             import_liars: BTreeMap::new(),
+            files: BTreeMap::new(),
             most_runs: BTreeMap::new(),
             started: Vec::new(),
             sent: 0,
@@ -328,6 +332,20 @@ impl Env for SimEnv {
 
     fn solver_binary(&mut self, program: &str) -> io::Result<(PathBuf, Hash)> {
         Ok((PathBuf::from(program), BINARY_HASH))
+    }
+
+    fn read_file(&mut self, path: &Path) -> io::Result<Vec<u8>> {
+        self.world
+            .borrow()
+            .files
+            .get(&(self.node, path.to_path_buf()))
+            .cloned()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such simulated file"))
+    }
+
+    fn write_file(&mut self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        self.world.borrow_mut().files.insert((self.node, path.to_path_buf()), bytes.to_vec());
+        Ok(())
     }
 
     fn start(&mut self, run: u64, _exe: &Path, spec: &RunSpec) -> io::Result<()> {
