@@ -1,0 +1,104 @@
+{
+ "status": "exploratory",
+ "limits_seconds": {
+  "short": 5,
+  "long": 60
+ },
+ "prover_order": [
+  "alt-ergo",
+  "z3",
+  "cvc4",
+  "cvc5"
+ ],
+ "corpora": {
+  "creusat": {
+   "counts": {
+    "easy": 594,
+    "vcs": 601,
+    "easy_for_one_prover_only": 10,
+    "out-of-reach": 5,
+    "unstable": 5,
+    "unstable_out-of-reach": 2,
+    "not_easy_and_proved_by_some_seed_at_5s": 3,
+    "hard": 2,
+    "unstable_hard": 1,
+    "unstable_easy": 2
+   },
+   "hard_or_out_of_reach_by_file": {
+    "verif/CreuSAT_rlib/conflict_analysis/resolve.coma": 1,
+    "verif/CreuSAT_rlib/formula/impl_Formula/add_clause.coma": 1,
+    "verif/CreuSAT_rlib/formula/impl_Formula/add_unit.coma": 1,
+    "verif/CreuSAT_rlib/formula/impl_Formula/add_unwatched_clause.coma": 1,
+    "verif/CreuSAT_rlib/logic/logic_clause/lemma_permuted_clause_maintains_equisat.coma": 1,
+    "verif/CreuSAT_rlib/unit_prop/propagate_lit_with_regard_to_clause.coma": 1,
+    "verif/CreuSAT_rlib/watches/update_watch.coma": 1
+   },
+   "hard_proved_at_long_limit_by": {
+    "alt-ergo": 2,
+    "z3": 1
+   }
+  },
+  "creusot-examples": {
+   "counts": {
+    "easy": 3389,
+    "vcs": 3469,
+    "easy_for_one_prover_only": 41,
+    "unstable": 17,
+    "unstable_easy": 13,
+    "out-of-reach": 65,
+    "hard": 15,
+    "unstable_out-of-reach": 1,
+    "not_easy_and_proved_by_some_seed_at_5s": 5,
+    "unstable_hard": 3
+   },
+   "hard_or_out_of_reach_by_file": {
+    "red_black_tree.coma": 9,
+    "bounded_mpmc_queue/relaxed.coma": 7,
+    "iterators/19_chain.coma": 6,
+    "bounded_mpmc_queue/sc.coma": 5,
+    "doubly_linked_list.coma": 5,
+    "iterators/06_map_precond.coma": 5,
+    "bdd.coma": 2,
+    "heapsort_generic.coma": 2,
+    "iterators/02_iter_mut.coma": 2,
+    "iterators/03_std_iterators.coma": 2,
+    "iterators/17_filter.coma": 2,
+    "persistent_array.coma": 2,
+    "union_find/full_ptr.coma": 2,
+    "union_find/full_rc.coma": 2,
+    "gnome_sort.coma": 1,
+    "hillel.coma": 1,
+    "insertion_sort.coma": 1,
+    "iterators/01_range.coma": 1,
+    "iterators/05_map.coma": 1,
+    "iterators/07_fuse.coma": 1,
+    "iterators/09_empty.coma": 1,
+    "iterators/10_once.coma": 1,
+    "knapsack.coma": 1,
+    "knapsack_full.coma": 1,
+    "linked_list.coma": 1,
+    "message_passing/relacq.coma": 1,
+    "message_passing/relacq_options.coma": 1,
+    "message_passing/rlx.coma": 1,
+    "message_passing/rlx_options.coma": 1,
+    "message_passing/rlx_options_simplest.coma": 1,
+    "message_passing/sc.coma": 1,
+    "message_passing/sc_options.coma": 1,
+    "parallel_add/rlx.coma": 1,
+    "parallel_add/rlx_generic.coma": 1,
+    "parallel_add/sc.coma": 1,
+    "parallel_add/sc_generic.coma": 1,
+    "selection_sort_generic.coma": 1,
+    "spin_lock/relacq.coma": 1,
+    "sum_first_n_iter.coma": 1,
+    "ticket_lock/relacq.coma": 1,
+    "ticket_lock/sc.coma": 1
+   },
+   "hard_proved_at_long_limit_by": {
+    "cvc5": 9,
+    "alt-ergo": 8,
+    "z3": 2
+   }
+  }
+ }
+}
